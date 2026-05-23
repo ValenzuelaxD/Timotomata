@@ -29,5 +29,11 @@
 .DS_Store
 Thumbs.db
 
+# Archivos de respaldo
+*.bak
+
+# Archivos de entrada de prueba
+test_input.txt
+
 # Otros
 node_modules/
