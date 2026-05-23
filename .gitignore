@@ -1,0 +1,33 @@
+# Ignorar carpeta de recursos (apuntes, documentos)
+/Recursos/
+
+# Archivos compilados
+*.class
+
+# Paquetes
+*.jar
+*.war
+*.ear
+
+# Carpetas de build
+/target/
+/build/
+/out/
+
+# IDEs y metadatos
+/.idea/
+.vscode/
+*.iml
+/.settings/
+.classpath
+.project
+
+# Logs
+*.log
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Otros
+node_modules/
