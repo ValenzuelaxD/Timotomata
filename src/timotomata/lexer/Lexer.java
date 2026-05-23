@@ -292,14 +292,17 @@ public class Lexer {
 
     void emitirToken(int estado, String lexema, int linea) {
         if (estado == Q_ID) {
-            switch (lexema) {
+            // Comparar en minúsculas para que las palabras reservadas
+            // sean case-insensitive (Sensor, SENSOR, sensor → SENSOR)
+            String lexemaLower = lexema.toLowerCase();
+            switch (lexemaLower) {
                 case "sensor"   -> agregar(TipoToken.SENSOR, lexema, linea);
                 case "umbral"   -> agregar(TipoToken.UMBRAL, lexema, linea);
                 case "si"       -> agregar(TipoToken.SI, lexema, linea);
                 case "entonces" -> agregar(TipoToken.ENTONCES, lexema, linea);
                 case "estado"   -> agregar(TipoToken.ESTADO, lexema, linea);
                 case "abs"      -> agregar(TipoToken.ABS, lexema, linea);
-                case "NORMAL", "PICO", "CAIDA", "INESTABLE" ->
+                case "normal", "pico", "caida", "inestable" ->
                     agregar(TipoToken.ESTADO_SISTEMA, lexema, linea);
                 default -> agregar(TipoToken.ID, lexema, linea);
             }

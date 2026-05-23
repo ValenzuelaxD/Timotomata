@@ -153,6 +153,10 @@ public class Main {
             return Math.abs(evaluarNumero(a.expresion, memoria));
         }
 
+        if (expr instanceof Negacion n) {
+            return -evaluarNumero(n.expresion, memoria);
+        }
+
         if (expr instanceof Binaria b) {
             double izq = evaluarNumero(b.izquierda, memoria);
             double der = evaluarNumero(b.derecha, memoria);
