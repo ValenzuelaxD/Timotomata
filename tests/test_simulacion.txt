@@ -1,0 +1,19 @@
+// Programa de monitoreo de sensores
+sensor voltaje;
+sensor temperatura;
+sensor presion;
+// Umbrales de seguridad
+umbral voltaje_max = 220;
+umbral voltaje_min = 100;
+umbral temp_max = 80;
+umbral temp_min = -10;
+umbral presion_max = 200;
+// Reglas de control
+si voltaje > voltaje_max entonces estado = PICO;
+si voltaje < voltaje_min entonces estado = CAIDA;
+si temperatura > temp_max entonces estado = INESTABLE;
+si temperatura < temp_min entonces estado = PICO;
+si presion > presion_max entonces estado = NORMAL;
+// Regla con abs
+si abs(voltaje - previo) > 50 entonces estado = CAIDA;
+FIN

@@ -13,6 +13,8 @@ public class Main {
         Scanner sc = new Scanner(System.in);
 
         System.out.println("===== COMPILADOR TIMOTOMATA =====");
+        System.out.println("💡 Para la interfaz grafica, ejecuta: compile_and_run_gui.bat");
+        System.out.println();
         System.out.println("Escribe tu codigo Timotomata.");
         System.out.println("Cuando termines, escribe FIN en una linea nueva.");
         System.out.println();

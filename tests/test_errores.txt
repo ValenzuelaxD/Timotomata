@@ -1,0 +1,10 @@
+// Errores lexicos
+sensor @invalido;
+umbral x = 3.14.15;
+si x !y entonces estado = NORMAL;
+// Error: comentario de bloque sin cerrar
+sensor ok;
+/* comentario sin cerrar
+sensor despues_bloque;
+// Fin del programa (con errores reportados pero sin detenerse)
+FIN

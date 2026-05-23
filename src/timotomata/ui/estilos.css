@@ -1,0 +1,307 @@
+/* ===================================================
+   ESTILOS TIMOTOMATA GUI
+   Paleta: Catppuccin Mocha
+   =================================================== */
+
+/* ─── Root ─── */
+.root {
+    -fx-background-color: #11111b;
+    -fx-font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+    -fx-text-fill: #cdd6f4;
+}
+
+/* ─── Menú ─── */
+.menu-bar {
+    -fx-background-color: #181825;
+    -fx-border-color: transparent transparent #313244 transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
+.menu-bar .menu {
+    -fx-padding: 4 8;
+}
+
+.menu-bar .menu:hover {
+    -fx-background-color: #313244;
+}
+
+.menu-bar .menu .label {
+    -fx-text-fill: #cdd6f4;
+    -fx-font-size: 12px;
+}
+
+.menu-bar .menu-item {
+    -fx-background-color: #1e1e2e;
+    -fx-padding: 6 12;
+}
+
+.menu-bar .menu-item:hover {
+    -fx-background-color: #313244;
+}
+
+.menu-bar .menu-item .label {
+    -fx-text-fill: #cdd6f4;
+}
+
+.menu-bar .context-menu {
+    -fx-background-color: #1e1e2e;
+    -fx-border-color: #313244;
+    -fx-border-width: 1;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 4;
+}
+
+.menu-bar .separator-menu-item .line {
+    -fx-background-color: #313244;
+}
+
+/* ─── Editor de código ─── */
+.text-area {
+    -fx-background-color: #1e1e2e;
+    -fx-text-fill: #cdd6f4;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-background-insets: 0;
+    -fx-background-radius: 0;
+    -fx-padding: 0;
+}
+
+.text-area .scroll-pane {
+    -fx-background-color: transparent;
+}
+
+.text-area .scroll-pane .viewport {
+    -fx-background-color: transparent;
+}
+
+.text-area .scroll-pane .content {
+    -fx-background-color: #1e1e2e;
+    -fx-background-radius: 0;
+    -fx-padding: 0;
+}
+
+.text-area .scroll-bar:vertical {
+    -fx-background-color: #181825;
+    -fx-pref-width: 10;
+}
+
+.text-area .scroll-bar:vertical .thumb {
+    -fx-background-color: #45475a;
+    -fx-background-radius: 5;
+}
+
+.text-area .scroll-bar:vertical .track {
+    -fx-background-color: transparent;
+}
+
+.text-area .scroll-bar:horizontal {
+    -fx-background-color: #181825;
+    -fx-pref-height: 10;
+}
+
+.text-area .scroll-bar:horizontal .thumb {
+    -fx-background-color: #45475a;
+    -fx-background-radius: 5;
+}
+
+.text-area .scroll-bar:horizontal .track {
+    -fx-background-color: transparent;
+}
+
+/* ─── Listas (errores) ─── */
+.list-view {
+    -fx-background-color: #1e1e2e;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+
+.list-view .list-cell {
+    -fx-background-color: #1e1e2e;
+    -fx-text-fill: #cdd6f4;
+    -fx-padding: 3 8;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 11px;
+}
+
+.list-view .list-cell:odd {
+    -fx-background-color: #181825;
+}
+
+.list-view .list-cell:selected {
+    -fx-background-color: #45475a;
+}
+
+/* ─── Tabla de tokens ─── */
+.table-view {
+    -fx-background-color: #1e1e2e;
+    -fx-border-color: transparent;
+    -fx-table-cell-border-color: #313244;
+    -fx-padding: 0;
+}
+
+.table-view .column-header-background {
+    -fx-background-color: #181825;
+    -fx-padding: 2 0;
+}
+
+.table-view .column-header {
+    -fx-background-color: transparent;
+    -fx-border-color: #313244;
+    -fx-border-width: 0 0 1 1;
+    -fx-padding: 4 6;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: #89b4fa;
+    -fx-font-weight: bold;
+    -fx-font-size: 11px;
+}
+
+.table-view .table-row-cell {
+    -fx-background-color: #1e1e2e;
+    -fx-text-fill: #cdd6f4;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 11px;
+    -fx-padding: 2 4;
+}
+
+.table-view .table-row-cell:odd {
+    -fx-background-color: #181825;
+}
+
+.table-view .table-row-cell:selected {
+    -fx-background-color: #45475a;
+}
+
+/* ─── TreeView (AST) ─── */
+.tree-view {
+    -fx-background-color: #1e1e2e;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+
+.tree-view .tree-cell {
+    -fx-background-color: #1e1e2e;
+    -fx-text-fill: #cdd6f4;
+    -fx-padding: 3 6;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 11px;
+}
+
+.tree-view .tree-cell:odd {
+    -fx-background-color: #181825;
+}
+
+.tree-view .tree-cell:selected {
+    -fx-background-color: #45475a;
+}
+
+.tree-view .tree-disclosure-node .arrow {
+    -fx-background-color: #89b4fa;
+}
+
+/* ─── TitledPane ─── */
+.titled-pane-custom {
+    -fx-background-color: #1e1e2e;
+    -fx-border-color: #313244;
+    -fx-border-width: 1;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+}
+
+.titled-pane-custom > .title {
+    -fx-background-color: #181825;
+    -fx-background-radius: 5 5 0 0;
+    -fx-padding: 3 8;
+}
+
+.titled-pane-custom > .title .text {
+    -fx-fill: #89b4fa;
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+}
+
+.titled-pane-custom > .content {
+    -fx-background-color: #1e1e2e;
+    -fx-background-radius: 0 0 5 5;
+    -fx-border-color: transparent;
+    -fx-padding: 2;
+}
+
+/* ─── Botones ─── */
+.button {
+    -fx-cursor: hand;
+}
+
+.button:hover {
+    -fx-opacity: 0.85;
+}
+
+.button:pressed {
+    -fx-opacity: 0.7;
+}
+
+/* ─── SplitPane ─── */
+.split-pane {
+    -fx-background-color: #11111b;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+
+.split-pane > .split-pane-divider {
+    -fx-background-color: #313244;
+    -fx-padding: 1;
+}
+
+.split-pane:horizontal > .split-pane-divider {
+    -fx-background-color: #313244;
+    -fx-border-color: transparent;
+}
+
+/* ─── TextField (campos de simulación) ─── */
+.text-field {
+    -fx-background-color: #313244;
+    -fx-text-fill: #cdd6f4;
+    -fx-border-color: #45475a;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 4 6;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 12px;
+}
+
+.text-field:focused {
+    -fx-border-color: #89b4fa;
+}
+
+/* ─── ScrollPane global ─── */
+.scroll-pane {
+    -fx-background-color: transparent;
+}
+
+.scroll-pane .viewport {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar {
+    -fx-background-color: #181825;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: #45475a;
+    -fx-background-radius: 5;
+}
+
+.scroll-bar .track {
+    -fx-background-color: transparent;
+}
+
+/* ─── Tooltip ─── */
+.tooltip {
+    -fx-background-color: #313244;
+    -fx-text-fill: #cdd6f4;
+    -fx-font-size: 11px;
+    -fx-background-radius: 4;
+    -fx-padding: 4 8;
+}

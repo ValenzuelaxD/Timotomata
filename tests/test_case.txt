@@ -1,0 +1,16 @@
+// Palabras reservadas en diferentes capitalizaciones
+Sensor Voltaje;
+SENSOR Corriente;
+sensor Frecuencia;
+UMBRAL Maximo = 200;
+Umbral Minimo = 10;
+umbral Medio = 50;
+Si voltaje > 100 ENTONCES Estado = normal;
+SI corriente <= 50 entonces ESTADO = NORMAL;
+si frecuencia == 60 ENTONCES estado = pico;
+// Identificadores con capitalizacion diferente (deben ser distintos)
+sensor valor;
+sensor Valor;
+Si valor > 5 entonces estado = normal;
+Si Valor > 10 entonces estado = pico;
+FIN

@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "GUI - Timotomata (ventana)",
+      "request": "launch",
+      "mainClass": "timotomata.ui.MainApp",
+      "console": "internalConsole",
+      "vmArgs": "--module-path \"${workspaceFolder}/javafx-sdk-23.0.2/lib\" --add-modules javafx.controls,javafx.graphics",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "java",
+      "name": "CLI - Timotomata (consola)",
+      "request": "launch",
+      "mainClass": "timotomata.Main",
+      "console": "integratedTerminal"
+    }
+  ]
+}

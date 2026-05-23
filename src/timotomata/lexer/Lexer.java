@@ -146,6 +146,10 @@ public class Lexer {
         this.fuente = fuente;
     }
 
+    public List<String> getErroresLexicos() {
+        return erroresLexicos;
+    }
+
     // ---- 6. CLASIFICADOR DE CARACTERES ----
     int clasificar(char c) {
         if (Character.isLetter(c) || c == '_') return LETRA;
