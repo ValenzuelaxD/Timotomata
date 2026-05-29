@@ -5,7 +5,6 @@ import timotomata.lexer.*;
 import timotomata.parser.Parser;
 import timotomata.parser.NodoDerivacion;
 import timotomata.parser.ast.*;
-import timotomata.semantico.AnalizadorSemantico;
 
 public class Main {
 
@@ -60,26 +59,14 @@ public class Main {
         System.out.println("\n===== ARBOL DE DERIVACION =====");
         System.out.println(arbolToString(parser.arbolDerivacion, "", true));
 
-        // ─── Fase 3: Análisis Semántico ───
-        AnalizadorSemantico semantico = new AnalizadorSemantico();
-        semantico.analizar(programa);
-
-        if (!semantico.errores.isEmpty()) {
-            System.out.println("\n===== ERRORES SEMANTICOS =====");
-            for (String e : semantico.errores) {
-                System.out.println(e);
-            }
-            return;
-        }
-
         System.out.println("\n===== TABLA DE SIMBOLOS =====");
-        System.out.println("Sensores: " + semantico.sensores);
-        System.out.println("Umbrales: " + semantico.umbrales);
+        System.out.println("Sensores: " + (programa.sensores.isEmpty() ? "(ninguno)" : programa.sensores));
+        System.out.println("Umbrales: " + (programa.umbrales.isEmpty() ? "(ninguno)" : programa.umbrales));
         System.out.println("Calculos: " + programa.calculos.size() + " operacion(es)");
         for (Calculo c : programa.calculos) {
             System.out.println("  - " + c.sensor + " : " + c.operacion + " " + c.parametros);
         }
-        System.out.println("\nAnalisis completado sin errores.");
+        System.out.println("\nAnalisis completado.");
     }
 
     /**

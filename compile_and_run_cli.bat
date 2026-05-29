@@ -67,7 +67,7 @@ echo [2/3] Compilando...
     "%SRC_DIR%\timotomata\lexer\*.java" ^
     "%SRC_DIR%\timotomata\parser\*.java" ^
     "%SRC_DIR%\timotomata\parser\ast\*.java" ^
-    "%SRC_DIR%\timotomata\semantico\*.java" 2>&1
+    2>&1
 
 if errorlevel 1 (
     echo.

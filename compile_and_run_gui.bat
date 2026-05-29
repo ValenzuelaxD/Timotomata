@@ -124,7 +124,6 @@ set MODULES=--module-path "%JAVAFX_DIR%/lib" --add-modules javafx.controls,javaf
     "%SRC_DIR%\timotomata\lexer\*.java" ^
     "%SRC_DIR%\timotomata\parser\*.java" ^
     "%SRC_DIR%\timotomata\parser\ast\*.java" ^
-    "%SRC_DIR%\timotomata\semantico\*.java" ^
     "%SRC_DIR%\timotomata\ui\*.java" 2>&1
 
 if errorlevel 1 (

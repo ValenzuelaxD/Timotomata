@@ -302,31 +302,26 @@ public class Lexer {
             // sean case-insensitive (Sensor, SENSOR, sensor → SENSOR)
             String lexemaLower = lexema.toLowerCase();
             switch (lexemaLower) {
-                case "sensor"   -> agregar(TipoToken.SENSOR, lexema, linea);
-                case "umbral"   -> agregar(TipoToken.UMBRAL, lexema, linea);
-                case "si"       -> agregar(TipoToken.SI, lexema, linea);
-                case "entonces" -> agregar(TipoToken.ENTONCES, lexema, linea);
-                case "estado"   -> agregar(TipoToken.ESTADO, lexema, linea);
-                case "abs"      -> agregar(TipoToken.ABS, lexema, linea);
+                case "sensor"     -> agregar(TipoToken.SENSOR, lexema, linea);
+                case "umbral"     -> agregar(TipoToken.UMBRAL, lexema, linea);
+                case "si"         -> agregar(TipoToken.SI, lexema, linea);
+                case "entonces"   -> agregar(TipoToken.ENTONCES, lexema, linea);
+                case "estado"     -> agregar(TipoToken.ESTADO, lexema, linea);
+                case "abs"        -> agregar(TipoToken.ABS, lexema, linea);
+                case "calcular"   -> agregar(TipoToken.CALCULAR, lexema, linea);
                 case "normal", "pico", "caida", "inestable" ->
                     agregar(TipoToken.ESTADO_SISTEMA, lexema, linea);
-                case "calcular" -> agregar(TipoToken.CALCULAR, lexema, linea);
-                default -> {
-                    // Palabras reservadas UPPERCASE (operaciones CALCULAR)
-                    switch (lexema) {
-                        case "SENO"     -> agregar(TipoToken.SENO, lexema, linea);
-                        case "COSENO"   -> agregar(TipoToken.COSENO, lexema, linea);
-                        case "CUADRADA" -> agregar(TipoToken.CUADRADA, lexema, linea);
-                        case "PROMEDIO" -> agregar(TipoToken.PROMEDIO, lexema, linea);
-                        case "MAXIMO"   -> agregar(TipoToken.MAXIMO, lexema, linea);
-                        case "SUMA"     -> agregar(TipoToken.SUMA, lexema, linea);
-                        case "AMPLITUD" -> agregar(TipoToken.AMPLITUD, lexema, linea);
-                        case "FRECUENCIA" -> agregar(TipoToken.FRECUENCIA, lexema, linea);
-                        case "VENTANA"  -> agregar(TipoToken.VENTANA, lexema, linea);
-                        case "CON"      -> agregar(TipoToken.CON, lexema, linea);
-                        default -> agregar(TipoToken.ID, lexema, linea);
-                    }
-                }
+                case "seno"       -> agregar(TipoToken.SENO, lexema, linea);
+                case "coseno"     -> agregar(TipoToken.COSENO, lexema, linea);
+                case "cuadrada"   -> agregar(TipoToken.CUADRADA, lexema, linea);
+                case "promedio"   -> agregar(TipoToken.PROMEDIO, lexema, linea);
+                case "maximo"     -> agregar(TipoToken.MAXIMO, lexema, linea);
+                case "suma"       -> agregar(TipoToken.SUMA, lexema, linea);
+                case "amplitud"   -> agregar(TipoToken.AMPLITUD, lexema, linea);
+                case "frecuencia" -> agregar(TipoToken.FRECUENCIA, lexema, linea);
+                case "ventana"    -> agregar(TipoToken.VENTANA, lexema, linea);
+                case "con"        -> agregar(TipoToken.CON, lexema, linea);
+                default -> agregar(TipoToken.ID, lexema, linea);
             }
         } else if (estado == Q_NUM || estado == Q_NUM_DEC) {
             agregar(TipoToken.NUMERO, lexema, linea);

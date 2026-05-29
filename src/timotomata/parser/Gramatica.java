@@ -15,7 +15,7 @@ import timotomata.lexer.TipoToken;
  *   SENTENCIA     → SENSOR ID PUNTO_COMA
  *                 | UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA
  *                 | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
- *                 | CALCULAR ID COMA TIPO_OP COMA LISTA_PARAMS PUNTO_COMA
+ *                 | CALCULAR PAREN_IZQ ID COMA TIPO_OP PAREN_DER PUNTO_COMA
  *
  *   VALOR_UMBRAL  → MENOS NUMERO
  *                 | NUMERO
@@ -40,16 +40,23 @@ import timotomata.lexer.TipoToken;
  *   OP_REL        → MAYOR | MENOR | IGUAL_IGUAL
  *                 | MAYOR_IGUAL | MENOR_IGUAL | DIFERENTE
  *
- *   TIPO_OP       → SENO | COSENO | CUADRADA | PROMEDIO | MAXIMO | SUMA
+ *   TIPO_OP       → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER
+ *                 | COSENO PAREN_IZQ LISTA_PARAMS PAREN_DER
+ *                 | CUADRADA PAREN_IZQ LISTA_PARAMS PAREN_DER
+ *                 | PROMEDIO PAREN_IZQ LISTA_PARAMS PAREN_DER
+ *                 | MAXIMO PAREN_IZQ LISTA_PARAMS PAREN_DER
+ *                 | SUMA PAREN_IZQ LISTA_PARAMS PAREN_DER
  *
- *   LISTA_PARAMS  → PARAM COMA LISTA_PARAMS
- *                 | PARAM
+ *   LISTA_PARAMS  → PARAM LISTA_PARAMS_SIG
  *                 | ε
  *
- *   PARAM         → AMPLITUD NUMERO
- *                 | FRECUENCIA NUMERO
- *                 | VENTANA NUMERO
- *                 | CON ID
+ *   LISTA_PARAMS_SIG → COMA LISTA_PARAMS
+ *                      | ε
+ *
+ *   PARAM         → AMPLITUD ASIGNACION NUMERO
+ *                 | FRECUENCIA ASIGNACION NUMERO
+ *                 | VENTANA ASIGNACION NUMERO
+ *                 | CON ASIGNACION ID
  */
 public class Gramatica {
 
@@ -69,15 +76,16 @@ public class Gramatica {
         OP_REL        = 9,
         TIPO_OP       = 10,
         LISTA_PARAMS  = 11,
-        PARAM         = 12;
+        PARAM         = 12,
+        LISTA_PARAMS_SIG = 13;
 
-    public static final int NUM_NT = 13;
+    public static final int NUM_NT = 14;
 
     public static final String[] NOMBRES_NT = {
         "PROGRAMA", "SENTENCIA", "VALOR_UMBRAL",
         "CONDICION", "EXPRESION", "EXPRESION_SIG",
         "TERMINO", "TERMINO_SIG", "FACTOR", "OP_REL",
-        "TIPO_OP", "LISTA_PARAMS", "PARAM"
+        "TIPO_OP", "LISTA_PARAMS", "PARAM", "LISTA_PARAMS_SIG"
     };
 
     // ============================================================
@@ -117,14 +125,16 @@ public class Gramatica {
         P_TIPO_PROMEDIO   = 30,
         P_TIPO_MAXIMO     = 31,
         P_TIPO_SUMA       = 32,
-        P_PARAMS_REC      = 33,
+        P_PARAMS_PARAM    = 33,
         P_PARAMS_EPS      = 34,
-        P_PARAM_AMPL      = 35,
-        P_PARAM_FREC      = 36,
-        P_PARAM_VENT      = 37,
-        P_PARAM_CON       = 38;
+        P_PARAMS_SIG_COMA = 35,
+        P_PARAMS_SIG_EPS  = 36,
+        P_PARAM_AMPL      = 37,
+        P_PARAM_FREC      = 38,
+        P_PARAM_VENT      = 39,
+        P_PARAM_CON       = 40;
 
-    public static final int NUM_PROD = 39;
+    public static final int NUM_PROD = 41;
 
     // ============================================================
     //  CODIFICACIÓN DE SÍMBOLOS
@@ -153,10 +163,10 @@ public class Gramatica {
                                        T(TipoToken.ENTONCES),    T(TipoToken.ESTADO),
                                        T(TipoToken.ASIGNACION),  T(TipoToken.ESTADO_SISTEMA),
                                        T(TipoToken.PUNTO_COMA) },
-        /*  5 */ { NT(SENTENCIA),    T(TipoToken.CALCULAR),     T(TipoToken.ID),
-                                       T(TipoToken.COMA),        NT(TIPO_OP),
-                                       NT(LISTA_PARAMS),
-                                       T(TipoToken.PUNTO_COMA) },
+        /*  5 */ { NT(SENTENCIA),    T(TipoToken.CALCULAR),     T(TipoToken.PAREN_IZQ),
+                                       T(TipoToken.ID),          T(TipoToken.COMA),
+                                       NT(TIPO_OP),
+                                       T(TipoToken.PAREN_DER),   T(TipoToken.PUNTO_COMA) },
 
         /*  6 */ { NT(VALOR_UMBRAL), T(TipoToken.MENOS),       T(TipoToken.NUMERO) },
         /*  7 */ { NT(VALOR_UMBRAL), T(TipoToken.NUMERO) },
@@ -190,20 +200,33 @@ public class Gramatica {
         /* 25 */ { NT(OP_REL),       T(TipoToken.MENOR_IGUAL) },
         /* 26 */ { NT(OP_REL),       T(TipoToken.DIFERENTE) },
 
-        /* 27 */ { NT(TIPO_OP),      T(TipoToken.SENO) },
-        /* 28 */ { NT(TIPO_OP),      T(TipoToken.COSENO) },
-        /* 29 */ { NT(TIPO_OP),      T(TipoToken.CUADRADA) },
-        /* 30 */ { NT(TIPO_OP),      T(TipoToken.PROMEDIO) },
-        /* 31 */ { NT(TIPO_OP),      T(TipoToken.MAXIMO) },
-        /* 32 */ { NT(TIPO_OP),      T(TipoToken.SUMA) },
+        /* 27 */ { NT(TIPO_OP),      T(TipoToken.SENO),        T(TipoToken.PAREN_IZQ),
+                                       NT(LISTA_PARAMS),         T(TipoToken.PAREN_DER) },
+        /* 28 */ { NT(TIPO_OP),      T(TipoToken.COSENO),      T(TipoToken.PAREN_IZQ),
+                                       NT(LISTA_PARAMS),         T(TipoToken.PAREN_DER) },
+        /* 29 */ { NT(TIPO_OP),      T(TipoToken.CUADRADA),    T(TipoToken.PAREN_IZQ),
+                                       NT(LISTA_PARAMS),         T(TipoToken.PAREN_DER) },
+        /* 30 */ { NT(TIPO_OP),      T(TipoToken.PROMEDIO),    T(TipoToken.PAREN_IZQ),
+                                       NT(LISTA_PARAMS),         T(TipoToken.PAREN_DER) },
+        /* 31 */ { NT(TIPO_OP),      T(TipoToken.MAXIMO),      T(TipoToken.PAREN_IZQ),
+                                       NT(LISTA_PARAMS),         T(TipoToken.PAREN_DER) },
+        /* 32 */ { NT(TIPO_OP),      T(TipoToken.SUMA),        T(TipoToken.PAREN_IZQ),
+                                       NT(LISTA_PARAMS),         T(TipoToken.PAREN_DER) },
 
-        /* 33 */ { NT(LISTA_PARAMS), T(TipoToken.COMA), NT(PARAM), NT(LISTA_PARAMS) },
+        /* 33 */ { NT(LISTA_PARAMS), NT(PARAM),                NT(LISTA_PARAMS_SIG) },
         /* 34 */ { NT(LISTA_PARAMS) },                               // ε
 
-        /* 36 */ { NT(PARAM),        T(TipoToken.AMPLITUD),    T(TipoToken.NUMERO) },
-        /* 37 */ { NT(PARAM),        T(TipoToken.FRECUENCIA),  T(TipoToken.NUMERO) },
-        /* 38 */ { NT(PARAM),        T(TipoToken.VENTANA),     T(TipoToken.NUMERO) },
-        /* 39 */ { NT(PARAM),        T(TipoToken.CON),         T(TipoToken.ID) },
+        /* 35 */ { NT(LISTA_PARAMS_SIG), T(TipoToken.COMA),    NT(LISTA_PARAMS) },
+        /* 36 */ { NT(LISTA_PARAMS_SIG) },                          // ε
+
+        /* 37 */ { NT(PARAM),        T(TipoToken.AMPLITUD),    T(TipoToken.ASIGNACION),
+                                       T(TipoToken.NUMERO) },
+        /* 38 */ { NT(PARAM),        T(TipoToken.FRECUENCIA),  T(TipoToken.ASIGNACION),
+                                       T(TipoToken.NUMERO) },
+        /* 39 */ { NT(PARAM),        T(TipoToken.VENTANA),     T(TipoToken.ASIGNACION),
+                                       T(TipoToken.NUMERO) },
+        /* 40 */ { NT(PARAM),        T(TipoToken.CON),         T(TipoToken.ASIGNACION),
+                                       T(TipoToken.ID) },
     };
 
     // ============================================================

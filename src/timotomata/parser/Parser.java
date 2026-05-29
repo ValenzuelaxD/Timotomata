@@ -189,24 +189,23 @@ public class Parser {
             }
             case Gramatica.P_SENT_CALCULAR: {
                 Token t1 = consumir(TipoToken.CALCULAR, "Se esperaba CALCULAR");
-                Token t2 = consumir(TipoToken.ID, "Se esperaba nombre del sensor");
-                Token t3 = consumir(TipoToken.COMA, "Se esperaba ,");
+                Token t2 = consumir(TipoToken.PAREN_IZQ, "Se esperaba (");
+                Token t3 = consumir(TipoToken.ID, "Se esperaba nombre del sensor");
+                Token t4 = consumir(TipoToken.COMA, "Se esperaba ,");
                 nodo.agregarHijo(t(t1));
                 nodo.agregarHijo(t(t2));
                 nodo.agregarHijo(t(t3));
+                nodo.agregarHijo(t(t4));
+
+                Calculo calculo = new Calculo(t3.lexema, "");
 
                 NodoDerivacion nTipoOp = new NodoDerivacion("TIPO_OP");
-                tipoOp(nTipoOp);
+                tipoOp(nTipoOp, calculo);
                 nodo.agregarHijo(nTipoOp);
-                String tipoOp = (String) ultimoValorSemantico;
 
-                Calculo calculo = new Calculo(t2.lexema, tipoOp);
-                NodoDerivacion nParams = new NodoDerivacion("LISTA_PARAMS");
-                nParams.sintetico = true;
-                listaParams(nParams, calculo);
-                nodo.agregarHijo(nParams);
-
+                Token t6 = consumir(TipoToken.PAREN_DER, "Se esperaba )");
                 Token t7 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+                nodo.agregarHijo(t(t6));
                 nodo.agregarHijo(t(t7));
 
                 programa.calculos.add(calculo);
@@ -482,9 +481,10 @@ public class Parser {
 
     // ============================================================
     //  NO TERMINAL: TIPO_OP
-    //  TIPO_OP → SENO | COSENO | CUADRADA | PROMEDIO | MAXIMO | SUMA
+    //  TIPO_OP → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER | ...
+    //  Ahora recibe el Calculo para setear operacion y agregar parametros internamente
     // ============================================================
-    private void tipoOp(NodoDerivacion nodo) {
+    private void tipoOp(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.TIPO_OP, ver().tipo);
         if (prod == -1) {
             throw error("Se esperaba SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO o SUMA" + contexto());
@@ -509,31 +509,43 @@ public class Parser {
                 throw error("Error interno en TIPO_OP"); // no contexto porque es interno
         }
         nodo.agregarHijo(t(t));
+        calculo.operacion = opStr;
+
+        // Consumir ( parametros )
+        Token pIzq = consumir(TipoToken.PAREN_IZQ, "Se esperaba (");
+        nodo.agregarHijo(t(pIzq));
+
+        NodoDerivacion nParams = new NodoDerivacion("LISTA_PARAMS");
+        nParams.sintetico = true;
+        listaParams(nParams, calculo);
+        nodo.agregarHijo(nParams);
+
+        Token pDer = consumir(TipoToken.PAREN_DER, "Se esperaba )");
+        nodo.agregarHijo(t(pDer));
+
         ultimoValorSemantico = opStr;
     }
 
     // ============================================================
     //  NO TERMINAL: LISTA_PARAMS
-    //  LISTA_PARAMS → COMA PARAM LISTA_PARAMS | ε
+    //  LISTA_PARAMS → PARAM LISTA_PARAMS_SIG | ε
     // ============================================================
     private void listaParams(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.LISTA_PARAMS, ver().tipo);
         if (prod == -1) {
-            throw error("Se esperaba , entre parametros" + contexto());
+            throw error("Se esperaba AMPLITUD, FRECUENCIA, VENTANA o CON" + contexto());
         }
 
         switch (prod) {
-            case Gramatica.P_PARAMS_REC: {
-                Token t = consumir(TipoToken.COMA, "Se esperaba ,");
-                nodo.agregarHijo(t(t));
+            case Gramatica.P_PARAMS_PARAM: {
                 NodoDerivacion nParam = new NodoDerivacion("PARAM");
                 nParam.sintetico = true;
                 param(nParam, calculo);
                 nodo.agregarHijo(nParam);
-                NodoDerivacion nRec = new NodoDerivacion("LISTA_PARAMS");
-                nRec.sintetico = true;
-                listaParams(nRec, calculo);
-                nodo.agregarHijo(nRec);
+                NodoDerivacion nSig = new NodoDerivacion("LISTA_PARAMS_SIG");
+                nSig.sintetico = true;
+                listaParamsSig(nSig, calculo);
+                nodo.agregarHijo(nSig);
                 break;
             }
             case Gramatica.P_PARAMS_EPS:
@@ -543,8 +555,31 @@ public class Parser {
     }
 
     // ============================================================
+    //  LISTA_PARAMS_SIG → COMA LISTA_PARAMS | ε
+    // ============================================================
+    private void listaParamsSig(NodoDerivacion nodo, Calculo calculo) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.LISTA_PARAMS_SIG, ver().tipo);
+
+        switch (prod) {
+            case Gramatica.P_PARAMS_SIG_COMA: {
+                Token t = consumir(TipoToken.COMA, "Se esperaba ,");
+                nodo.agregarHijo(t(t));
+                NodoDerivacion nRec = new NodoDerivacion("LISTA_PARAMS");
+                nRec.sintetico = true;
+                listaParams(nRec, calculo);
+                nodo.agregarHijo(nRec);
+                break;
+            }
+            case Gramatica.P_PARAMS_SIG_EPS:
+                // ε
+                break;
+        }
+    }
+
+    // ============================================================
     //  NO TERMINAL: PARAM
-    //  PARAM → AMPLITUD NUMERO | FRECUENCIA NUMERO | VENTANA NUMERO | CON ID
+    //  PARAM → AMPLITUD ASIGNACION NUMERO | FRECUENCIA ASIGNACION NUMERO
+    //        | VENTANA ASIGNACION NUMERO | CON ASIGNACION ID
     // ============================================================
     private void param(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.PARAM, ver().tipo);
@@ -555,34 +590,42 @@ public class Parser {
         switch (prod) {
             case Gramatica.P_PARAM_AMPL: {
                 Token t1 = consumir(TipoToken.AMPLITUD, null);
-                Token t2 = consumir(TipoToken.NUMERO, null);
+                Token t2 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+                Token t3 = consumir(TipoToken.NUMERO, null);
                 nodo.agregarHijo(t(t1));
                 nodo.agregarHijo(t(t2));
-                calculo.parametros.add(new Parametro("amplitud", t2.lexema));
+                nodo.agregarHijo(t(t3));
+                calculo.parametros.add(new Parametro("amplitud", t3.lexema));
                 break;
             }
             case Gramatica.P_PARAM_FREC: {
                 Token t1 = consumir(TipoToken.FRECUENCIA, null);
-                Token t2 = consumir(TipoToken.NUMERO, null);
+                Token t2 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+                Token t3 = consumir(TipoToken.NUMERO, null);
                 nodo.agregarHijo(t(t1));
                 nodo.agregarHijo(t(t2));
-                calculo.parametros.add(new Parametro("frecuencia", t2.lexema));
+                nodo.agregarHijo(t(t3));
+                calculo.parametros.add(new Parametro("frecuencia", t3.lexema));
                 break;
             }
             case Gramatica.P_PARAM_VENT: {
                 Token t1 = consumir(TipoToken.VENTANA, null);
-                Token t2 = consumir(TipoToken.NUMERO, null);
+                Token t2 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+                Token t3 = consumir(TipoToken.NUMERO, null);
                 nodo.agregarHijo(t(t1));
                 nodo.agregarHijo(t(t2));
-                calculo.parametros.add(new Parametro("ventana", t2.lexema));
+                nodo.agregarHijo(t(t3));
+                calculo.parametros.add(new Parametro("ventana", t3.lexema));
                 break;
             }
             case Gramatica.P_PARAM_CON: {
                 Token t1 = consumir(TipoToken.CON, null);
-                Token t2 = consumir(TipoToken.ID, null);
+                Token t2 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+                Token t3 = consumir(TipoToken.ID, null);
                 nodo.agregarHijo(t(t1));
                 nodo.agregarHijo(t(t2));
-                calculo.parametros.add(new Parametro("con", t2.lexema));
+                nodo.agregarHijo(t(t3));
+                calculo.parametros.add(new Parametro("con", t3.lexema));
                 break;
             }
         }

@@ -460,7 +460,7 @@ public class AppController {
         btnAbrirArbol.setDisable(false);
 
         // Vista previa del árbol en texto (solo primeros niveles)
-        String arbolTexto = arbolPreview(parser.arbolDerivacion, "", true, 0, 3);
+        String arbolTexto = arbolPreviewCompleto(parser.arbolDerivacion);
         TextArea arbolPreviewArea = new TextArea(arbolTexto);
         arbolPreviewArea.setEditable(false);
         arbolPreviewArea.setPrefHeight(130);
@@ -476,16 +476,14 @@ public class AppController {
     }
 
     /**
-     * Convierte el árbol de derivación a texto indentado (vista previa limitada).
+     * Convierte el árbol de derivación completo a texto indentado (sin límite de profundidad).
      * Usa caracteres ASCII para compatibilidad con todas las fuentes.
      */
-    private String arbolPreview(NodoDerivacion nodo, String prefijo, boolean esUltimo,
-            int profundidad, int maxProfundidad) {
-        if (profundidad >= maxProfundidad && !nodo.hijos.isEmpty()) {
-            return prefijo + (esUltimo ? "+-- " : "+-- ")
-                + nodo.valor + " (...)\n";
-        }
+    private String arbolPreviewCompleto(NodoDerivacion nodo) {
+        return arbolPreviewCompleto(nodo, "", true);
+    }
 
+    private String arbolPreviewCompleto(NodoDerivacion nodo, String prefijo, boolean esUltimo) {
         StringBuilder sb = new StringBuilder();
         sb.append(prefijo);
         sb.append(esUltimo ? "+-- " : "+-- ");
@@ -494,8 +492,8 @@ public class AppController {
         String nuevoPrefijo = prefijo + (esUltimo ? "    " : "|   ");
 
         for (int i = 0; i < nodo.hijos.size(); i++) {
-            sb.append(arbolPreview(nodo.hijos.get(i), nuevoPrefijo,
-                i == nodo.hijos.size() - 1, profundidad + 1, maxProfundidad));
+            sb.append(arbolPreviewCompleto(nodo.hijos.get(i), nuevoPrefijo,
+                i == nodo.hijos.size() - 1));
         }
 
         return sb.toString();
@@ -617,18 +615,14 @@ public class AppController {
         editor.setText(
             "sensor voltaje;\n"
             + "sensor temperatura;\n"
-            + "umbral maximo = 220;\n"
-            + "umbral minimo = 100;\n"
+            + "umbral maxValor = 220;\n"
+            + "umbral minValor = 100;\n"
             + "\n"
-            + "si voltaje >= maximo entonces estado = PICO;\n"
-            + "si voltaje <= minimo entonces estado = CAIDA;\n"
+            + "si voltaje >= maxValor entonces estado = PICO;\n"
+            + "si voltaje <= minValor entonces estado = CAIDA;\n"
             + "si temperatura > 80 entonces estado = INESTABLE;\n"
             + "\n"
-            + "calcular voltaje , SENO , AMPLITUD 300 , FRECUENCIA 0.1 ;\n"
-            + "calcular voltaje , PROMEDIO , VENTANA 5 ;\n"
-            + "calcular voltaje , MAXIMO ;\n"
-            + "calcular temperatura , COSENO , AMPLITUD 100 , FRECUENCIA 0.05 ;\n"
-            + "calcular mezcla , SUMA , CON voltaje , CON temperatura ;\n"
+            + "calcular(voltaje, SENO(AMPLITUD=300, FRECUENCIA=0.1));\n"
         );
     }
 
