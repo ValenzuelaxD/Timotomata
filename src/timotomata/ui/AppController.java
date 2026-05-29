@@ -16,6 +16,8 @@ import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.stage.FileChooser;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 import javafx.util.Duration;
 
 import timotomata.lexer.*;
@@ -25,11 +27,11 @@ import timotomata.parser.ast.*;
 /**
  * Controlador principal de la interfaz gráfica.
  * Gestiona el editor de código, el análisis en tiempo real,
- * la visualización de tokens/AST y la simulación.
+ * la visualización de tokens/AST y el árbol de derivación.
  */
 public class AppController {
 
-    // ─── Modelo de datos para la tabla de tokens ───
+    // ─── Modelo de datos para la tabla de tokens (3 columnas) ───
     public static class TokenInfo {
         private final StringProperty tipo = new SimpleStringProperty();
         private final StringProperty lexema = new SimpleStringProperty();
@@ -48,6 +50,7 @@ public class AppController {
     // ─── Componentes de la UI ───
     private BorderPane root;
     private TextArea editor;
+    private LineNumberColumn lineNumbers;
     private Label statusLabel;
     private ListView<String> errorList;
     private TitledPane erroresPane;
@@ -55,12 +58,13 @@ public class AppController {
     private ObservableList<TokenInfo> tokenData = FXCollections.observableArrayList();
     private TitledPane tokensPane;
     private TreeView<String> astTree;
-    private VBox simPanel;
-    private Label resultadoLabel;
+    private VBox derivacionPanel;
+    private Button btnAbrirArbol;
     private PauseTransition debounce;
 
     // ─── Estado interno ───
     private Programa ultimoPrograma;
+    private Parser ultimoParser;
     private String archivoActual = null;
 
     // =============================================================
@@ -70,6 +74,8 @@ public class AppController {
         crearUI();
         configurarDebounce();
         cargarEjemploPorDefecto();
+        // Análisis inicial automático
+        analizarCodigo();
     }
 
     public BorderPane getRoot() { return root; }
@@ -81,9 +87,6 @@ public class AppController {
         root = new BorderPane();
         root.getStyleClass().add("root");
 
-        // ─── Menú superior ───
-        root.setTop(crearMenuBar());
-
         // ─── Panel central ───
         SplitPane split = new SplitPane();
         split.setDividerPositions(0.62);
@@ -91,55 +94,36 @@ public class AppController {
         SplitPane.setResizableWithParent(split.getItems().get(0), true);
         root.setCenter(split);
 
-        // ─── Panel inferior: simulación ───
-        root.setBottom(crearPanelSimulacion());
+        // ─── Panel inferior: árbol de derivación + barra de estado ───
+        VBox bottomArea = new VBox();
+        bottomArea.getChildren().add(crearPanelDerivacion());
+        bottomArea.getChildren().add(crearStatusBar());
+        root.setBottom(bottomArea);
+
+        // ─── Atajos de teclado (sin toolbar) ───
+        root.setOnKeyReleased(e -> {
+            if (e.isControlDown() && e.getCode() == KeyCode.N) {
+                nuevoArchivo();
+            } else if (e.isControlDown() && e.getCode() == KeyCode.O) {
+                abrirArchivo();
+            } else if (e.isControlDown() && e.getCode() == KeyCode.S) {
+                guardarArchivo();
+            } else if (e.getCode() == KeyCode.F5) {
+                analizarCodigo();
+            } else if (e.getCode() == KeyCode.F6) {
+                abrirArbolDerivacion();
+            }
+        });
     }
 
-    // ─── Barra de menú ───
-    private MenuBar crearMenuBar() {
-        MenuBar menuBar = new MenuBar();
-        menuBar.getStyleClass().add("menu-bar");
-
-        // Archivo
-        Menu menuArchivo = new Menu("Archivo");
-        MenuItem itemNuevo = new MenuItem("Nuevo");
-        itemNuevo.setOnAction(e -> nuevoArchivo());
-        MenuItem itemAbrir = new MenuItem("Abrir...");
-        itemAbrir.setOnAction(e -> abrirArchivo());
-        MenuItem itemGuardar = new MenuItem("Guardar");
-        itemGuardar.setOnAction(e -> guardarArchivo());
-        MenuItem itemGuardarComo = new MenuItem("Guardar como...");
-        itemGuardarComo.setOnAction(e -> guardarArchivoComo());
-        menuArchivo.getItems().addAll(itemNuevo, itemAbrir,
-            new SeparatorMenuItem(), itemGuardar, itemGuardarComo);
-
-        // Ejecutar
-        Menu menuEjecutar = new Menu("Ejecutar");
-        MenuItem itemAnalizar = new MenuItem("Analizar (F5)");
-        itemAnalizar.setOnAction(e -> analizarCodigo());
-        MenuItem itemSimular = new MenuItem("Simular (F6)");
-        itemSimular.setOnAction(e -> ejecutarSimulacion());
-        menuEjecutar.getItems().addAll(itemAnalizar, itemSimular);
-
-        // Ayuda
-        Menu menuAyuda = new Menu("Ayuda");
-        MenuItem itemAcerca = new MenuItem("Acerca de");
-        itemAcerca.setOnAction(e -> mostrarAcerca());
-        menuAyuda.getItems().add(itemAcerca);
-
-        menuBar.getMenus().addAll(menuArchivo, menuEjecutar, menuAyuda);
-        return menuBar;
-    }
-
-    // ─── Panel del editor ───
+    // ─── Panel del editor (con números de línea a la izquierda) ───
     private VBox crearPanelEditor() {
         VBox panel = new VBox(0);
         panel.setStyle("-fx-background-color: #1e1e2e;");
 
-        Label lblEditor = new Label("  EDITOR DE CÓDIGO");
-        lblEditor.getStyleClass().add("panel-titulo");
-        lblEditor.setStyle("-fx-text-fill: #cdd6f4; -fx-background-color: #181825;"
-            + " -fx-padding: 6 12; -fx-font-weight: bold; -fx-font-size: 12;");
+        // ─── HBox: números de línea a la izquierda, editor a la derecha ───
+        HBox editorRow = new HBox(0);
+        editorRow.setStyle("-fx-background-color: #1e1e2e;");
 
         editor = new TextArea();
         editor.setStyle("-fx-control-inner-background: #1e1e2e;"
@@ -147,56 +131,58 @@ public class AppController {
             + " -fx-highlight-fill: #45475a;"
             + " -fx-highlight-text-fill: #cdd6f4;"
             + " -fx-font-family: 'Consolas', 'Courier New', monospace;"
-            + " -fx-font-size: 13px;"
+            + " -fx-font-size: 14px;"
             + " -fx-line-spacing: 2px;"
             + " -fx-border-color: transparent;"
-            + " -fx-padding: 8;");
+            + " -fx-padding: 0 0 0 0;"
+            + " -fx-background-insets: 0;");
         editor.setPromptText("Escribe tu código Timotomata aquí...");
+        editor.setPadding(new Insets(4, 8, 4, 0));
 
-        // Atajos de teclado
+        // Números de línea — se colocan a la izquierda del editor
+        lineNumbers = new LineNumberColumn(editor);
+
+        editorRow.getChildren().addAll(lineNumbers, editor);
+        HBox.setHgrow(editor, Priority.ALWAYS);
+
+        // Teclado: F5/F6 los maneja root, el resto dispara debounce
         editor.setOnKeyReleased(e -> {
-            if (e.getCode() == KeyCode.F5) {
-                analizarCodigo();
-            } else if (e.getCode() == KeyCode.F6) {
-                ejecutarSimulacion();
+            if (e.getCode() == KeyCode.F5 || e.getCode() == KeyCode.F6) {
+                // Los maneja root.setOnKeyReleased
             } else {
                 debounce.playFromStart();
             }
         });
 
-        statusLabel = new Label("  Ln 1, Col 1  |  SIN ANALIZAR");
-        statusLabel.setStyle("-fx-text-fill: #a6adc8; -fx-background-color: #181825;"
-            + " -fx-padding: 4 12; -fx-font-family: 'Consolas', monospace; -fx-font-size: 11;");
-
-        // Actualizar posición del cursor
+        // Actualizar cursor en barra de estado
         editor.caretPositionProperty().addListener((obs, oldPos, newPos) -> {
             actualizarStatusCursor();
         });
 
-        panel.getChildren().addAll(lblEditor, editor, statusLabel);
-        VBox.setVgrow(editor, Priority.ALWAYS);
+        panel.getChildren().add(editorRow);
+        VBox.setVgrow(editorRow, Priority.ALWAYS);
         return panel;
     }
 
-    // ─── Panel derecho con pestañas −──
+    // ─── Panel derecho con pestañas ───
     private VBox crearPanelInfo() {
         VBox panel = new VBox(6);
         panel.setStyle("-fx-background-color: #11111b; -fx-padding: 6;");
 
         // Panel de Errores
         errorList = new ListView<>();
-        errorList.setPrefHeight(160);
+        errorList.setPrefHeight(140);
         errorList.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-text-fill: #cdd6f4;"
             + " -fx-font-family: 'Consolas', monospace;"
             + " -fx-font-size: 11px;");
-        erroresPane = new TitledPane("❌ ERRORES", errorList);
+        erroresPane = new TitledPane("ERRORES", errorList);
         erroresPane.getStyleClass().add("titled-pane-custom");
         erroresPane.setCollapsible(false);
 
-        // Panel de Tokens
+        // Panel de Tokens — 3 columnas: Tipo, Lexema, Linea
         tokenTable = new TableView<>(tokenData);
-        tokenTable.setPrefHeight(200);
+        tokenTable.setPrefHeight(180);
         tokenTable.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-table-cell-border-color: #313244;"
             + " -fx-text-fill: #cdd6f4;"
@@ -205,32 +191,33 @@ public class AppController {
 
         TableColumn<TokenInfo, String> colTipo = new TableColumn<>("Tipo");
         colTipo.setCellValueFactory(new PropertyValueFactory<>("tipo"));
-        colTipo.setPrefWidth(100);
+        colTipo.setPrefWidth(130);
 
         TableColumn<TokenInfo, String> colLexema = new TableColumn<>("Lexema");
         colLexema.setCellValueFactory(new PropertyValueFactory<>("lexema"));
         colLexema.setPrefWidth(130);
 
-        TableColumn<TokenInfo, Number> colLinea = new TableColumn<>("Ln");
+        TableColumn<TokenInfo, Number> colLinea = new TableColumn<>("Linea");
         colLinea.setCellValueFactory(new PropertyValueFactory<>("linea"));
-        colLinea.setPrefWidth(45);
+        colLinea.setPrefWidth(55);
+        colLinea.setStyle("-fx-alignment: CENTER-RIGHT;");
 
         tokenTable.getColumns().addAll(colTipo, colLexema, colLinea);
 
-        tokensPane = new TitledPane("◆ TOKENS", tokenTable);
+        tokensPane = new TitledPane("TOKENS", tokenTable);
         tokensPane.getStyleClass().add("titled-pane-custom");
         tokensPane.setCollapsible(false);
 
         // Panel del AST
         astTree = new TreeView<>();
-        astTree.setPrefHeight(200);
+        astTree.setPrefHeight(180);
         astTree.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-text-fill: #cdd6f4;"
             + " -fx-font-family: 'Consolas', monospace;"
             + " -fx-font-size: 11px;"
             + " -fx-accent: #45475a;");
         astTree.setShowRoot(false);
-        TitledPane astPane = new TitledPane("🌳 AST (Árbol Sintáctico)", astTree);
+        TitledPane astPane = new TitledPane("AST (Arbol Sintactico)", astTree);
         astPane.getStyleClass().add("titled-pane-custom");
         astPane.setCollapsible(false);
 
@@ -239,20 +226,52 @@ public class AppController {
         return panel;
     }
 
-    // ─── Panel de simulación ───
-    private VBox crearPanelSimulacion() {
-        simPanel = new VBox(6);
-        simPanel.setStyle("-fx-background-color: #181825; -fx-padding: 8 12;");
+    // ─── Panel inferior: árbol de derivación ───
+    private VBox crearPanelDerivacion() {
+        derivacionPanel = new VBox(6);
+        derivacionPanel.setStyle("-fx-background-color: #181825; -fx-padding: 8 12;");
 
-        Label lblSim = new Label("SIMULACIÓN");
-        lblSim.setStyle("-fx-text-fill: #a6e3a1; -fx-font-weight: bold; -fx-font-size: 12;");
+        HBox header = new HBox(10);
+        header.setAlignment(Pos.CENTER_LEFT);
 
-        resultadoLabel = new Label("Analiza el código para habilitar la simulación.");
-        resultadoLabel.setStyle("-fx-text-fill: #a6adc8; -fx-font-family: 'Consolas', monospace;"
-            + " -fx-font-size: 12px; -fx-padding: 4 0;");
+        Label lblTitulo = new Label("ARBOL DE DERIVACION");
+        lblTitulo.setStyle("-fx-text-fill: #89b4fa; -fx-font-weight: bold; -fx-font-size: 12;");
 
-        simPanel.getChildren().addAll(lblSim, resultadoLabel);
-        return simPanel;
+        btnAbrirArbol = new Button("Ver arbol de derivacion");
+        btnAbrirArbol.setStyle("-fx-background-color: #89b4fa; -fx-text-fill: #11111b;"
+            + " -fx-font-weight: bold; -fx-font-size: 12px;"
+            + " -fx-background-radius: 6; -fx-padding: 4 14;"
+            + " -fx-cursor: hand;");
+        btnAbrirArbol.setOnAction(e -> abrirArbolDerivacion());
+        btnAbrirArbol.setDisable(true);
+
+        header.getChildren().addAll(lblTitulo, btnAbrirArbol);
+
+        derivacionPanel.getChildren().add(header);
+        return derivacionPanel;
+    }
+
+    // ─── Barra de estado inferior ───
+    private HBox crearStatusBar() {
+        HBox statusBar = new HBox(8);
+        statusBar.setStyle("-fx-background-color: #181825;"
+            + " -fx-padding: 4 12;"
+            + " -fx-border-color: #313244 transparent transparent transparent;"
+            + " -fx-border-width: 1;");
+
+        Label lblArchivo = new Label("Sin archivo");
+        lblArchivo.setStyle("-fx-text-fill: #a6adc8; -fx-font-size: 11px;"
+            + " -fx-font-family: 'Segoe UI', sans-serif;");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        statusLabel = new Label("  Ln 1, Col 1  |  SIN ANALIZAR");
+        statusLabel.setStyle("-fx-text-fill: #a6adc8;"
+            + " -fx-font-family: 'Consolas', monospace; -fx-font-size: 11;");
+
+        statusBar.getChildren().addAll(lblArchivo, spacer, statusLabel);
+        return statusBar;
     }
 
     // =============================================================
@@ -281,25 +300,20 @@ public class AppController {
 
         List<String> erroresLex = lexer.getErroresLexicos();
 
-        // ─── Fase 2: Análisis Sintáctico ───
+        // ─── Fase 2: Análisis Sintáctico (con recuperación de errores) ───
         Parser parser = new Parser(tokens);
-        Programa programa = null;
-        String errorSintactico = null;
-
-        try {
-            programa = parser.parsear();
-        } catch (RuntimeException e) {
-            errorSintactico = e.getMessage();
-        }
+        Programa programa = parser.parsear();
+        List<String> erroresSint = parser.getErroresSintacticos();
 
         ultimoPrograma = programa;
+        ultimoParser = parser;
 
         // ─── Actualizar UI ───
-        actualizarErrores(erroresLex, errorSintactico);
+        actualizarErrores(erroresLex, erroresSint);
         actualizarTokens(tokens);
         actualizarAST(programa);
-        actualizarSimulacion(programa);
-        actualizarStatus(tokens.size(), erroresLex.size(), errorSintactico);
+        actualizarDerivacion(programa, parser);
+        actualizarStatus(tokens.size(), erroresLex.size(), erroresSint.size());
     }
 
     // =============================================================
@@ -307,40 +321,36 @@ public class AppController {
     // =============================================================
 
     // ─── Errores ───
-    private void actualizarErrores(List<String> erroresLex, String errorSint) {
+    private void actualizarErrores(List<String> erroresLex, List<String> erroresSint) {
         ObservableList<String> items = errorList.getItems();
         items.clear();
 
         int totalErrores = 0;
 
-        // Errores léxicos
         for (String err : erroresLex) {
-            items.add("⚠ [LÉXICO] " + err);
+            items.add("[LEXICO] " + err);
             totalErrores++;
         }
 
-        // Error sintáctico
-        if (errorSint != null) {
-            items.add("✖ [SINTÁCTICO] " + errorSint);
+        for (String err : erroresSint) {
+            items.add("[SINTACTICO] " + err);
             totalErrores++;
         }
 
-        // Si no hay errores
         if (totalErrores == 0) {
-            items.add("✅ Sin errores.");
+            items.add("Sin errores.");
         }
 
-        // Color del título del panel según haya o no errores
         if (totalErrores > 0) {
-            erroresPane.setText("❌ ERRORES (" + totalErrores + ")");
+            erroresPane.setText("ERRORES (" + totalErrores + ")");
             erroresPane.setStyle("-fx-text-fill: #f38ba8;");
         } else {
-            erroresPane.setText("✅ ERRORES (0)");
+            erroresPane.setText("OK (0)");
             erroresPane.setStyle("-fx-text-fill: #a6e3a1;");
         }
     }
 
-    // ─── Tokens ───
+    // ─── Tokens (con columna de línea) ───
     private void actualizarTokens(List<Token> tokens) {
         tokenData.clear();
         for (Token t : tokens) {
@@ -351,8 +361,7 @@ public class AppController {
                 t.linea
             ));
         }
-        // Actualizar título del panel
-        tokensPane.setText("◆ TOKENS (" + tokenData.size() + ")");
+        tokensPane.setText("\u25C6 TOKENS (" + tokenData.size() + ")");
     }
 
     // ─── AST ───
@@ -394,13 +403,112 @@ public class AppController {
                 String condStr = expresionToString(r.condicion);
                 TreeItem<String> regla = new TreeItem<>(
                     "Regla " + (i + 1) + ": Si " + condStr);
-                regla.getChildren().add(new TreeItem<>("→ Estado: " + r.estado));
+                regla.getChildren().add(new TreeItem<>("\u2192 Estado: " + r.estado));
                 reglas.getChildren().add(regla);
             }
             raiz.getChildren().add(reglas);
         }
 
+        // Cálculos
+        if (programa.calculos.isEmpty()) {
+            raiz.getChildren().add(new TreeItem<>("Calculos: (ninguno)"));
+        } else {
+            TreeItem<String> calculos = new TreeItem<>("Calculos (" + programa.calculos.size() + ")");
+            calculos.setExpanded(true);
+            for (Calculo c : programa.calculos) {
+                TreeItem<String> calcItem = new TreeItem<>("CALCULAR " + c.sensor + " , " + c.operacion);
+                for (Parametro p : c.parametros) {
+                    calcItem.getChildren().add(new TreeItem<>("  " + p.nombre + " = " + p.valor));
+                }
+                calculos.getChildren().add(calcItem);
+            }
+            raiz.getChildren().add(calculos);
+        }
+
         astTree.setRoot(raiz);
+    }
+
+    // ─── Panel de derivación ───
+    private void actualizarDerivacion(Programa programa, Parser parser) {
+        derivacionPanel.getChildren().clear();
+
+        HBox header = new HBox(10);
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        Label lblTitulo = new Label("ARBOL DE DERIVACION");
+        lblTitulo.setStyle("-fx-text-fill: #89b4fa; -fx-font-weight: bold; -fx-font-size: 12;");
+
+        btnAbrirArbol = new Button("Ver arbol de derivacion");
+        btnAbrirArbol.setStyle("-fx-background-color: #89b4fa; -fx-text-fill: #11111b;"
+            + " -fx-font-weight: bold; -fx-font-size: 12px;"
+            + " -fx-background-radius: 6; -fx-padding: 4 14;"
+            + " -fx-cursor: hand;");
+        btnAbrirArbol.setOnAction(e -> abrirArbolDerivacion());
+
+        header.getChildren().addAll(lblTitulo, btnAbrirArbol);
+        derivacionPanel.getChildren().add(header);
+
+        if (programa == null || parser == null || parser.arbolDerivacion == null) {
+            btnAbrirArbol.setDisable(true);
+            Label info = new Label("Analiza el c\u00F3digo para generar el \u00E1rbol de derivaci\u00F3n.");
+            info.setStyle("-fx-text-fill: #a6adc8; -fx-font-family: 'Consolas', monospace;"
+                + " -fx-font-size: 12px; -fx-padding: 8 0;");
+            derivacionPanel.getChildren().add(info);
+            return;
+        }
+
+        btnAbrirArbol.setDisable(false);
+
+        // Vista previa del árbol en texto (solo primeros niveles)
+        String arbolTexto = arbolPreview(parser.arbolDerivacion, "", true, 0, 3);
+        TextArea arbolPreviewArea = new TextArea(arbolTexto);
+        arbolPreviewArea.setEditable(false);
+        arbolPreviewArea.setPrefHeight(130);
+        arbolPreviewArea.setStyle("-fx-control-inner-background: #1e1e2e;"
+            + " -fx-text-fill: #a6e3a1;"
+            + " -fx-font-family: 'Consolas', monospace;"
+            + " -fx-font-size: 11px;"
+            + " -fx-border-color: #313244;"
+            + " -fx-border-radius: 4;"
+            + " -fx-padding: 4;");
+
+        derivacionPanel.getChildren().add(arbolPreviewArea);
+    }
+
+    /**
+     * Convierte el árbol de derivación a texto indentado (vista previa limitada).
+     * Usa caracteres ASCII para compatibilidad con todas las fuentes.
+     */
+    private String arbolPreview(NodoDerivacion nodo, String prefijo, boolean esUltimo,
+            int profundidad, int maxProfundidad) {
+        if (profundidad >= maxProfundidad && !nodo.hijos.isEmpty()) {
+            return prefijo + (esUltimo ? "+-- " : "+-- ")
+                + nodo.valor + " (...)\n";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(prefijo);
+        sb.append(esUltimo ? "+-- " : "+-- ");
+        sb.append(nodo.valor).append("\n");
+
+        String nuevoPrefijo = prefijo + (esUltimo ? "    " : "|   ");
+
+        for (int i = 0; i < nodo.hijos.size(); i++) {
+            sb.append(arbolPreview(nodo.hijos.get(i), nuevoPrefijo,
+                i == nodo.hijos.size() - 1, profundidad + 1, maxProfundidad));
+        }
+
+        return sb.toString();
+    }
+
+    // ─── Abrir ventana gráfica del árbol de derivación ───
+    private void abrirArbolDerivacion() {
+        if (ultimoParser == null || ultimoParser.arbolDerivacion == null) {
+            mostrarError("No hay \u00E1rbol de derivaci\u00F3n disponible. Analiza el c\u00F3digo primero.");
+            return;
+        }
+        PanelDerivacion panel = new PanelDerivacion(ultimoParser.arbolDerivacion);
+        panel.mostrarEnVentana();
     }
 
     // ─── Convertir expresión a string para el AST ───
@@ -416,163 +524,15 @@ public class AppController {
         return "?";
     }
 
-    // ─── Panel de simulación ───
-    private void actualizarSimulacion(Programa programa) {
-        simPanel.getChildren().clear();
-        Label simLabel = new Label("SIMULACIÓN");
-        simLabel.setStyle("-fx-text-fill: #a6e3a1; -fx-font-weight: bold; -fx-font-size: 12;");
-        simPanel.getChildren().add(simLabel);
-
-        if (programa == null || programa.sensores.isEmpty()) {
-            resultadoLabel = new Label("Define al menos un sensor para simular.");
-            resultadoLabel.setStyle("-fx-text-fill: #a6adc8; -fx-font-family: 'Consolas', monospace;"
-                + " -fx-font-size: 12px;");
-            simPanel.getChildren().add(resultadoLabel);
-            return;
-        }
-
-        // Crear campos para cada sensor
-        HBox inputs = new HBox(8);
-        inputs.setPadding(new Insets(4, 0, 4, 0));
-        Map<String, TextField> campos = new HashMap<>();
-
-        for (String sensor : programa.sensores) {
-            VBox campo = new VBox(2);
-            Label lbl = new Label(sensor);
-            lbl.setStyle("-fx-text-fill: #89b4fa; -fx-font-family: 'Consolas', monospace;"
-                + " -fx-font-size: 11px;");
-            TextField tf = new TextField();
-            tf.setPromptText("valor");
-            tf.setPrefWidth(80);
-            tf.setStyle("-fx-background-color: #313244; -fx-text-fill: #cdd6f4;"
-                + " -fx-font-family: 'Consolas', monospace; -fx-font-size: 12px;"
-                + " -fx-border-color: #45475a; -fx-border-radius: 4;"
-                + " -fx-padding: 4 6;");
-            campo.getChildren().addAll(lbl, tf);
-            inputs.getChildren().add(campo);
-            campos.put(sensor, tf);
-        }
-
-        // Botón Simular
-        Button btnSimular = new Button("▶ Simular");
-        btnSimular.setStyle("-fx-background-color: #a6e3a1; -fx-text-fill: #11111b;"
-            + " -fx-font-weight: bold; -fx-font-size: 12px;"
-            + " -fx-background-radius: 6; -fx-padding: 6 16;"
-            + " -fx-cursor: hand;");
-        btnSimular.setOnAction(e -> {
-            Map<String, Double> valores = new HashMap<>();
-            StringBuilder errores = new StringBuilder();
-            for (Map.Entry<String, TextField> entry : campos.entrySet()) {
-                String texto = entry.getValue().getText().trim();
-                if (texto.isEmpty()) {
-                    errores.append("⚠ Ingresa un valor para '").append(entry.getKey()).append("'\n");
-                } else {
-                    try {
-                        valores.put(entry.getKey(), Double.parseDouble(texto));
-                    } catch (NumberFormatException ex) {
-                        errores.append("⚠ '").append(entry.getKey())
-                            .append("' debe ser un número válido\n");
-                    }
-                }
-            }
-
-            if (errores.length() > 0) {
-                resultadoLabel.setText(errores.toString().trim());
-                resultadoLabel.setStyle("-fx-text-fill: #f38ba8; -fx-font-family: 'Consolas', monospace;"
-                    + " -fx-font-size: 12px;");
-                return;
-            }
-
-            // Agregar umbrales a la memoria
-            programa.umbrales.forEach(valores::putIfAbsent);
-
-            // Evaluar reglas
-            StringBuilder res = new StringBuilder();
-            res.append("📊 RESULTADOS:\n");
-            for (Regla r : programa.reglas) {
-                boolean cumple = evaluarCondicion(r.condicion, valores);
-                String icono = cumple ? "🔥" : "  ";
-                res.append(icono).append(" Si ").append(expresionToString(r.condicion))
-                    .append(cumple ? " → " : " → (no)").append("\n");
-            }
-
-            // Último estado que se cumple
-            String ultimoEstado = "NORMAL";
-            for (Regla r : programa.reglas) {
-                if (evaluarCondicion(r.condicion, valores)) {
-                    ultimoEstado = r.estado;
-                }
-            }
-            res.append("\n▶ Estado resultante: ").append(ultimoEstado.toUpperCase());
-
-            resultadoLabel.setText(res.toString());
-            resultadoLabel.setStyle("-fx-text-fill: #a6e3a1; -fx-font-family: 'Consolas', monospace;"
-                + " -fx-font-size: 12px; -fx-line-spacing: 4px;");
-        });
-
-        HBox botonBox = new HBox(btnSimular);
-        botonBox.setAlignment(Pos.CENTER_LEFT);
-
-        resultadoLabel = new Label("Ingresa valores y presiona Simular.");
-        resultadoLabel.setStyle("-fx-text-fill: #a6adc8; -fx-font-family: 'Consolas', monospace;"
-            + " -fx-font-size: 12px;");
-
-        simPanel.getChildren().addAll(inputs, botonBox, resultadoLabel);
-    }
-
-    // ─── Evaluar condición (expresión relacional) ───
-    private boolean evaluarCondicion(Expresion cond, Map<String, Double> memoria) {
-        if (cond instanceof Binaria b) {
-            String op = b.operador;
-            double izq = evaluarNumero(b.izquierda, memoria);
-            double der = evaluarNumero(b.derecha, memoria);
-            return switch (op) {
-                case ">"  -> izq > der;
-                case "<"  -> izq < der;
-                case "==" -> Math.abs(izq - der) < 1e-9;
-                case ">=" -> izq >= der;
-                case "<=" -> izq <= der;
-                case "!=" -> Math.abs(izq - der) >= 1e-9;
-                default   -> false;
-            };
-        }
-        return false;
-    }
-
-    // ─── Evaluar expresión numérica ───
-    private double evaluarNumero(Expresion e, Map<String, Double> memoria) {
-        if (e instanceof Numero n) return n.valor;
-        if (e instanceof Variable v) {
-            Double val = memoria.get(v.nombre);
-            if (val == null) return 0.0;
-            return val;
-        }
-        if (e instanceof Binaria b) {
-            double izq = evaluarNumero(b.izquierda, memoria);
-            double der = evaluarNumero(b.derecha, memoria);
-            return switch (b.operador) {
-                case "+" -> izq + der;
-                case "-" -> izq - der;
-                case "*" -> izq * der;
-                case "/" -> der != 0 ? izq / der : 0;
-                default  -> 0;
-            };
-        }
-        if (e instanceof Negacion n) return -evaluarNumero(n.expresion, memoria);
-        if (e instanceof Abs a) return Math.abs(evaluarNumero(a.expresion, memoria));
-        return 0.0;
-    }
-
     // ─── Barra de estado ───
-    private void actualizarStatus(int numTokens, int numErroresLex, String errorSint) {
-        int totalErrores = numErroresLex + (errorSint != null ? 1 : 0);
+    private void actualizarStatus(int numTokens, int numErroresLex, int numErroresSint) {
+        int totalErrores = numErroresLex + numErroresSint;
         String color = totalErrores > 0 ? "#f38ba8" : "#a6e3a1";
         statusLabel.setStyle("-fx-text-fill: " + color
-            + "; -fx-background-color: #181825;"
-            + " -fx-padding: 4 12; -fx-font-family: 'Consolas', monospace; -fx-font-size: 11;");
+            + "; -fx-font-family: 'Consolas', monospace; -fx-font-size: 11;");
         statusLabel.setText("  Tokens: " + numTokens
             + "  |  Errores: " + totalErrores
-            + "  |  " + (errorSint != null ? "✖ CON ERRORES" : "✅ OK"));
+            + "  |  " + (totalErrores > 0 ? "CON ERRORES" : "OK"));
     }
 
     private void actualizarStatusCursor() {
@@ -589,7 +549,6 @@ public class AppController {
                 columna++;
             }
         }
-        // No sobreescribir el estado de análisis
         String current = statusLabel.getText();
         if (current.contains("|  ")) {
             String analisis = current.substring(current.lastIndexOf("|"));
@@ -598,7 +557,7 @@ public class AppController {
     }
 
     // =============================================================
-    //  ACCIONES DE MENÚ
+    //  ACCIONES
     // =============================================================
 
     private void nuevoArchivo() {
@@ -654,19 +613,6 @@ public class AppController {
         }
     }
 
-    private void mostrarAcerca() {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("Acerca de Timotomata");
-        alert.setHeaderText("Compilador Timotomata v1.0");
-        alert.setContentText("Lenguaje de programación para simulación de sensores.\n\n"
-            + "Características:\n"
-            + "• Análisis léxico basado en AFD\n"
-            + "• Análisis sintáctico con gramática LL(1)\n"
-            + "• Validación en tiempo real\n"
-            + "• Simulación interactiva de sensores");
-        alert.showAndWait();
-    }
-
     private void cargarEjemploPorDefecto() {
         editor.setText(
             "sensor voltaje;\n"
@@ -678,7 +624,11 @@ public class AppController {
             + "si voltaje <= minimo entonces estado = CAIDA;\n"
             + "si temperatura > 80 entonces estado = INESTABLE;\n"
             + "\n"
-            + "FIN\n"
+            + "calcular voltaje , SENO , AMPLITUD 300 , FRECUENCIA 0.1 ;\n"
+            + "calcular voltaje , PROMEDIO , VENTANA 5 ;\n"
+            + "calcular voltaje , MAXIMO ;\n"
+            + "calcular temperatura , COSENO , AMPLITUD 100 , FRECUENCIA 0.05 ;\n"
+            + "calcular mezcla , SUMA , CON voltaje , CON temperatura ;\n"
         );
     }
 
@@ -692,18 +642,5 @@ public class AppController {
         alert.setHeaderText(null);
         alert.setContentText(msg);
         alert.showAndWait();
-    }
-
-    // =============================================================
-    //  SIMULACIÓN (invocada desde menú)
-    // =============================================================
-    private void ejecutarSimulacion() {
-        // El panel de simulación se actualiza automáticamente con cada análisis
-        analizarCodigo();
-        // Hacer scroll al panel de simulación (no es posible directamente,
-        // pero podemos mostrar un mensaje)
-        resultadoLabel.setText("✅ Simulación lista. Ingresa valores arriba y presiona '▶ Simular'.");
-        resultadoLabel.setStyle("-fx-text-fill: #a6e3a1; -fx-font-family: 'Consolas', monospace;"
-            + " -fx-font-size: 12px;");
     }
 }

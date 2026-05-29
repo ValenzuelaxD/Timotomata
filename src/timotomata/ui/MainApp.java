@@ -18,16 +18,18 @@ public class MainApp extends Application {
 
         Scene scene = new Scene(controller.getRoot(), 1200, 750);
 
-        // Cargar CSS desde el sistema de archivos
+        // Cargar CSS desde el classpath (funciona desde cualquier directorio)
         try {
-            File cssFile = new File("src/timotomata/ui/estilos.css");
-            if (cssFile.exists()) {
-                scene.getStylesheets().add(cssFile.toURI().toURL().toExternalForm());
+            var cssUrl = getClass().getResource("estilos.css");
+            if (cssUrl != null) {
+                scene.getStylesheets().add(cssUrl.toExternalForm());
             } else {
-                // Fallback: buscar en el directorio de trabajo actual
-                cssFile = new File("out/timotomata/ui/estilos.css");
+                // Fallback: buscar en sistema de archivos
+                File cssFile = new File("src/timotomata/ui/estilos.css");
                 if (cssFile.exists()) {
                     scene.getStylesheets().add(cssFile.toURI().toURL().toExternalForm());
+                } else {
+                    System.err.println("Advertencia: No se encontro estilos.css");
                 }
             }
         } catch (Exception e) {

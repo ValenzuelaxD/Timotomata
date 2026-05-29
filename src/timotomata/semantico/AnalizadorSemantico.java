@@ -26,6 +26,10 @@ public class AnalizadorSemantico {
         for (Regla r : programa.reglas) {
             validar(r.condicion);
         }
+
+        for (Calculo c : programa.calculos) {
+            validarCalculo(c);
+        }
     }
 
     void validar(Expresion expr) {
@@ -44,6 +48,21 @@ public class AnalizadorSemantico {
 
         if (expr instanceof Abs a) {
             validar(a.expresion);
+        }
+    }
+
+    void validarCalculo(Calculo c) {
+        // Validar que el sensor destino exista
+        if (!sensores.contains(c.sensor)) {
+            errores.add("CALCULAR: sensor '" + c.sensor + "' no declarado");
+            return; // No seguir validando si el sensor no existe
+        }
+
+        // Validar parámetros CON: el sensor referenciado debe existir
+        for (Parametro p : c.parametros) {
+            if (p.nombre.equals("con") && !sensores.contains(p.valor)) {
+                errores.add("CALCULAR: sensor '" + p.valor + "' no declarado");
+            }
         }
     }
 }

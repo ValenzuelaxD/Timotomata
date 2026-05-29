@@ -1,10 +1,9 @@
 {
-  "java.project.referencedLibraries": [
-    "javafx-sdk-23.0.2/lib/*.jar"
-  ],
-  "java.project.sourcePaths": [
-    "src"
-  ],
-  "java.project.outputPath": "out",
-  "java.debug.settings.onBuildFailureProceed": true
+    "java.project.sourcePaths": ["src"],
+    "java.project.outputPath": "out",
+    "java.project.referencedLibraries": [
+        "javafx-sdk-23.0.2/lib/**/*.jar"
+    ],
+    "java.inlayHints.parameterNames.enabled": "none",
+    "java.configuration.updateBuildConfiguration": "automatic"
 }

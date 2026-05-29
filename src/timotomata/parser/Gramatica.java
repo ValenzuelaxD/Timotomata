@@ -15,6 +15,7 @@ import timotomata.lexer.TipoToken;
  *   SENTENCIA     → SENSOR ID PUNTO_COMA
  *                 | UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA
  *                 | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
+ *                 | CALCULAR ID COMA TIPO_OP COMA LISTA_PARAMS PUNTO_COMA
  *
  *   VALOR_UMBRAL  → MENOS NUMERO
  *                 | NUMERO
@@ -39,8 +40,16 @@ import timotomata.lexer.TipoToken;
  *   OP_REL        → MAYOR | MENOR | IGUAL_IGUAL
  *                 | MAYOR_IGUAL | MENOR_IGUAL | DIFERENTE
  *
- * La gramática está factorizada por la izquierda y sin recursión
- * izquierda directa, por lo que es LL(1).
+ *   TIPO_OP       → SENO | COSENO | CUADRADA | PROMEDIO | MAXIMO | SUMA
+ *
+ *   LISTA_PARAMS  → PARAM COMA LISTA_PARAMS
+ *                 | PARAM
+ *                 | ε
+ *
+ *   PARAM         → AMPLITUD NUMERO
+ *                 | FRECUENCIA NUMERO
+ *                 | VENTANA NUMERO
+ *                 | CON ID
  */
 public class Gramatica {
 
@@ -57,54 +66,71 @@ public class Gramatica {
         TERMINO       = 6,
         TERMINO_SIG   = 7,
         FACTOR        = 8,
-        OP_REL        = 9;
+        OP_REL        = 9,
+        TIPO_OP       = 10,
+        LISTA_PARAMS  = 11,
+        PARAM         = 12;
 
-    public static final int NUM_NT = 10;
+    public static final int NUM_NT = 13;
 
     public static final String[] NOMBRES_NT = {
         "PROGRAMA", "SENTENCIA", "VALOR_UMBRAL",
         "CONDICION", "EXPRESION", "EXPRESION_SIG",
-        "TERMINO", "TERMINO_SIG", "FACTOR", "OP_REL"
+        "TERMINO", "TERMINO_SIG", "FACTOR", "OP_REL",
+        "TIPO_OP", "LISTA_PARAMS", "PARAM"
     };
 
     // ============================================================
     //  IDs DE PRODUCCIONES
     // ============================================================
     public static final int
-        P_PROGRAMA_REC  = 0,
-        P_PROGRAMA_EPS  = 1,
-        P_SENT_SENSOR   = 2,
-        P_SENT_UMBRAL   = 3,
-        P_SENT_SI       = 4,
-        P_VALOR_NEG     = 5,
-        P_VALOR_POS     = 6,
-        P_COND          = 7,
-        P_EXPR          = 8,
-        P_EXPR_SIG_MAS  = 9,
-        P_EXPR_SIG_MENOS=10,
-        P_EXPR_SIG_EPS  =11,
-        P_TERM          =12,
-        P_TERM_SIG_POR  =13,
-        P_TERM_SIG_DIV  =14,
-        P_TERM_SIG_EPS  =15,
-        P_FACT_NUM      =16,
-        P_FACT_ID       =17,
-        P_FACT_ABS      =18,
-        P_FACT_MENOS    =19,
-        P_OP_MAYOR      =20,
-        P_OP_MENOR      =21,
-        P_OP_IGUAL      =22,
-        P_OP_MAYIG      =23,
-        P_OP_MENIG      =24,
-        P_OP_DIF        =25;
+        P_PROGRAMA_REC    = 0,
+        P_PROGRAMA_EPS    = 1,
+        P_SENT_SENSOR     = 2,
+        P_SENT_UMBRAL     = 3,
+        P_SENT_SI         = 4,
+        P_SENT_CALCULAR   = 5,
+        P_VALOR_NEG       = 6,
+        P_VALOR_POS       = 7,
+        P_COND            = 8,
+        P_EXPR            = 9,
+        P_EXPR_SIG_MAS    = 10,
+        P_EXPR_SIG_MENOS  = 11,
+        P_EXPR_SIG_EPS    = 12,
+        P_TERM            = 13,
+        P_TERM_SIG_POR    = 14,
+        P_TERM_SIG_DIV    = 15,
+        P_TERM_SIG_EPS    = 16,
+        P_FACT_NUM        = 17,
+        P_FACT_ID         = 18,
+        P_FACT_ABS        = 19,
+        P_FACT_MENOS      = 20,
+        P_OP_MAYOR        = 21,
+        P_OP_MENOR        = 22,
+        P_OP_IGUAL        = 23,
+        P_OP_MAYIG        = 24,
+        P_OP_MENIG        = 25,
+        P_OP_DIF          = 26,
+        P_TIPO_SENO       = 27,
+        P_TIPO_COSENO     = 28,
+        P_TIPO_CUADRADA   = 29,
+        P_TIPO_PROMEDIO   = 30,
+        P_TIPO_MAXIMO     = 31,
+        P_TIPO_SUMA       = 32,
+        P_PARAMS_REC      = 33,
+        P_PARAMS_EPS      = 34,
+        P_PARAM_AMPL      = 35,
+        P_PARAM_FREC      = 36,
+        P_PARAM_VENT      = 37,
+        P_PARAM_CON       = 38;
 
-    public static final int NUM_PROD = 26;
+    public static final int NUM_PROD = 39;
 
     // ============================================================
     //  CODIFICACIÓN DE SÍMBOLOS
     // ============================================================
     // Terminal: ordinal de TipoToken (0..22)
-    // No terminal: -(id + 1) → valores negativos (-1..-10)
+    // No terminal: -(id + 1) → valores negativos (-1..-13)
     static int T(TipoToken t) { return t.ordinal(); }
     static int NT(int nt)     { return -(nt + 1); }
     static boolean esTerminal(int sym)   { return sym >= 0; }
@@ -114,7 +140,6 @@ public class Gramatica {
     //  PRODUCCIONES
     // ============================================================
     // Cada producción: { cabeza_nt_codificado, sym1, sym2, ... }
-    // Donde cabeza_nt_codificado = NT(id_del_no_terminal)
     public static final int[][] PRODUCCIONES = {
         /*  0 */ { NT(PROGRAMA),     NT(SENTENCIA), NT(PROGRAMA) },
         /*  1 */ { NT(PROGRAMA) },                                    // ε
@@ -128,38 +153,57 @@ public class Gramatica {
                                        T(TipoToken.ENTONCES),    T(TipoToken.ESTADO),
                                        T(TipoToken.ASIGNACION),  T(TipoToken.ESTADO_SISTEMA),
                                        T(TipoToken.PUNTO_COMA) },
+        /*  5 */ { NT(SENTENCIA),    T(TipoToken.CALCULAR),     T(TipoToken.ID),
+                                       T(TipoToken.COMA),        NT(TIPO_OP),
+                                       NT(LISTA_PARAMS),
+                                       T(TipoToken.PUNTO_COMA) },
 
-        /*  5 */ { NT(VALOR_UMBRAL), T(TipoToken.MENOS),       T(TipoToken.NUMERO) },
-        /*  6 */ { NT(VALOR_UMBRAL), T(TipoToken.NUMERO) },
+        /*  6 */ { NT(VALOR_UMBRAL), T(TipoToken.MENOS),       T(TipoToken.NUMERO) },
+        /*  7 */ { NT(VALOR_UMBRAL), T(TipoToken.NUMERO) },
 
-        /*  7 */ { NT(CONDICION),    NT(EXPRESION), NT(OP_REL), NT(EXPRESION) },
+        /*  8 */ { NT(CONDICION),    NT(EXPRESION), NT(OP_REL), NT(EXPRESION) },
 
-        /*  8 */ { NT(EXPRESION),    NT(TERMINO), NT(EXPRESION_SIG) },
-        /*  9 */ { NT(EXPRESION_SIG), T(TipoToken.MAS),         NT(TERMINO),
+        /*  9 */ { NT(EXPRESION),    NT(TERMINO), NT(EXPRESION_SIG) },
+        /* 10 */ { NT(EXPRESION_SIG), T(TipoToken.MAS),         NT(TERMINO),
                                        NT(EXPRESION_SIG) },
-        /* 10 */ { NT(EXPRESION_SIG), T(TipoToken.MENOS),       NT(TERMINO),
+        /* 11 */ { NT(EXPRESION_SIG), T(TipoToken.MENOS),       NT(TERMINO),
                                        NT(EXPRESION_SIG) },
-        /* 11 */ { NT(EXPRESION_SIG) },                              // ε
+        /* 12 */ { NT(EXPRESION_SIG) },                              // ε
 
-        /* 12 */ { NT(TERMINO),      NT(FACTOR), NT(TERMINO_SIG) },
-        /* 13 */ { NT(TERMINO_SIG),  T(TipoToken.POR),          NT(FACTOR),
+        /* 13 */ { NT(TERMINO),      NT(FACTOR), NT(TERMINO_SIG) },
+        /* 14 */ { NT(TERMINO_SIG),  T(TipoToken.POR),          NT(FACTOR),
                                        NT(TERMINO_SIG) },
-        /* 14 */ { NT(TERMINO_SIG),  T(TipoToken.DIV),          NT(FACTOR),
+        /* 15 */ { NT(TERMINO_SIG),  T(TipoToken.DIV),          NT(FACTOR),
                                        NT(TERMINO_SIG) },
-        /* 15 */ { NT(TERMINO_SIG) },                               // ε
+        /* 16 */ { NT(TERMINO_SIG) },                               // ε
 
-        /* 16 */ { NT(FACTOR),       T(TipoToken.NUMERO) },
-        /* 17 */ { NT(FACTOR),       T(TipoToken.ID) },
-        /* 18 */ { NT(FACTOR),       T(TipoToken.ABS),          T(TipoToken.PAREN_IZQ),
+        /* 17 */ { NT(FACTOR),       T(TipoToken.NUMERO) },
+        /* 18 */ { NT(FACTOR),       T(TipoToken.ID) },
+        /* 19 */ { NT(FACTOR),       T(TipoToken.ABS),          T(TipoToken.PAREN_IZQ),
                                        NT(EXPRESION),            T(TipoToken.PAREN_DER) },
-        /* 19 */ { NT(FACTOR),       T(TipoToken.MENOS),        NT(FACTOR) },
+        /* 20 */ { NT(FACTOR),       T(TipoToken.MENOS),        NT(FACTOR) },
 
-        /* 20 */ { NT(OP_REL),       T(TipoToken.MAYOR) },
-        /* 21 */ { NT(OP_REL),       T(TipoToken.MENOR) },
-        /* 22 */ { NT(OP_REL),       T(TipoToken.IGUAL_IGUAL) },
-        /* 23 */ { NT(OP_REL),       T(TipoToken.MAYOR_IGUAL) },
-        /* 24 */ { NT(OP_REL),       T(TipoToken.MENOR_IGUAL) },
-        /* 25 */ { NT(OP_REL),       T(TipoToken.DIFERENTE) },
+        /* 21 */ { NT(OP_REL),       T(TipoToken.MAYOR) },
+        /* 22 */ { NT(OP_REL),       T(TipoToken.MENOR) },
+        /* 23 */ { NT(OP_REL),       T(TipoToken.IGUAL_IGUAL) },
+        /* 24 */ { NT(OP_REL),       T(TipoToken.MAYOR_IGUAL) },
+        /* 25 */ { NT(OP_REL),       T(TipoToken.MENOR_IGUAL) },
+        /* 26 */ { NT(OP_REL),       T(TipoToken.DIFERENTE) },
+
+        /* 27 */ { NT(TIPO_OP),      T(TipoToken.SENO) },
+        /* 28 */ { NT(TIPO_OP),      T(TipoToken.COSENO) },
+        /* 29 */ { NT(TIPO_OP),      T(TipoToken.CUADRADA) },
+        /* 30 */ { NT(TIPO_OP),      T(TipoToken.PROMEDIO) },
+        /* 31 */ { NT(TIPO_OP),      T(TipoToken.MAXIMO) },
+        /* 32 */ { NT(TIPO_OP),      T(TipoToken.SUMA) },
+
+        /* 33 */ { NT(LISTA_PARAMS), T(TipoToken.COMA), NT(PARAM), NT(LISTA_PARAMS) },
+        /* 34 */ { NT(LISTA_PARAMS) },                               // ε
+
+        /* 36 */ { NT(PARAM),        T(TipoToken.AMPLITUD),    T(TipoToken.NUMERO) },
+        /* 37 */ { NT(PARAM),        T(TipoToken.FRECUENCIA),  T(TipoToken.NUMERO) },
+        /* 38 */ { NT(PARAM),        T(TipoToken.VENTANA),     T(TipoToken.NUMERO) },
+        /* 39 */ { NT(PARAM),        T(TipoToken.CON),         T(TipoToken.ID) },
     };
 
     // ============================================================
@@ -187,22 +231,18 @@ public class Gramatica {
 
     // ============================================================
     //  CÁLCULO DE FIRST
-    //  Algoritmo de punto fijo:
-    //    - Para cada producción A → α:
-    //      FIRST(A) ⊇ FIRST(α)
     // ============================================================
     static void calcularFIRST() {
         boolean cambios;
         do {
             cambios = false;
             for (int[] prod : PRODUCCIONES) {
-                int cabeza = idNoTerminal(prod[0]);  // ← BUG FIX: decodificar
+                int cabeza = idNoTerminal(prod[0]);
                 boolean todoEpsilon = true;
 
                 for (int i = 1; i < prod.length; i++) {
                     int sym = prod[i];
                     if (esTerminal(sym)) {
-                        // Terminal: añadirlo directamente
                         if (!FIRST[cabeza].get(sym)) {
                             FIRST[cabeza].set(sym);
                             cambios = true;
@@ -211,7 +251,6 @@ public class Gramatica {
                         break;
                     } else {
                         int nt = idNoTerminal(sym);
-                        // Añadir FIRST[nt] - {ε} a FIRST[cabeza]
                         for (int t = FIRST[nt].nextSetBit(0); t >= 0;
                                 t = FIRST[nt].nextSetBit(t + 1)) {
                             if (!FIRST[cabeza].get(t)) {
@@ -223,7 +262,6 @@ public class Gramatica {
                             todoEpsilon = false;
                             break;
                         }
-                        // ε ∈ FIRST[nt] → continuar con el siguiente símbolo
                     }
                 }
 
@@ -237,11 +275,6 @@ public class Gramatica {
 
     // ============================================================
     //  CÁLCULO DE FOLLOW
-    //  Algoritmo de punto fijo:
-    //    1. $ ∈ FOLLOW(PROGRAMA)
-    //    2. Para A → α B β: FIRST(β) - {ε} ⊆ FOLLOW(B)
-    //    3. Para A → α B (o A → α B β con ε ∈ FIRST(β)):
-    //       FOLLOW(A) ⊆ FOLLOW(B)
     // ============================================================
     static void calcularFOLLOW() {
         FOLLOW[PROGRAMA].set(TipoToken.EOF.ordinal());
@@ -250,14 +283,13 @@ public class Gramatica {
         do {
             cambios = false;
             for (int[] prod : PRODUCCIONES) {
-                int cabeza = idNoTerminal(prod[0]);  // ← BUG FIX: decodificar
+                int cabeza = idNoTerminal(prod[0]);
 
                 for (int i = 1; i < prod.length; i++) {
                     int sym = prod[i];
                     if (esNoTerminal(sym)) {
                         int nt = idNoTerminal(sym);
 
-                        // Calcular FIRST(β) donde β = prod[i+1..]
                         BitSet firstBeta = new BitSet();
                         boolean betaEpsilon = true;
                         for (int j = i + 1; j < prod.length; j++) {
@@ -279,7 +311,6 @@ public class Gramatica {
                             }
                         }
 
-                        // Añadir FIRST(β) a FOLLOW[nt]
                         for (int t = firstBeta.nextSetBit(0); t >= 0;
                                 t = firstBeta.nextSetBit(t + 1)) {
                             if (!FOLLOW[nt].get(t)) {
@@ -288,7 +319,6 @@ public class Gramatica {
                             }
                         }
 
-                        // Si β =>* ε, añadir FOLLOW[cabeza] a FOLLOW[nt]
                         if (betaEpsilon) {
                             for (int t = FOLLOW[cabeza].nextSetBit(0); t >= 0;
                                     t = FOLLOW[cabeza].nextSetBit(t + 1)) {
@@ -306,16 +336,12 @@ public class Gramatica {
 
     // ============================================================
     //  CONSTRUCCIÓN DE LA TABLA LL(1)
-    //  Para cada producción A → α:
-    //    1. Para cada t ∈ FIRST(α): TABLA[A][t] = prod
-    //    2. Si ε ∈ FIRST(α): para cada t ∈ FOLLOW[A]: TABLA[A][t] = prod
     // ============================================================
     static void construirTabla() {
         for (int p = 0; p < PRODUCCIONES.length; p++) {
             int[] prod = PRODUCCIONES[p];
-            int cabeza = idNoTerminal(prod[0]);  // ← BUG FIX: decodificar
+            int cabeza = idNoTerminal(prod[0]);
 
-            // Calcular FIRST(cuerpo)
             BitSet firstCuerpo = new BitSet();
             boolean cuerpoEpsilon = true;
             for (int i = 1; i < prod.length; i++) {
@@ -337,13 +363,11 @@ public class Gramatica {
                 }
             }
 
-            // Para cada t ∈ FIRST(cuerpo): TABLA[cabeza][t] = p
             for (int t = firstCuerpo.nextSetBit(0); t >= 0;
                     t = firstCuerpo.nextSetBit(t + 1)) {
                 TABLA[cabeza][t] = p;
             }
 
-            // Si ε ∈ FIRST(cuerpo): para cada t ∈ FOLLOW[cabeza]: TABLA[cabeza][t] = p
             if (cuerpoEpsilon) {
                 for (int t = FOLLOW[cabeza].nextSetBit(0); t >= 0;
                         t = FOLLOW[cabeza].nextSetBit(t + 1)) {
@@ -379,6 +403,5 @@ public class Gramatica {
         return sb.toString();
     }
 
-    // Auxiliar para ver si un símbolo es no terminal
     static boolean esNoTerminal(int sym) { return sym < 0; }
 }
