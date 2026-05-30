@@ -2,21 +2,16 @@ package timotomata.lexer;
 
 import java.util.*;
 
-// ============================================================
-//  ANALIZADOR LÉXICO BASADO EN AFD CON TABLA DE TRANSICIONES
-// ============================================================
-//
-//  ❖ Alfabeto  : 17 clases de caracteres (LETRA, DIGITO, etc.)
-//  ❖ Estados   : 13 estados (Q0 inicial, Q_ID, Q_NUM, ...)
-//  ❖ Transición: TABLA_TRANS[estado][clase] → siguiente estado
-//  ❖ Aceptación: esAceptacion[estado] = true/false
-//  ❖ Maximal Munch : se avanza mientras haya transición;
-//       al no haber, se retrocede al último estado de aceptación.
-// ============================================================
+
+
+// Alfabeto  : 17 clases de caracteres (LETRA, DIGITO, etc.)
+// Estados   : 13 estados (Q0 inicial, Q_ID, Q_NUM, ...)
+// Transición: TABLA_TRANS[estado][clase] - siguiente estado
+
 
 public class Lexer {
 
-    // ---- 1. ALFABETO (clases de caracteres) ----
+    //  1. ALFABETO (clases de caracteres) 
     public static final int
         LETRA = 0,  DIGITO = 1,  PUNTO = 2,
         ESP = 3,    NL = 4,
@@ -25,7 +20,7 @@ public class Lexer {
         PUNTOCOMA = 13, PIZQ = 14, PDER = 15, COMA_ = 16, OTRO = 17;
     public static final int NUM_CLASES = 18;
 
-    // ---- 2. ESTADOS DEL AFD ----
+    //  2. ESTADOS DEL AFD 
     public static final int
         Q0 = 0,             // Estado inicial
         Q_ID = 1,           // Leyendo identificador / palabra reservada
@@ -43,13 +38,13 @@ public class Lexer {
     public static final int NUM_ESTADOS = 13;
     public static final int SIN_TRANS = -1;
 
-    // ---- 3. FUNCIÓN DE TRANSICIÓN ────────────────────────────
+    //  3. FUNCIÓN DE TRANSICIÓN 
     // TABLA_TRANS[estado][clase] = siguiente estado
     // SIN_TRANS = transición no definida (estado muerto)
-    // ───────────────────────────────────────────────────────────
+
     public static final int[][] TABLA_TRANS = new int[NUM_ESTADOS][NUM_CLASES];
 
-    // ---- 4. ESTADOS DE ACEPTACIÓN ----
+    //  4. ESTADOS DE ACEPTACIÓN 
     // Los estados que, al no poder avanzar, producen un token.
     public static final boolean[] ES_ACEPTACION = new boolean[NUM_ESTADOS];
 
@@ -57,7 +52,7 @@ public class Lexer {
         // Inicializar todo a SIN_TRANS
         for (int[] fila : TABLA_TRANS) Arrays.fill(fila, SIN_TRANS);
 
-        // ─── Transiciones desde Q0 (estado inicial) ───
+        // Transiciones desde Q0 (estado inicial)
         TABLA_TRANS[Q0][LETRA]    = Q_ID;
         TABLA_TRANS[Q0][DIGITO]   = Q_NUM;
         TABLA_TRANS[Q0][ESP]      = Q0;      // ignorar espacios
@@ -74,60 +69,60 @@ public class Lexer {
         TABLA_TRANS[Q0][PIZQ]     = Q0;      // token directo
         TABLA_TRANS[Q0][PDER]     = Q0;      // token directo
         TABLA_TRANS[Q0][COMA_]    = Q0;      // token directo
-        // OTRO → SIN_TRANS (error léxico)
+        
 
-        // ─── Transiciones desde Q_ID ───
+        //  Transiciones desde Q_ID 
         TABLA_TRANS[Q_ID][LETRA]  = Q_ID;
         TABLA_TRANS[Q_ID][DIGITO] = Q_ID;
         ES_ACEPTACION[Q_ID] = true;
 
-        // ─── Transiciones desde Q_NUM (parte entera) ───
+        //  Transiciones desde Q_NUM (parte entera) 
         TABLA_TRANS[Q_NUM][DIGITO] = Q_NUM;
         TABLA_TRANS[Q_NUM][PUNTO]  = Q_NUM_PUNTO;
         ES_ACEPTACION[Q_NUM] = true;
 
-        // ─── Transiciones desde Q_NUM_PUNTO (acabamos de ver .) ───
+        //  Transiciones desde Q_NUM_PUNTO (acabamos de ver .) 
         TABLA_TRANS[Q_NUM_PUNTO][DIGITO] = Q_NUM_DEC;
         // Si viene otro '.' → SIN_TRANS (error: segundo punto decimal)
 
-        // ─── Transiciones desde Q_NUM_DEC (parte decimal) ───
+        //  Transiciones desde Q_NUM_DEC (parte decimal) 
         TABLA_TRANS[Q_NUM_DEC][DIGITO] = Q_NUM_DEC;
         ES_ACEPTACION[Q_NUM_DEC] = true;
 
-        // ─── Transiciones desde Q_EQ (vimos =) ───
+        //  Transiciones desde Q_EQ (vimos =) 
         TABLA_TRANS[Q_EQ][IGUAL] = Q0;   // ==   → token IGUAL_IGUAL
         // Cualquier otra cosa → SIN_TRANS → retroceder y emitir ASIGNACION
 
-        // ─── Transiciones desde Q_GT (vimos >) ───
+        //  Transiciones desde Q_GT (vimos >) 
         TABLA_TRANS[Q_GT][IGUAL] = Q0;   // >=   → token MAYOR_IGUAL
 
-        // ─── Transiciones desde Q_LT (vimos <) ───
+        //  Transiciones desde Q_LT (vimos <) 
         TABLA_TRANS[Q_LT][IGUAL] = Q0;   // <=   → token MENOR_IGUAL
         TABLA_TRANS[Q_LT][MAYOR_] = Q0;  // <>   → token DIFERENTE
 
-        // ─── Transiciones desde Q_NOT (vimos !) ───
+        //  Transiciones desde Q_NOT (vimos !) 
         TABLA_TRANS[Q_NOT][IGUAL] = Q0;  // !=   → token DIFERENTE
 
-        // ─── Transiciones desde Q_DIV (vimos /) ───
+        //  Transiciones desde Q_DIV (vimos /) 
         TABLA_TRANS[Q_DIV][DIV] = Q_COM_LINEA;  // //   → comentario de línea
         TABLA_TRANS[Q_DIV][POR] = Q_COM_BLOQ;    // /*   → comentario de bloque
         // Cualquier otra cosa → SIN_TRANS → retroceder y emitir DIV
 
-        // ─── Transiciones desde Q_COM_LINEA (//) ───
+        //  Transiciones desde Q_COM_LINEA (//) 
         // Todo se queda en Q_COM_LINEA excepto NL que vuelve a Q0
         for (int c = 0; c < NUM_CLASES; c++) {
             if (c != NL) TABLA_TRANS[Q_COM_LINEA][c] = Q_COM_LINEA;
         }
         TABLA_TRANS[Q_COM_LINEA][NL] = Q0;
 
-        // ─── Transiciones desde Q_COM_BLOQ (/*) ───
+        //  Transiciones desde Q_COM_BLOQ (/*) 
         // Todo se queda salvo POR que va a Q_COM_BLOQ_FIN
         for (int c = 0; c < NUM_CLASES; c++) {
             if (c != POR) TABLA_TRANS[Q_COM_BLOQ][c] = Q_COM_BLOQ;
         }
         TABLA_TRANS[Q_COM_BLOQ][POR] = Q_COM_BLOQ_FIN;
 
-        // ─── Transiciones desde Q_COM_BLOQ_FIN (vimos * dentro de /*) ───
+        //  Transiciones desde Q_COM_BLOQ_FIN (vimos * dentro de /*) 
         TABLA_TRANS[Q_COM_BLOQ_FIN][DIV] = Q0;           // */  → cierra comentario
         TABLA_TRANS[Q_COM_BLOQ_FIN][POR] = Q_COM_BLOQ_FIN; // **  → sigue esperando /
         for (int c = 0; c < NUM_CLASES; c++) {
@@ -175,20 +170,8 @@ public class Lexer {
         };
     }
 
-    // ---- 7. SIMULADOR DEL AFD ─────────────────────────────────
-    // Algoritmo:
-    //   1. Arrancar en Q0, marcar inicio del lexema.
-    //   2. Mientras haya transición definida:
-    //        - Consumir el carácter, seguir al siguiente estado.
-    //        - Si es estado de aceptación, recordar posición.
-    //        - Si vuelve a Q0 tras 1 carácter, emitir token directo.
-    //        - Si vuelve a Q0 tras 2+ caracteres (==, >=, etc.),
-    //          emitir token compuesto.
-    //   3. Si no hay transición:
-    //        - Si hay un último estado de aceptación, emitir ese
-    //          token y retroceder a esa posición.
-    //        - Si no, es error léxico.
-    // ───────────────────────────────────────────────────────────
+    // ---- 7. SIMULADOR DEL AFD 
+    
     public List<Token> escanear() {
         while (!fin()) {
             int inicio = actual;
@@ -211,7 +194,7 @@ public class Lexer {
                     linea++;
                 }
 
-                // ─── Caso 1: Transición a Q0 (token completado) ───
+                //  Caso 1: Transición a Q0 (token completado) 
                 if (sigEstado == Q0 && estado != Q0) {
                     if (estado == Q_COM_BLOQ_FIN && clase == DIV) {
                         // */ — comentario de bloque cerrado
@@ -235,13 +218,13 @@ public class Lexer {
 
                 estado = sigEstado;
 
-                // ─── Caso 2: Estado de aceptación ───
+                //  Caso 2: Estado de aceptación 
                 if (ES_ACEPTACION[estado]) {
                     ultimoAcept = estado;
                     posUltimaAcept = actual;
                 }
 
-                // ─── Caso 3: Token directo de 1 carácter ───
+                //  Caso 3: Token directo de 1 carácter 
                 if (estado == Q0 && actual - inicio == 1) {
                     String lexema = fuente.substring(inicio, actual);
                     int claseInicial = clasificar(lexema.charAt(0));
@@ -253,7 +236,7 @@ public class Lexer {
                 }
             }
 
-            // ─── Al salir del bucle ───
+            //  Al salir del bucle 
             if (inicio == actual && !fin()) {
                 char cActual = fuente.charAt(actual);
                 int claseActual = clasificar(cActual);
@@ -282,7 +265,7 @@ public class Lexer {
             }
         }
 
-        // ─── Mostrar errores acumulados ───
+        //  Mostrar errores acumulados 
         if (!erroresLexicos.isEmpty()) {
             System.out.println("\n===== ERRORES LÉXICOS =====");
             for (String err : erroresLexicos) {
@@ -294,7 +277,7 @@ public class Lexer {
         return tokens;
     }
 
-    // ---- 8. EMISIÓN DE TOKENS ─────────────────────────────────
+    // ---- 8. EMISIÓN DE TOKENS 
 
     void emitirToken(int estado, String lexema, int linea) {
         if (estado == Q_ID) {
@@ -369,7 +352,7 @@ public class Lexer {
         }
     }
 
-    // ---- 9. MÉTODOS AUXILIARES ─────────────────────────────────
+    // ---- 9. MÉTODOS AUXILIARES 
     char ver() {
         return fuente.charAt(actual);
     }

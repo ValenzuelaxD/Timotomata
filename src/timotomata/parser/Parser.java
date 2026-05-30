@@ -5,18 +5,7 @@ import timotomata.lexer.Token;
 import timotomata.lexer.TipoToken;
 import timotomata.parser.ast.*;
 
-/**
- * PARSER RECURSIVO DESCENDENTE BASADO EN GRAMÁTICA LL(1)
- * ======================================================
- *
- * Cada método no-terminal devuelve un NodoDerivacion con la
- * estructura del árbol de derivación, y opcionalmente produce
- * efectos secundarios para construir el AST (Programa).
- *
- * Para los métodos que antes devolvían Expresion, ahora se usa
- * el campo ultimoResultadoParser para pasar el valor semántico
- * al llamador.
- */
+
 public class Parser {
     private List<Token> tokens;
     private int actual = 0;
@@ -42,9 +31,9 @@ public class Parser {
         this.tokens = tokens;
     }
 
-    // ============================================================
+    
     //  PUNTO DE ENTRADA
-    // ============================================================
+    
     public Programa parsear() {
         programa = new Programa();
         erroresSintacticos.clear();
@@ -58,17 +47,17 @@ public class Parser {
         return programa;
     }
 
-    // ============================================================
+    
     //  AUXILIAR: crear nodo terminal para un token consumido
-    // ============================================================
+    
     private NodoDerivacion t(Token token) {
         return new NodoDerivacion(token.tipo.name() + "(" + token.lexema + ")");
     }
 
-    // ============================================================
+    
     //  NO TERMINAL: PROGRAMA
     //  PROGRAMA → SENTENCIA PROGRAMA | ε
-    // ============================================================
+    
     /**
      * PROGRAMA → SENTENCIA PROGRAMA | ε
      *
@@ -109,10 +98,8 @@ public class Parser {
         }
     }
 
-    /**
-     * Sincronización panic-mode: salta tokens hasta encontrar
-     * un punto y coma (;) o el inicio de una nueva sentencia.
-     */
+    // Modo panico
+     
     private void sincronizar() {
         while (actual < tokens.size()) {
             TipoToken t = tokens.get(actual).tipo;
@@ -129,13 +116,13 @@ public class Parser {
         }
     }
 
-    // ============================================================
+    
     //  NO TERMINAL: SENTENCIA
     //  SENTENCIA → SENSOR ID PUNTO_COMA
     //            | UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA
     //            | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
     //            | CALCULAR ID COMA TIPO_OP COMA LISTA_PARAMS PUNTO_COMA
-    // ============================================================
+    
     private void sentencia(NodoDerivacion nodo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.SENTENCIA, ver().tipo);
         if (prod == -1) {
@@ -214,11 +201,11 @@ public class Parser {
         }
     }
 
-    // ============================================================
+    
     //  NO TERMINAL: VALOR_UMBRAL
     //  VALOR_UMBRAL → MENOS NUMERO | NUMERO
     //  Devuelve NodoDerivacion, deja el valor double en ultimoValorSemantico
-    // ============================================================
+    
     private NodoDerivacion valorUmbral() {
         NodoDerivacion nodo = new NodoDerivacion("VALOR_UMBRAL");
         int prod = Gramatica.obtenerProduccion(Gramatica.VALOR_UMBRAL, ver().tipo);
@@ -245,10 +232,10 @@ public class Parser {
         return nodo;
     }
 
-    // ============================================================
+    
     //  NO TERMINAL: CONDICION
     //  CONDICION → EXPRESION OP_REL EXPRESION
-    // ============================================================
+    
     private NodoDerivacion condicion() {
         NodoDerivacion nodo = new NodoDerivacion("CONDICION");
         int prod = Gramatica.obtenerProduccion(Gramatica.CONDICION, ver().tipo);
@@ -272,10 +259,10 @@ public class Parser {
         return nodo;
     }
 
-    // ============================================================
+    
     //  NO TERMINAL: OP_REL
     //  OP_REL → MAYOR | MENOR | IGUAL_IGUAL | ...
-    // ============================================================
+    
     private NodoDerivacion operadorRelacional() {
         NodoDerivacion nodo = new NodoDerivacion("OP_REL");
         int prod = Gramatica.obtenerProduccion(Gramatica.OP_REL, ver().tipo);
@@ -318,10 +305,10 @@ public class Parser {
         return nodo;
     }
 
-    // ============================================================
+    
     //  NO TERMINAL: EXPRESION
     //  EXPRESION → TERMINO EXPRESION_SIG
-    // ============================================================
+    
     private NodoDerivacion expresion() {
         NodoDerivacion nodo = new NodoDerivacion("EXPRESION");
         NodoDerivacion nTerm = termino();
@@ -333,9 +320,9 @@ public class Parser {
         return nodo;
     }
 
-    // ============================================================
+    
     //  EXPRESION_SIG → MAS TERMINO EXPRESION_SIG | MENOS TERMINO EXPRESION_SIG | ε
-    // ============================================================
+    
     private NodoDerivacion expresionSig(Expresion izquierda) {
         NodoDerivacion nodo = new NodoDerivacion("EXPRESION_SIG");
         int prod = Gramatica.obtenerProduccion(Gramatica.EXPRESION_SIG, ver().tipo);
@@ -373,10 +360,10 @@ public class Parser {
         return nodo;
     }
 
-    // ============================================================
+    
     //  NO TERMINAL: TERMINO
     //  TERMINO → FACTOR TERMINO_SIG
-    // ============================================================
+    
     private NodoDerivacion termino() {
         NodoDerivacion nodo = new NodoDerivacion("TERMINO");
         NodoDerivacion nFact = factor();
@@ -388,9 +375,9 @@ public class Parser {
         return nodo;
     }
 
-    // ============================================================
+    
     //  TERMINO_SIG → POR FACTOR TERMINO_SIG | DIV FACTOR TERMINO_SIG | ε
-    // ============================================================
+    
     private NodoDerivacion terminoSig(Expresion izquierda) {
         NodoDerivacion nodo = new NodoDerivacion("TERMINO_SIG");
         int prod = Gramatica.obtenerProduccion(Gramatica.TERMINO_SIG, ver().tipo);
@@ -427,10 +414,10 @@ public class Parser {
         return nodo;
     }
 
-    // ============================================================
+    
     //  NO TERMINAL: FACTOR
     //  FACTOR → NUMERO | ID | ABS(...) | MENOS FACTOR
-    // ============================================================
+    
     private NodoDerivacion factor() {
         NodoDerivacion nodo = new NodoDerivacion("FACTOR");
         int prod = Gramatica.obtenerProduccion(Gramatica.FACTOR, ver().tipo);
@@ -479,11 +466,11 @@ public class Parser {
         return nodo;
     }
 
-    // ============================================================
+    
     //  NO TERMINAL: TIPO_OP
     //  TIPO_OP → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER | ...
     //  Ahora recibe el Calculo para setear operacion y agregar parametros internamente
-    // ============================================================
+    
     private void tipoOp(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.TIPO_OP, ver().tipo);
         if (prod == -1) {
@@ -526,10 +513,10 @@ public class Parser {
         ultimoValorSemantico = opStr;
     }
 
-    // ============================================================
+    
     //  NO TERMINAL: LISTA_PARAMS
     //  LISTA_PARAMS → PARAM LISTA_PARAMS_SIG | ε
-    // ============================================================
+    
     private void listaParams(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.LISTA_PARAMS, ver().tipo);
         if (prod == -1) {
@@ -554,9 +541,9 @@ public class Parser {
         }
     }
 
-    // ============================================================
+    
     //  LISTA_PARAMS_SIG → COMA LISTA_PARAMS | ε
-    // ============================================================
+    
     private void listaParamsSig(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.LISTA_PARAMS_SIG, ver().tipo);
 
@@ -576,11 +563,11 @@ public class Parser {
         }
     }
 
-    // ============================================================
+    
     //  NO TERMINAL: PARAM
     //  PARAM → AMPLITUD ASIGNACION NUMERO | FRECUENCIA ASIGNACION NUMERO
     //        | VENTANA ASIGNACION NUMERO | CON ASIGNACION ID
-    // ============================================================
+    
     private void param(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.PARAM, ver().tipo);
         if (prod == -1) {
@@ -631,9 +618,9 @@ public class Parser {
         }
     }
 
-    // ============================================================
+    
     //  MÉTODOS AUXILIARES
-    // ============================================================
+    
     private Token consumir(TipoToken tipo, String mensaje) {
         if (verificar(tipo)) return avanzar();
         if (mensaje != null) throw error(mensaje + contexto());

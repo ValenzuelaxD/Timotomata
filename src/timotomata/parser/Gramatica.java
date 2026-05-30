@@ -60,9 +60,9 @@ import timotomata.lexer.TipoToken;
  */
 public class Gramatica {
 
-    // ============================================================
+    
     //  IDs DE NO TERMINALES
-    // ============================================================
+    
     public static final int
         PROGRAMA      = 0,
         SENTENCIA     = 1,
@@ -88,9 +88,9 @@ public class Gramatica {
         "TIPO_OP", "LISTA_PARAMS", "PARAM", "LISTA_PARAMS_SIG"
     };
 
-    // ============================================================
+    
     //  IDs DE PRODUCCIONES
-    // ============================================================
+    
     public static final int
         P_PROGRAMA_REC    = 0,
         P_PROGRAMA_EPS    = 1,
@@ -136,9 +136,9 @@ public class Gramatica {
 
     public static final int NUM_PROD = 41;
 
-    // ============================================================
+    
     //  CODIFICACIÓN DE SÍMBOLOS
-    // ============================================================
+    
     // Terminal: ordinal de TipoToken (0..22)
     // No terminal: -(id + 1) → valores negativos (-1..-13)
     static int T(TipoToken t) { return t.ordinal(); }
@@ -146,9 +146,9 @@ public class Gramatica {
     static boolean esTerminal(int sym)   { return sym >= 0; }
     static int idNoTerminal(int sym)     { return -sym - 1; }
 
-    // ============================================================
+    
     //  PRODUCCIONES
-    // ============================================================
+    
     // Cada producción: { cabeza_nt_codificado, sym1, sym2, ... }
     public static final int[][] PRODUCCIONES = {
         /*  0 */ { NT(PROGRAMA),     NT(SENTENCIA), NT(PROGRAMA) },
@@ -229,16 +229,16 @@ public class Gramatica {
                                        T(TipoToken.ID) },
     };
 
-    // ============================================================
+    
     //  FIRST y FOLLOW SETS
-    // ============================================================
+    
     public static final BitSet[] FIRST = new BitSet[NUM_NT];
     public static final boolean[] FIRST_EPS = new boolean[NUM_NT];
     public static final BitSet[] FOLLOW = new BitSet[NUM_NT];
 
-    // ============================================================
+    
     //  TABLA DE PARSING LL(1)
-    // ============================================================
+    
     public static final int[][] TABLA = new int[NUM_NT][TipoToken.values().length];
 
     static {
@@ -252,9 +252,9 @@ public class Gramatica {
         construirTabla();
     }
 
-    // ============================================================
+    
     //  CÁLCULO DE FIRST
-    // ============================================================
+    
     static void calcularFIRST() {
         boolean cambios;
         do {
@@ -296,9 +296,9 @@ public class Gramatica {
         } while (cambios);
     }
 
-    // ============================================================
+    
     //  CÁLCULO DE FOLLOW
-    // ============================================================
+    
     static void calcularFOLLOW() {
         FOLLOW[PROGRAMA].set(TipoToken.EOF.ordinal());
 
@@ -357,9 +357,9 @@ public class Gramatica {
         } while (cambios);
     }
 
-    // ============================================================
+    
     //  CONSTRUCCIÓN DE LA TABLA LL(1)
-    // ============================================================
+    
     static void construirTabla() {
         for (int p = 0; p < PRODUCCIONES.length; p++) {
             int[] prod = PRODUCCIONES[p];
@@ -400,9 +400,9 @@ public class Gramatica {
         }
     }
 
-    // ============================================================
+    
     //  CONSULTA
-    // ============================================================
+    
     public static int obtenerProduccion(int noTerminal, TipoToken lookahead) {
         return TABLA[noTerminal][lookahead.ordinal()];
     }
