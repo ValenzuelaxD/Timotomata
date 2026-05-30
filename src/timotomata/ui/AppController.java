@@ -47,6 +47,28 @@ public class AppController {
         public IntegerProperty lineaProperty() { return linea; }
     }
 
+    // ─── Modelo de datos para la tabla de símbolos ───
+    public static class InfoSimbolo {
+        private final StringProperty nombre = new SimpleStringProperty();
+        private final StringProperty tipo = new SimpleStringProperty();
+        private final IntegerProperty linea = new SimpleIntegerProperty();
+        private final StringProperty valor = new SimpleStringProperty();
+        private final StringProperty tipoNum = new SimpleStringProperty();
+
+        public InfoSimbolo(String nombre, String tipo, int linea, String valor, String tipoNum) {
+            this.nombre.set(nombre);
+            this.tipo.set(tipo);
+            this.linea.set(linea);
+            this.valor.set(valor);
+            this.tipoNum.set(tipoNum);
+        }
+        public StringProperty nombreProperty() { return nombre; }
+        public StringProperty tipoProperty() { return tipo; }
+        public IntegerProperty lineaProperty() { return linea; }
+        public StringProperty valorProperty() { return valor; }
+        public StringProperty tipoNumProperty() { return tipoNum; }
+    }
+
     // ─── Componentes de la UI ───
     private BorderPane root;
     private TextArea editor;
@@ -61,6 +83,19 @@ public class AppController {
     private VBox derivacionPanel;
     private Button btnAbrirArbol;
     private PauseTransition debounce;
+
+    // ─── Tabla de símbolos ───
+    private TableView<InfoSimbolo> tablaSimbolos;
+    private ObservableList<InfoSimbolo> simbolosData = FXCollections.observableArrayList();
+    private TitledPane tablaPane;
+
+    // ─── Palabras reservadas para sugerencias ───
+    private static final String[] PALABRAS_RESERVADAS = {
+        "sensor", "umbral", "si", "entonces", "estado",
+        "abs", "calcular", "normal", "pico", "caida", "inestable",
+        "seno", "coseno", "cuadrada", "promedio", "maximo", "suma",
+        "amplitud", "frecuencia", "ventana", "con", "fin"
+    };
 
     // ─── Estado interno ───
     private Programa ultimoPrograma;
@@ -208,6 +243,42 @@ public class AppController {
         tokensPane.getStyleClass().add("titled-pane-custom");
         tokensPane.setCollapsible(false);
 
+        // ─── Panel de la Tabla de Símbolos (5 columnas) ───
+        tablaSimbolos = new TableView<>(simbolosData);
+        tablaSimbolos.setPrefHeight(150);
+        tablaSimbolos.setStyle("-fx-control-inner-background: #1e1e2e;"
+            + " -fx-table-cell-border-color: #313244;"
+            + " -fx-text-fill: #cdd6f4;"
+            + " -fx-font-family: 'Consolas', monospace;"
+            + " -fx-font-size: 11px;");
+
+        TableColumn<InfoSimbolo, String> colSimbNombre = new TableColumn<>("Nombre");
+        colSimbNombre.setCellValueFactory(new PropertyValueFactory<>("nombre"));
+        colSimbNombre.setPrefWidth(110);
+
+        TableColumn<InfoSimbolo, String> colSimbTipo = new TableColumn<>("Tipo");
+        colSimbTipo.setCellValueFactory(new PropertyValueFactory<>("tipo"));
+        colSimbTipo.setPrefWidth(80);
+
+        TableColumn<InfoSimbolo, Number> colSimbLinea = new TableColumn<>("Linea");
+        colSimbLinea.setCellValueFactory(new PropertyValueFactory<>("linea"));
+        colSimbLinea.setPrefWidth(45);
+        colSimbLinea.setStyle("-fx-alignment: CENTER-RIGHT;");
+
+        TableColumn<InfoSimbolo, String> colSimbValor = new TableColumn<>("Valor");
+        colSimbValor.setCellValueFactory(new PropertyValueFactory<>("valor"));
+        colSimbValor.setPrefWidth(70);
+
+        TableColumn<InfoSimbolo, String> colSimbTipoNum = new TableColumn<>("Tipo Num.");
+        colSimbTipoNum.setCellValueFactory(new PropertyValueFactory<>("tipoNum"));
+        colSimbTipoNum.setPrefWidth(80);
+
+        tablaSimbolos.getColumns().addAll(colSimbNombre, colSimbTipo, colSimbLinea, colSimbValor, colSimbTipoNum);
+
+        tablaPane = new TitledPane("TABLA SIMBOLOS", tablaSimbolos);
+        tablaPane.getStyleClass().add("titled-pane-custom");
+        tablaPane.setCollapsible(false);
+
         // Panel del AST
         astTree = new TreeView<>();
         astTree.setPrefHeight(180);
@@ -221,7 +292,7 @@ public class AppController {
         astPane.getStyleClass().add("titled-pane-custom");
         astPane.setCollapsible(false);
 
-        panel.getChildren().addAll(erroresPane, tokensPane, astPane);
+        panel.getChildren().addAll(erroresPane, tokensPane, tablaPane, astPane);
         VBox.setVgrow(astPane, Priority.ALWAYS);
         return panel;
     }
@@ -308,12 +379,22 @@ public class AppController {
         ultimoPrograma = programa;
         ultimoParser = parser;
 
+        // ─── Fase 3: Tabla de símbolos y detección de IDs no declarados ───
+        construirTablaSimbolos(programa, tokens);
+        List<String> erroresNoDecl = detectarNoDeclarados(programa);
+
+        // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
+        List<String> sugerenciasReservadas = sugerirIDsMalEscritos(tokens, programa);
+
         // ─── Actualizar UI ───
-        actualizarErrores(erroresLex, erroresSint);
+        List<String> todosErrores = new ArrayList<>();
+        todosErrores.addAll(erroresNoDecl);
+        todosErrores.addAll(sugerenciasReservadas);
+        actualizarErrores(erroresLex, erroresSint, todosErrores);
         actualizarTokens(tokens);
         actualizarAST(programa);
         actualizarDerivacion(programa, parser);
-        actualizarStatus(tokens.size(), erroresLex.size(), erroresSint.size());
+        actualizarStatus(tokens.size(), erroresLex.size(), erroresSint.size(), todosErrores.size());
     }
 
     // =============================================================
@@ -321,7 +402,7 @@ public class AppController {
     // =============================================================
 
     // ─── Errores ───
-    private void actualizarErrores(List<String> erroresLex, List<String> erroresSint) {
+    private void actualizarErrores(List<String> erroresLex, List<String> erroresSint, List<String> erroresNoDecl) {
         ObservableList<String> items = errorList.getItems();
         items.clear();
 
@@ -334,6 +415,11 @@ public class AppController {
 
         for (String err : erroresSint) {
             items.add("[SINTACTICO] " + err);
+            totalErrores++;
+        }
+
+        for (String err : erroresNoDecl) {
+            items.add("[ERROR] " + err);
             totalErrores++;
         }
 
@@ -523,8 +609,8 @@ public class AppController {
     }
 
     // ─── Barra de estado ───
-    private void actualizarStatus(int numTokens, int numErroresLex, int numErroresSint) {
-        int totalErrores = numErroresLex + numErroresSint;
+    private void actualizarStatus(int numTokens, int numErroresLex, int numErroresSint, int numErroresNoDecl) {
+        int totalErrores = numErroresLex + numErroresSint + numErroresNoDecl;
         String color = totalErrores > 0 ? "#f38ba8" : "#a6e3a1";
         statusLabel.setStyle("-fx-text-fill: " + color
             + "; -fx-font-family: 'Consolas', monospace; -fx-font-size: 11;");
@@ -552,6 +638,235 @@ public class AppController {
             String analisis = current.substring(current.lastIndexOf("|"));
             statusLabel.setText("  Ln " + linea + ", Col " + columna + "  " + analisis);
         }
+    }
+
+    // =============================================================
+    //  TABLA DE SÍMBOLOS Y VERIFICACIÓN DE IDs
+    // =============================================================
+
+    /**
+     * Construye la tabla de símbolos a partir del AST y los tokens.
+     * Sin análisis semántico: solo recopila información ya disponible
+     * del parser (sensores declarados, umbrales) y detecta referencias
+     * a variables no declaradas.
+     */
+    private void construirTablaSimbolos(Programa programa, List<Token> tokens) {
+        simbolosData.clear();
+        if (programa == null) return;
+
+        Set<String> declaradas = new HashSet<>();
+
+        // 1. Sensores declarados
+        for (String s : programa.sensores) {
+            int linea = buscarLineaDeclaracion(s, tokens, TipoToken.SENSOR);
+            simbolosData.add(new InfoSimbolo(s, "SENSOR", linea, "\u2014", "\u2014"));
+            declaradas.add(s);
+        }
+
+        // 2. Umbrales declarados
+        for (Map.Entry<String, Double> e : programa.umbrales.entrySet()) {
+            int linea = buscarLineaDeclaracion(e.getKey(), tokens, TipoToken.UMBRAL);
+            String valorStr = String.valueOf(e.getValue());
+            // Determinar si es ENTERO o DECIMAL según si tiene punto decimal
+            String tipoNum = esEntero(e.getValue()) ? "ENTERO" : "DECIMAL";
+            simbolosData.add(new InfoSimbolo(e.getKey(), "UMBRAL", linea, valorStr, tipoNum));
+            declaradas.add(e.getKey());
+        }
+
+        // 3. Referencias a identificadores en expresiones
+        Set<String> referenciadas = extraerVariablesReferenciadas(programa);
+        for (String ref : referenciadas) {
+            if (!declaradas.contains(ref)) {
+                int linea = buscarLineaPrimerUso(ref, tokens);
+                simbolosData.add(new InfoSimbolo(ref, "NO DECLARADO", linea, "\u2014", "\u2014"));
+            }
+        }
+
+        tablaPane.setText("\u25C6 TABLA SIMBOLOS (" + simbolosData.size() + ")");
+    }
+
+    /** Determina si un valor double es entero (sin parte decimal) */
+    private boolean esEntero(double valor) {
+        return valor == Math.floor(valor) && !Double.isInfinite(valor);
+    }
+
+    /** Busca la línea donde se declaró un sensor o umbral */
+    private int buscarLineaDeclaracion(String nombre, List<Token> tokens, TipoToken tipoDecl) {
+        for (int i = 0; i < tokens.size() - 1; i++) {
+            Token t = tokens.get(i);
+            Token next = tokens.get(i + 1);
+            if (t.tipo == tipoDecl && next.tipo == TipoToken.ID && next.lexema.equals(nombre)) {
+                return t.linea;
+            }
+        }
+        return 0;
+    }
+
+    /** Busca la primera línea donde aparece una referencia a un identificador */
+    private int buscarLineaPrimerUso(String nombre, List<Token> tokens) {
+        for (Token t : tokens) {
+            if (t.tipo == TipoToken.ID && t.lexema.equals(nombre)) {
+                return t.linea;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Extrae todas las variables referenciadas en condiciones y expresiones
+     * del AST (Reglas, Cálculos).
+     */
+    private Set<String> extraerVariablesReferenciadas(Programa programa) {
+        Set<String> vars = new HashSet<>();
+        for (Regla r : programa.reglas) {
+            extraerVariablesDeExpresion(r.condicion, vars);
+        }
+        for (Calculo c : programa.calculos) {
+            vars.add(c.sensor);
+            for (Parametro p : c.parametros) {
+                if ("con".equals(p.nombre)) {
+                    vars.add(p.valor); // con = identificador
+                }
+            }
+        }
+        return vars;
+    }
+
+    /** Recorre recursivamente una expresión para extraer Variables */
+    private void extraerVariablesDeExpresion(Expresion e, Set<String> vars) {
+        if (e instanceof Variable v) {
+            vars.add(v.nombre);
+        } else if (e instanceof Binaria b) {
+            extraerVariablesDeExpresion(b.izquierda, vars);
+            extraerVariablesDeExpresion(b.derecha, vars);
+        } else if (e instanceof Negacion n) {
+            extraerVariablesDeExpresion(n.expresion, vars);
+        } else if (e instanceof Abs a) {
+            extraerVariablesDeExpresion(a.expresion, vars);
+        }
+        // Numero no tiene variables
+    }
+
+    /**
+     * Detecta identificadores usados pero no declarados y genera errores
+     * con sugerencias ortográficas usando distancia de Levenshtein.
+     */
+    private List<String> detectarNoDeclarados(Programa programa) {
+        List<String> errores = new ArrayList<>();
+        if (programa == null) return errores;
+
+        Set<String> declaradas = new HashSet<>();
+        declaradas.addAll(programa.sensores);
+        declaradas.addAll(programa.umbrales.keySet());
+
+        Set<String> referenciadas = extraerVariablesReferenciadas(programa);
+        for (String ref : referenciadas) {
+            if (!declaradas.contains(ref)) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("El identificador '").append(ref).append("' no ha sido declarado.");
+
+                // Sugerencia 1: comparar con sensores/umbrales declarados
+                String sugerencia = buscarSugerencia(ref, declaradas.toArray(new String[0]));
+                if (sugerencia == null) {
+                    // Sugerencia 2: comparar con palabras reservadas
+                    sugerencia = buscarSugerencia(ref, PALABRAS_RESERVADAS);
+                }
+
+                if (sugerencia != null) {
+                    sb.append(" [SUGERENCIA: \u00BFQuisiste decir '").append(sugerencia).append("'?]");
+                }
+                errores.add(sb.toString());
+            }
+        }
+        return errores;
+    }
+
+    /**
+     * Escanea TODOS los tokens ID del código y los compara con las
+     * palabras reservadas del lenguaje usando distancia de Levenshtein.
+     * Esto funciona incluso cuando el parseo falla (AST vacío).
+     *
+     * Ejemplo: si escribes "sensorr" se sugerirá "sensor".
+     * Si escribes "sí" se sugerirá "si".
+     * Si no se parece a nada, no se agrega sugerencia.
+     */
+    private List<String> sugerirIDsMalEscritos(List<Token> tokens, Programa programa) {
+        List<String> sugerencias = new ArrayList<>();
+        Set<String> yaSugeridos = new HashSet<>(); // evita duplicados
+
+        // Identificadores declarados (sensores, umbrales) — no sugerir sobre ellos
+        Set<String> declaradas = new HashSet<>();
+        if (programa != null) {
+            declaradas.addAll(programa.sensores);
+            for (String k : programa.umbrales.keySet()) {
+                declaradas.add(k);
+            }
+        }
+
+        // Recorrer todos los tokens buscando IDs
+        for (Token t : tokens) {
+            if (t.tipo != TipoToken.ID) continue;
+            String lexema = t.lexema;
+            String idLower = lexema.toLowerCase();
+
+            // Si ya está declarado o ya sugerimos para este ID, ignorar
+            if (declaradas.contains(idLower)) continue;
+            if (yaSugeridos.contains(idLower)) continue;
+            boolean esReservadaExacta = false;
+            for (String r : PALABRAS_RESERVADAS) {
+                if (idLower.equals(r)) { esReservadaExacta = true; break; }
+            }
+            if (esReservadaExacta) continue;
+
+            // Buscar palabra reservada similar (distancia Levenshtein ≤ 2)
+            String sugerencia = buscarSugerencia(idLower, PALABRAS_RESERVADAS);
+            if (sugerencia != null) {
+                yaSugeridos.add(idLower);
+                sugerencias.add("El identificador '" + lexema
+                    + "' no coincide con ninguna palabra reservada."
+                    + " [SUGERENCIA: \u00BFQuisiste decir '" + sugerencia + "'?]");
+            }
+        }
+
+        return sugerencias;
+    }
+
+    /**
+     * Distancia de Levenshtein entre dos cadenas.
+     */
+    private int levenshtein(String a, String b) {
+        int m = a.length(), n = b.length();
+        int[][] dp = new int[m + 1][n + 1];
+        for (int i = 0; i <= m; i++) dp[i][0] = i;
+        for (int j = 0; j <= n; j++) dp[0][j] = j;
+        for (int i = 1; i <= m; i++) {
+            for (int j = 1; j <= n; j++) {
+                int cost = (a.charAt(i - 1) == b.charAt(j - 1)) ? 0 : 1;
+                dp[i][j] = Math.min(Math.min(
+                    dp[i - 1][j] + 1,
+                    dp[i][j - 1] + 1),
+                    dp[i - 1][j - 1] + cost);
+            }
+        }
+        return dp[m][n];
+    }
+
+    /**
+     * Busca la palabra más cercana (distancia ≤ 2) entre los candidatos.
+     * Retorna null si no hay ninguna lo suficientemente parecida.
+     */
+    private String buscarSugerencia(String texto, String[] candidatos) {
+        String mejor = null;
+        int menorDist = Integer.MAX_VALUE;
+        String tLower = texto.toLowerCase();
+        for (String c : candidatos) {
+            int dist = levenshtein(tLower, c.toLowerCase());
+            if (dist < menorDist && dist <= 2) {
+                menorDist = dist;
+                mejor = c;
+            }
+        }
+        return mejor;
     }
 
     // =============================================================

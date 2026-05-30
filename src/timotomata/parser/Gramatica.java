@@ -132,9 +132,10 @@ public class Gramatica {
         P_PARAM_AMPL      = 37,
         P_PARAM_FREC      = 38,
         P_PARAM_VENT      = 39,
-        P_PARAM_CON       = 40;
+        P_PARAM_CON       = 40,
+        P_SENT_FIN        = 41;
 
-    public static final int NUM_PROD = 41;
+    public static final int NUM_PROD = 42;
 
     
     //  CODIFICACIÓN DE SÍMBOLOS
@@ -227,6 +228,8 @@ public class Gramatica {
                                        T(TipoToken.NUMERO) },
         /* 40 */ { NT(PARAM),        T(TipoToken.CON),         T(TipoToken.ASIGNACION),
                                        T(TipoToken.ID) },
+
+        /* 41 */ { NT(SENTENCIA),    T(TipoToken.FIN),         T(TipoToken.PUNTO_COMA) },
     };
 
     

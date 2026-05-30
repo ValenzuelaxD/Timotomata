@@ -120,7 +120,6 @@ copy /Y "%SRC_DIR%\timotomata\ui\estilos.css" "%OUT_DIR%\timotomata\ui\estilos.c
 set MODULES=--module-path "%JAVAFX_DIR%/lib" --add-modules javafx.controls,javafx.graphics
 
 %JAVAC_CMD% %MODULES% -d "%OUT_DIR%" ^
-    "%SRC_DIR%\timotomata\Main.java" ^
     "%SRC_DIR%\timotomata\lexer\*.java" ^
     "%SRC_DIR%\timotomata\parser\*.java" ^
     "%SRC_DIR%\timotomata\parser\ast\*.java" ^

@@ -137,6 +137,7 @@ public class Lexer {
     List<String> erroresLexicos = new ArrayList<>();
     int actual = 0;
     int linea = 1;
+    int columna = 1;
 
     public Lexer(String fuente) {
         this.fuente = fuente;
@@ -176,6 +177,7 @@ public class Lexer {
         while (!fin()) {
             int inicio = actual;
             int inicioLinea = linea;
+            int inicioColumna = columna;
             int estado = Q0;
             int ultimoAcept = -1;
             int posUltimaAcept = -1;
@@ -189,9 +191,14 @@ public class Lexer {
 
                 // Consumir el carácter
                 avanzar();
-                // Incrementar línea para saltos de línea fuera de comentarios de línea
-                if (clase == NL && estado != Q_COM_LINEA) {
-                    linea++;
+                // Actualizar línea y columna
+                if (clase == NL) {
+                    if (estado != Q_COM_LINEA) {
+                        linea++;
+                    }
+                    columna = 1;
+                } else {
+                    columna++;
                 }
 
                 //  Caso 1: Transición a Q0 (token completado) 
@@ -204,13 +211,15 @@ public class Lexer {
                     if (estado == Q_COM_LINEA && clase == NL) {
                         // // comentario — termina en nueva línea
                         linea++;
+                        columna = 1;
                         inicio = actual;
                         break;
                     }
                     // Solo llegamos aquí para ==, >=, <=, !=, <>
                     String lexema = fuente.substring(inicio, actual);
-                    emitirTokenCompuesto(estado, clase, lexema, inicioLinea);
+                    emitirTokenCompuesto(estado, clase, lexema, inicioLinea, inicioColumna);
                     inicio = actual;
+                    inicioColumna = columna;
                     ultimoAcept = -1;
                     posUltimaAcept = -1;
                     break;
@@ -228,8 +237,9 @@ public class Lexer {
                 if (estado == Q0 && actual - inicio == 1) {
                     String lexema = fuente.substring(inicio, actual);
                     int claseInicial = clasificar(lexema.charAt(0));
-                    emitirTokenDirecto(claseInicial, lexema, inicioLinea);
+                    emitirTokenDirecto(claseInicial, lexema, inicioLinea, inicioColumna);
                     inicio = actual;
+                    inicioColumna = columna;
                     ultimoAcept = -1;
                     posUltimaAcept = -1;
                     break;
@@ -243,24 +253,28 @@ public class Lexer {
                 if (TABLA_TRANS[Q0][claseActual] == SIN_TRANS) {
                     erroresLexicos.add("Error léxico en línea " + inicioLinea
                         + ": caracter no válido '" + cActual + "'");
+                    columna = inicioColumna + 1;
                     actual++;
                 }
             } else if (ultimoAcept != -1) {
                 String lexema = fuente.substring(inicio, posUltimaAcept);
-                emitirToken(ultimoAcept, lexema, inicioLinea);
+                emitirToken(ultimoAcept, lexema, inicioLinea, inicioColumna);
                 actual = posUltimaAcept;
             } else if (estado == Q_EQ || estado == Q_GT || estado == Q_LT
                     || estado == Q_NOT || estado == Q_DIV) {
                 String lexema = fuente.substring(inicio, inicio + 1);
-                emitirTokenUnario(estado, lexema, inicioLinea);
+                emitirTokenUnario(estado, lexema, inicioLinea, inicioColumna);
+                columna = inicioColumna + 1;
                 actual = inicio + 1;
             } else if (estado == Q_COM_BLOQ || estado == Q_COM_BLOQ_FIN) {
                 erroresLexicos.add("Error léxico en línea " + inicioLinea
                     + ": comentario de bloque no cerrado");
+                columna = inicioColumna + 1;
                 actual = inicio + 1;
             } else if (actual > inicio) {
                 erroresLexicos.add("Error léxico en línea " + inicioLinea
                     + ": secuencia no válida \"" + fuente.substring(inicio, actual) + "\"");
+                columna = inicioColumna + 1;
                 actual = inicio + 1;
             }
         }
@@ -279,74 +293,75 @@ public class Lexer {
 
     // ---- 8. EMISIÓN DE TOKENS 
 
-    void emitirToken(int estado, String lexema, int linea) {
+    void emitirToken(int estado, String lexema, int linea, int columna) {
         if (estado == Q_ID) {
             // Comparar en minúsculas para que las palabras reservadas
             // sean case-insensitive (Sensor, SENSOR, sensor → SENSOR)
             String lexemaLower = lexema.toLowerCase();
             switch (lexemaLower) {
-                case "sensor"     -> agregar(TipoToken.SENSOR, lexema, linea);
-                case "umbral"     -> agregar(TipoToken.UMBRAL, lexema, linea);
-                case "si"         -> agregar(TipoToken.SI, lexema, linea);
-                case "entonces"   -> agregar(TipoToken.ENTONCES, lexema, linea);
-                case "estado"     -> agregar(TipoToken.ESTADO, lexema, linea);
-                case "abs"        -> agregar(TipoToken.ABS, lexema, linea);
-                case "calcular"   -> agregar(TipoToken.CALCULAR, lexema, linea);
+                case "sensor"     -> agregar(TipoToken.SENSOR, lexema, linea, columna);
+                case "umbral"     -> agregar(TipoToken.UMBRAL, lexema, linea, columna);
+                case "si"         -> agregar(TipoToken.SI, lexema, linea, columna);
+                case "entonces"   -> agregar(TipoToken.ENTONCES, lexema, linea, columna);
+                case "estado"     -> agregar(TipoToken.ESTADO, lexema, linea, columna);
+                case "abs"        -> agregar(TipoToken.ABS, lexema, linea, columna);
+                case "calcular"   -> agregar(TipoToken.CALCULAR, lexema, linea, columna);
                 case "normal", "pico", "caida", "inestable" ->
-                    agregar(TipoToken.ESTADO_SISTEMA, lexema, linea);
-                case "seno"       -> agregar(TipoToken.SENO, lexema, linea);
-                case "coseno"     -> agregar(TipoToken.COSENO, lexema, linea);
-                case "cuadrada"   -> agregar(TipoToken.CUADRADA, lexema, linea);
-                case "promedio"   -> agregar(TipoToken.PROMEDIO, lexema, linea);
-                case "maximo"     -> agregar(TipoToken.MAXIMO, lexema, linea);
-                case "suma"       -> agregar(TipoToken.SUMA, lexema, linea);
-                case "amplitud"   -> agregar(TipoToken.AMPLITUD, lexema, linea);
-                case "frecuencia" -> agregar(TipoToken.FRECUENCIA, lexema, linea);
-                case "ventana"    -> agregar(TipoToken.VENTANA, lexema, linea);
-                case "con"        -> agregar(TipoToken.CON, lexema, linea);
-                default -> agregar(TipoToken.ID, lexema, linea);
+                    agregar(TipoToken.ESTADO_SISTEMA, lexema, linea, columna);
+                case "seno"       -> agregar(TipoToken.SENO, lexema, linea, columna);
+                case "coseno"     -> agregar(TipoToken.COSENO, lexema, linea, columna);
+                case "cuadrada"   -> agregar(TipoToken.CUADRADA, lexema, linea, columna);
+                case "promedio"   -> agregar(TipoToken.PROMEDIO, lexema, linea, columna);
+                case "maximo"     -> agregar(TipoToken.MAXIMO, lexema, linea, columna);
+                case "suma"       -> agregar(TipoToken.SUMA, lexema, linea, columna);
+                case "amplitud"   -> agregar(TipoToken.AMPLITUD, lexema, linea, columna);
+                case "frecuencia" -> agregar(TipoToken.FRECUENCIA, lexema, linea, columna);
+                case "ventana"    -> agregar(TipoToken.VENTANA, lexema, linea, columna);
+                case "con"        -> agregar(TipoToken.CON, lexema, linea, columna);
+                case "fin"        -> agregar(TipoToken.FIN, lexema, linea, columna);
+                default -> agregar(TipoToken.ID, lexema, linea, columna);
             }
         } else if (estado == Q_NUM || estado == Q_NUM_DEC) {
-            agregar(TipoToken.NUMERO, lexema, linea);
+            agregar(TipoToken.NUMERO, lexema, linea, columna);
         }
     }
 
-    void emitirTokenDirecto(int clase, String lexema, int linea) {
+    void emitirTokenDirecto(int clase, String lexema, int linea, int columna) {
         switch (clase) {
-            case MAS  -> agregar(TipoToken.MAS, lexema, linea);
-            case MENOS-> agregar(TipoToken.MENOS, lexema, linea);
-            case POR  -> agregar(TipoToken.POR, lexema, linea);
-            case PUNTOCOMA -> agregar(TipoToken.PUNTO_COMA, lexema, linea);
-            case PIZQ -> agregar(TipoToken.PAREN_IZQ, lexema, linea);
-            case PDER -> agregar(TipoToken.PAREN_DER, lexema, linea);
-            case COMA_ -> agregar(TipoToken.COMA, lexema, linea);
+            case MAS  -> agregar(TipoToken.MAS, lexema, linea, columna);
+            case MENOS-> agregar(TipoToken.MENOS, lexema, linea, columna);
+            case POR  -> agregar(TipoToken.POR, lexema, linea, columna);
+            case PUNTOCOMA -> agregar(TipoToken.PUNTO_COMA, lexema, linea, columna);
+            case PIZQ -> agregar(TipoToken.PAREN_IZQ, lexema, linea, columna);
+            case PDER -> agregar(TipoToken.PAREN_DER, lexema, linea, columna);
+            case COMA_ -> agregar(TipoToken.COMA, lexema, linea, columna);
             case ESP, NL -> {}  // espacios y saltos de línea se ignoran
             default -> { /* no debería ocurrir */ }
         }
     }
 
-    void emitirTokenCompuesto(int estadoOrigen, int clase, String lexema, int linea) {
+    void emitirTokenCompuesto(int estadoOrigen, int clase, String lexema, int linea, int columna) {
         if (estadoOrigen == Q_EQ && clase == IGUAL) {
-            agregar(TipoToken.IGUAL_IGUAL, lexema, linea);
+            agregar(TipoToken.IGUAL_IGUAL, lexema, linea, columna);
         } else if (estadoOrigen == Q_GT && clase == IGUAL) {
-            agregar(TipoToken.MAYOR_IGUAL, lexema, linea);
+            agregar(TipoToken.MAYOR_IGUAL, lexema, linea, columna);
         } else if (estadoOrigen == Q_LT) {
             if (clase == IGUAL) {
-                agregar(TipoToken.MENOR_IGUAL, lexema, linea);
+                agregar(TipoToken.MENOR_IGUAL, lexema, linea, columna);
             } else if (clase == MAYOR_) {
-                agregar(TipoToken.DIFERENTE, lexema, linea);
+                agregar(TipoToken.DIFERENTE, lexema, linea, columna);
             }
         } else if (estadoOrigen == Q_NOT && clase == IGUAL) {
-            agregar(TipoToken.DIFERENTE, lexema, linea);
+            agregar(TipoToken.DIFERENTE, lexema, linea, columna);
         }
     }
 
-    void emitirTokenUnario(int estado, String lexema, int linea) {
+    void emitirTokenUnario(int estado, String lexema, int linea, int columna) {
         switch (estado) {
-            case Q_EQ  -> agregar(TipoToken.ASIGNACION, lexema, linea);
-            case Q_GT  -> agregar(TipoToken.MAYOR, lexema, linea);
-            case Q_LT  -> agregar(TipoToken.MENOR, lexema, linea);
-            case Q_DIV -> agregar(TipoToken.DIV, lexema, linea);
+            case Q_EQ  -> agregar(TipoToken.ASIGNACION, lexema, linea, columna);
+            case Q_GT  -> agregar(TipoToken.MAYOR, lexema, linea, columna);
+            case Q_LT  -> agregar(TipoToken.MENOR, lexema, linea, columna);
+            case Q_DIV -> agregar(TipoToken.DIV, lexema, linea, columna);
             case Q_NOT -> erroresLexicos.add("Error léxico en línea " + linea
                 + ": '!' debe ir seguido de '=' para formar !=");
         }
@@ -365,7 +380,7 @@ public class Lexer {
         return actual >= fuente.length();
     }
 
-    void agregar(TipoToken tipo, String lexema, int linea) {
-        tokens.add(new Token(tipo, lexema, linea));
+    void agregar(TipoToken tipo, String lexema, int linea, int columna) {
+        tokens.add(new Token(tipo, lexema, linea, columna));
     }
 }

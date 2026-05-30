@@ -5,9 +5,8 @@ Lenguaje de programación para simulación de sensores con análisis léxico bas
 ## ✨ Características
 
 - **Editor** con tema oscuro Catppuccin Mocha
-- **Validación en tiempo real** (léxica, sintáctica y AST)
+- **Validación en tiempo real** (léxica y sintáctica)
 - **Simulación interactiva** de sensores y umbrales
-- **Modo CLI** para pruebas desde la terminal
 - **Visualización de tokens**, árbol AST y errores
 
 ---
@@ -19,8 +18,7 @@ Lenguaje de programación para simulación de sensores con análisis léxico bas
 | **JDK** | 17 o superior (recomendado: JDK 23) |
 | **Sistema** | Windows 10/11 (64-bit) |
 
-> ⚠️ La **GUI requiere JavaFX**. El script lo descarga automáticamente si no está presente.
-> El **modo CLI** no necesita JavaFX.
+> ⚠️ La GUI requiere **JavaFX**. El script lo descarga automáticamente si no está presente.
 
 ---
 
@@ -40,30 +38,12 @@ Esto hará todo automáticamente:
 3. ✅ Compila todo el proyecto
 4. ✅ Abre la ventana del compilador
 
-### Opción 2 — Modo consola (sin JavaFX)
-
-Haz doble clic en:
-
-```
-compile_and_run_cli.bat
-```
-
-O desde cmd:
-
-```cmd
-cd D:\Timotomata
-compile_and_run_cli.bat
-```
-
-Escribe tu código y finaliza con `FIN` en una línea nueva.
-
-### Opción 3 — Desde VS Code
+Opción 2 — Desde VS Code
 
 1. Abre la carpeta del proyecto en VS Code
 2. Abre el panel **Run & Debug** (`Ctrl + Shift + D`)
 3. Selecciona en el menú desplegable:
    - **`GUI - Timotomata (ventana)`** — para la interfaz gráfica
-   - **`CLI - Timotomata (consola)`** — para el modo terminal
 
 > Necesitas la extensión **"Extension Pack for Java"** de Microsoft instalada.
 
@@ -75,13 +55,10 @@ Escribe tu código y finaliza con `FIN` en una línea nueva.
 sensor voltaje;
 sensor temperatura;
 umbral maximo = 220;
-umbral minimo = 100;
 
 si voltaje >= maximo entonces estado = PICO;
-si voltaje <= minimo entonces estado = CAIDA;
-si temperatura > 80 entonces estado = INESTABLE;
 
-FIN
+fin;
 ```
 
 ### Palabras reservadas
@@ -94,7 +71,7 @@ FIN
 | `estado` | Asignación de estado |
 | `normal` / `pico` / `caida` / `inestable` | Estados del sistema |
 | `abs()` | Función valor absoluto |
-| `FIN` | Marca el final del programa |
+| `fin;` | Marca el final del programa |
 
 ### Operadores relacionales
 
@@ -111,7 +88,6 @@ FIN
 ```
 Timotomata/
 ├── src/timotomata/
-│   ├── Main.java                 ← Punto de entrada (CLI)
 │   ├── lexer/                    ← Analizador léxico (AFD)
 │   │   ├── Lexer.java
 │   │   ├── Token.java
@@ -128,8 +104,6 @@ Timotomata/
 │   │       ├── Binaria.java
 │   │       ├── Negacion.java
 │   │       └── Abs.java
-│   ├── semantico/                ← Análisis semántico
-│   │   └── AnalizadorSemantico.java
 │   └── ui/                       ← Interfaz gráfica (JavaFX)
 │       ├── MainApp.java
 │       ├── AppController.java
@@ -137,8 +111,7 @@ Timotomata/
 ├── docs/                         ← Documentación técnica
 │   └── analisis_lexico_sintactico.md
 ├── tests/                        ← Archivos de prueba
-├── compile_and_run_gui.bat       ← Script GUI
-├── compile_and_run_cli.bat       ← Script CLI
+├── compile_and_run_gui.bat       ← Script para compilar y ejecutar
 └── README.md
 ```
 

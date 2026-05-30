@@ -9,5 +9,6 @@ public enum TipoToken {
     CALCULAR, COMA,
     SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO, SUMA,
     AMPLITUD, FRECUENCIA, VENTANA, CON,
+    FIN,
     EOF
 }

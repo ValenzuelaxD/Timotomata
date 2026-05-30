@@ -198,6 +198,14 @@ public class Parser {
                 programa.calculos.add(calculo);
                 break;
             }
+            case Gramatica.P_SENT_FIN: {
+                Token t1 = consumir(TipoToken.FIN, "Se esperaba FIN");
+                Token t2 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+                nodo.agregarHijo(t(t1));
+                nodo.agregarHijo(t(t2));
+                // fin; — sentencia que termina el programa sin acción adicional
+                break;
+            }
         }
     }
 
