@@ -4,65 +4,12 @@ import java.util.*;
 import timotomata.lexer.TipoToken;
 
 /**
- * GRAMÁTICA FORMAL DEL LENGUAJE TIMOTOMATA
- * ==========================================
- *
- * Notación BNF:
- *
- *   PROGRAMA      → SENTENCIA PROGRAMA
- *                 | ε
- *
- *   SENTENCIA     → SENSOR ID PUNTO_COMA
- *                 | UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA
- *                 | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
- *                 | CALCULAR PAREN_IZQ ID COMA TIPO_OP PAREN_DER PUNTO_COMA
- *
- *   VALOR_UMBRAL  → MENOS NUMERO
- *                 | NUMERO
- *
- *   CONDICION     → EXPRESION OP_REL EXPRESION
- *
- *   EXPRESION     → TERMINO EXPRESION_SIG
- *   EXPRESION_SIG → MAS TERMINO EXPRESION_SIG
- *                 | MENOS TERMINO EXPRESION_SIG
- *                 | ε
- *
- *   TERMINO       → FACTOR TERMINO_SIG
- *   TERMINO_SIG   → POR FACTOR TERMINO_SIG
- *                 | DIV FACTOR TERMINO_SIG
- *                 | ε
- *
- *   FACTOR        → NUMERO
- *                 | ID
- *                 | ABS PAREN_IZQ EXPRESION PAREN_DER
- *                 | MENOS FACTOR
- *
- *   OP_REL        → MAYOR | MENOR | IGUAL_IGUAL
- *                 | MAYOR_IGUAL | MENOR_IGUAL | DIFERENTE
- *
- *   TIPO_OP       → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER
- *                 | COSENO PAREN_IZQ LISTA_PARAMS PAREN_DER
- *                 | CUADRADA PAREN_IZQ LISTA_PARAMS PAREN_DER
- *                 | PROMEDIO PAREN_IZQ LISTA_PARAMS PAREN_DER
- *                 | MAXIMO PAREN_IZQ LISTA_PARAMS PAREN_DER
- *                 | SUMA PAREN_IZQ LISTA_PARAMS PAREN_DER
- *
- *   LISTA_PARAMS  → PARAM LISTA_PARAMS_SIG
- *                 | ε
- *
- *   LISTA_PARAMS_SIG → COMA LISTA_PARAMS
- *                      | ε
- *
- *   PARAM         → AMPLITUD ASIGNACION NUMERO
- *                 | FRECUENCIA ASIGNACION NUMERO
- *                 | VENTANA ASIGNACION NUMERO
- *                 | CON ASIGNACION ID
+ * GRAMÁTICA FORMAL DEL LENGUAJE TIMOTOMATA (EXTENDIDA)
+ * ====================================================
  */
 public class Gramatica {
 
-    
     //  IDs DE NO TERMINALES
-    
     public static final int
         PROGRAMA      = 0,
         SENTENCIA     = 1,
@@ -77,20 +24,33 @@ public class Gramatica {
         TIPO_OP       = 10,
         LISTA_PARAMS  = 11,
         PARAM         = 12,
-        LISTA_PARAMS_SIG = 13;
+        LISTA_PARAMS_SIG = 13,
+        TIPO_OPC      = 14,
+        TIPO_VAL      = 15,
+        AUX_CALCULAR  = 16,
+        FUNC_ANALISIS = 17,
+        PARAMS_ANALISIS = 18,
+        CONSECUENCIA  = 19,
+        ACCION        = 20,
+        ACCIONES      = 21,
+        ACCIONES_REST = 22,
+        COND_SIMPLE   = 23,
+        COND_COMPUESTA = 24,
+        LOG_OP        = 25;
 
-    public static final int NUM_NT = 14;
+    public static final int NUM_NT = 26;
 
     public static final String[] NOMBRES_NT = {
         "PROGRAMA", "SENTENCIA", "VALOR_UMBRAL",
         "CONDICION", "EXPRESION", "EXPRESION_SIG",
         "TERMINO", "TERMINO_SIG", "FACTOR", "OP_REL",
-        "TIPO_OP", "LISTA_PARAMS", "PARAM", "LISTA_PARAMS_SIG"
+        "TIPO_OP", "LISTA_PARAMS", "PARAM", "LISTA_PARAMS_SIG",
+        "TIPO_OPC", "TIPO_VAL", "AUX_CALCULAR", "FUNC_ANALISIS",
+        "PARAMS_ANALISIS", "CONSECUENCIA", "ACCION", "ACCIONES",
+        "ACCIONES_REST", "COND_SIMPLE", "COND_COMPUESTA", "LOG_OP"
     };
 
-    
-    //  IDs DE PRODUCCIONES
-    
+    //  IDs DE PRODUCCIONES (Mantenemos los antiguos iguales para compatibilidad)
     public static final int
         P_PROGRAMA_REC    = 0,
         P_PROGRAMA_EPS    = 1,
@@ -135,44 +95,58 @@ public class Gramatica {
         P_PARAM_CON       = 40,
         P_SENT_FIN        = 41;
 
-    public static final int NUM_PROD = 42;
+    // Nuevas producciones
+    public static final int
+        P_SENT_RANGO       = 42,
+        P_TIPO_OPC_TIPO    = 43,
+        P_TIPO_OPC_EPS     = 44,
+        P_TIPO_VAL_ELEC    = 45,
+        P_TIPO_VAL_TERM    = 46,
+        P_AUX_CALCULAR_OLD = 47,
+        P_AUX_CALCULAR_NEW = 48,
+        P_FUNC_PROM        = 49,
+        P_FUNC_MAX         = 50,
+        P_FUNC_FLUC        = 51,
+        P_PARAMS_AN_COMA   = 52,
+        P_PARAMS_AN_EPS    = 53,
+        P_CONSEC_ACCION    = 54,
+        P_CONSEC_BLOQUE    = 55,
+        P_ACCION_ESTADO    = 56,
+        P_ACCION_ALERTA    = 57,
+        P_ACCIONES_REC     = 58,
+        P_ACC_REST_REC     = 59,
+        P_ACC_REST_EPS     = 60,
+        P_COND_SIMPLE      = 61,
+        P_COND_COMP_LOG    = 62,
+        P_COND_COMP_EPS    = 63,
+        P_LOG_Y            = 64,
+        P_LOG_O            = 65;
 
-    
-    //  CODIFICACIÓN DE SÍMBOLOS
-    
-    // Terminal: ordinal de TipoToken (0..22)
-    // No terminal: -(id + 1) → valores negativos (-1..-13)
+    public static final int NUM_PROD = 66;
+
     static int T(TipoToken t) { return t.ordinal(); }
     static int NT(int nt)     { return -(nt + 1); }
     static boolean esTerminal(int sym)   { return sym >= 0; }
     static int idNoTerminal(int sym)     { return -sym - 1; }
 
-    
-    //  PRODUCCIONES
-    
-    // Cada producción: { cabeza_nt_codificado, sym1, sym2, ... }
     public static final int[][] PRODUCCIONES = {
         /*  0 */ { NT(PROGRAMA),     NT(SENTENCIA), NT(PROGRAMA) },
         /*  1 */ { NT(PROGRAMA) },                                    // ε
 
-        /*  2 */ { NT(SENTENCIA),    T(TipoToken.SENSOR),       T(TipoToken.ID),
-                                       T(TipoToken.PUNTO_COMA) },
+        // Modificadas para soportar la gramática extendida
+        /*  2 */ { NT(SENTENCIA),    T(TipoToken.SENSOR),       T(TipoToken.ID), NT(TIPO_OPC), T(TipoToken.PUNTO_COMA) },
         /*  3 */ { NT(SENTENCIA),    T(TipoToken.UMBRAL),       T(TipoToken.ID),
                                        T(TipoToken.ASIGNACION),  NT(VALOR_UMBRAL),
                                        T(TipoToken.PUNTO_COMA) },
         /*  4 */ { NT(SENTENCIA),    T(TipoToken.SI),           NT(CONDICION),
-                                       T(TipoToken.ENTONCES),    T(TipoToken.ESTADO),
-                                       T(TipoToken.ASIGNACION),  T(TipoToken.ESTADO_SISTEMA),
-                                       T(TipoToken.PUNTO_COMA) },
-        /*  5 */ { NT(SENTENCIA),    T(TipoToken.CALCULAR),     T(TipoToken.PAREN_IZQ),
-                                       T(TipoToken.ID),          T(TipoToken.COMA),
-                                       NT(TIPO_OP),
-                                       T(TipoToken.PAREN_DER),   T(TipoToken.PUNTO_COMA) },
+                                       T(TipoToken.ENTONCES),    NT(CONSECUENCIA) },
+        /*  5 */ { NT(SENTENCIA),    T(TipoToken.CALCULAR),     NT(AUX_CALCULAR) },
 
         /*  6 */ { NT(VALOR_UMBRAL), T(TipoToken.MENOS),       T(TipoToken.NUMERO) },
         /*  7 */ { NT(VALOR_UMBRAL), T(TipoToken.NUMERO) },
 
-        /*  8 */ { NT(CONDICION),    NT(EXPRESION), NT(OP_REL), NT(EXPRESION) },
+        // Modificado para soportar lógica compuesta
+        /*  8 */ { NT(CONDICION),    NT(COND_SIMPLE), NT(COND_COMPUESTA) },
 
         /*  9 */ { NT(EXPRESION),    NT(TERMINO), NT(EXPRESION_SIG) },
         /* 10 */ { NT(EXPRESION_SIG), T(TipoToken.MAS),         NT(TERMINO),
@@ -230,18 +204,48 @@ public class Gramatica {
                                        T(TipoToken.ID) },
 
         /* 41 */ { NT(SENTENCIA),    T(TipoToken.FIN),         T(TipoToken.PUNTO_COMA) },
+
+        // Nuevas producciones del plan
+        /* 42 */ { NT(SENTENCIA),    T(TipoToken.RANGO), T(TipoToken.ID), T(TipoToken.MINIMO),
+                                       T(TipoToken.ASIGNACION), T(TipoToken.NUMERO),
+                                       T(TipoToken.MAXIMO), T(TipoToken.ASIGNACION), T(TipoToken.NUMERO), T(TipoToken.PUNTO_COMA) },
+        /* 43 */ { NT(TIPO_OPC),     T(TipoToken.TIPO), NT(TIPO_VAL) },
+        /* 44 */ { NT(TIPO_OPC) },                                    // ε
+        /* 45 */ { NT(TIPO_VAL),     T(TipoToken.ELECTRICO) },
+        /* 46 */ { NT(TIPO_VAL),     T(TipoToken.TERMICO) },
+
+        /* 47 */ { NT(AUX_CALCULAR), T(TipoToken.PAREN_IZQ), T(TipoToken.ID), T(TipoToken.COMA), NT(TIPO_OP), T(TipoToken.PAREN_DER), T(TipoToken.PUNTO_COMA) },
+        /* 48 */ { NT(AUX_CALCULAR), NT(FUNC_ANALISIS), T(TipoToken.PAREN_IZQ), T(TipoToken.ID), NT(PARAMS_ANALISIS), T(TipoToken.PAREN_DER), T(TipoToken.PUNTO_COMA) },
+
+        /* 49 */ { NT(FUNC_ANALISIS), T(TipoToken.PROMEDIO) },
+        /* 50 */ { NT(FUNC_ANALISIS), T(TipoToken.MAXIMO) },
+        /* 51 */ { NT(FUNC_ANALISIS), T(TipoToken.FLUCTUACION) },
+
+        /* 52 */ { NT(PARAMS_ANALISIS), T(TipoToken.COMA), T(TipoToken.VENTANA), T(TipoToken.ASIGNACION), T(TipoToken.NUMERO) },
+        /* 53 */ { NT(PARAMS_ANALISIS) },                            // ε
+
+        /* 54 */ { NT(CONSECUENCIA),  NT(ACCION) },
+        /* 55 */ { NT(CONSECUENCIA),  T(TipoToken.LLAVE_IZQ), NT(ACCIONES), T(TipoToken.LLAVE_DER) },
+
+        /* 56 */ { NT(ACCION),        T(TipoToken.ESTADO), T(TipoToken.ASIGNACION), T(TipoToken.ESTADO_SISTEMA), T(TipoToken.PUNTO_COMA) },
+        /* 57 */ { NT(ACCION),        T(TipoToken.ALERTA), T(TipoToken.ASIGNACION), T(TipoToken.CADENA), T(TipoToken.PUNTO_COMA) },
+
+        /* 58 */ { NT(ACCIONES),      NT(ACCION), NT(ACCIONES_REST) },
+        /* 59 */ { NT(ACCIONES_REST), NT(ACCION), NT(ACCIONES_REST) },
+        /* 60 */ { NT(ACCIONES_REST) },                              // ε
+
+        /* 61 */ { NT(COND_SIMPLE),   NT(EXPRESION), NT(OP_REL), NT(EXPRESION) },
+
+        /* 62 */ { NT(COND_COMPUESTA), NT(LOG_OP), NT(COND_SIMPLE), NT(COND_COMPUESTA) },
+        /* 63 */ { NT(COND_COMPUESTA) },                             // ε
+
+        /* 64 */ { NT(LOG_OP),        T(TipoToken.Y) },
+        /* 65 */ { NT(LOG_OP),        T(TipoToken.O) }
     };
 
-    
-    //  FIRST y FOLLOW SETS
-    
     public static final BitSet[] FIRST = new BitSet[NUM_NT];
     public static final boolean[] FIRST_EPS = new boolean[NUM_NT];
     public static final BitSet[] FOLLOW = new BitSet[NUM_NT];
-
-    
-    //  TABLA DE PARSING LL(1)
-    
     public static final int[][] TABLA = new int[NUM_NT][TipoToken.values().length];
 
     static {
@@ -255,9 +259,6 @@ public class Gramatica {
         construirTabla();
     }
 
-    
-    //  CÁLCULO DE FIRST
-    
     static void calcularFIRST() {
         boolean cambios;
         do {
@@ -299,9 +300,6 @@ public class Gramatica {
         } while (cambios);
     }
 
-    
-    //  CÁLCULO DE FOLLOW
-    
     static void calcularFOLLOW() {
         FOLLOW[PROGRAMA].set(TipoToken.EOF.ordinal());
 
@@ -360,9 +358,6 @@ public class Gramatica {
         } while (cambios);
     }
 
-    
-    //  CONSTRUCCIÓN DE LA TABLA LL(1)
-    
     static void construirTabla() {
         for (int p = 0; p < PRODUCCIONES.length; p++) {
             int[] prod = PRODUCCIONES[p];
@@ -403,9 +398,6 @@ public class Gramatica {
         }
     }
 
-    
-    //  CONSULTA
-    
     public static int obtenerProduccion(int noTerminal, TipoToken lookahead) {
         return TABLA[noTerminal][lookahead.ordinal()];
     }

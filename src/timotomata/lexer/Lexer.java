@@ -2,12 +2,9 @@ package timotomata.lexer;
 
 import java.util.*;
 
-
-
-// Alfabeto  : 17 clases de caracteres (LETRA, DIGITO, etc.)
-// Estados   : 13 estados (Q0 inicial, Q_ID, Q_NUM, ...)
+// Alfabeto  : 20 clases de caracteres (LETRA, DIGITO, etc.)
+// Estados   : 14 estados (Q0 inicial, Q_ID, Q_NUM, ..., Q_CADENA)
 // Transición: TABLA_TRANS[estado][clase] - siguiente estado
-
 
 public class Lexer {
 
@@ -17,8 +14,9 @@ public class Lexer {
         ESP = 3,    NL = 4,
         MAS = 5,    MENOS = 6,   POR = 7,      DIV = 8,
         IGUAL = 9,  MAYOR_ = 10, MENOR_ = 11,   EXCL = 12,
-        PUNTOCOMA = 13, PIZQ = 14, PDER = 15, COMA_ = 16, OTRO = 17;
-    public static final int NUM_CLASES = 18;
+        PUNTOCOMA = 13, PIZQ = 14, PDER = 15, COMA_ = 16, 
+        LIZQ = 17,  LDER = 18,   COMILLAS = 19, OTRO = 20;
+    public static final int NUM_CLASES = 21;
 
     //  2. ESTADOS DEL AFD 
     public static final int
@@ -34,18 +32,15 @@ public class Lexer {
         Q_DIV = 9,          // Vimos '/', esperando ver si es '/' o '*' (comentario)
         Q_COM_LINEA = 10,   // Dentro de comentario //
         Q_COM_BLOQ = 11,    // Dentro de comentario /* */
-        Q_COM_BLOQ_FIN = 12;// Vimos '*' dentro de /*, esperando '/' para cerrar
-    public static final int NUM_ESTADOS = 13;
+        Q_COM_BLOQ_FIN = 12,// Vimos '*' dentro de /*, esperando '/' para cerrar
+        Q_CADENA = 13;      // Dentro de literal de cadena "..."
+    public static final int NUM_ESTADOS = 14;
     public static final int SIN_TRANS = -1;
 
     //  3. FUNCIÓN DE TRANSICIÓN 
-    // TABLA_TRANS[estado][clase] = siguiente estado
-    // SIN_TRANS = transición no definida (estado muerto)
-
     public static final int[][] TABLA_TRANS = new int[NUM_ESTADOS][NUM_CLASES];
 
     //  4. ESTADOS DE ACEPTACIÓN 
-    // Los estados que, al no poder avanzar, producen un token.
     public static final boolean[] ES_ACEPTACION = new boolean[NUM_ESTADOS];
 
     static {
@@ -69,7 +64,9 @@ public class Lexer {
         TABLA_TRANS[Q0][PIZQ]     = Q0;      // token directo
         TABLA_TRANS[Q0][PDER]     = Q0;      // token directo
         TABLA_TRANS[Q0][COMA_]    = Q0;      // token directo
-        
+        TABLA_TRANS[Q0][LIZQ]     = Q0;      // token directo ({)
+        TABLA_TRANS[Q0][LDER]     = Q0;      // token directo (})
+        TABLA_TRANS[Q0][COMILLAS] = Q_CADENA;// inicia cadena (")
 
         //  Transiciones desde Q_ID 
         TABLA_TRANS[Q_ID][LETRA]  = Q_ID;
@@ -83,7 +80,6 @@ public class Lexer {
 
         //  Transiciones desde Q_NUM_PUNTO (acabamos de ver .) 
         TABLA_TRANS[Q_NUM_PUNTO][DIGITO] = Q_NUM_DEC;
-        // Si viene otro '.' → SIN_TRANS (error: segundo punto decimal)
 
         //  Transiciones desde Q_NUM_DEC (parte decimal) 
         TABLA_TRANS[Q_NUM_DEC][DIGITO] = Q_NUM_DEC;
@@ -91,7 +87,6 @@ public class Lexer {
 
         //  Transiciones desde Q_EQ (vimos =) 
         TABLA_TRANS[Q_EQ][IGUAL] = Q0;   // ==   → token IGUAL_IGUAL
-        // Cualquier otra cosa → SIN_TRANS → retroceder y emitir ASIGNACION
 
         //  Transiciones desde Q_GT (vimos >) 
         TABLA_TRANS[Q_GT][IGUAL] = Q0;   // >=   → token MAYOR_IGUAL
@@ -106,17 +101,14 @@ public class Lexer {
         //  Transiciones desde Q_DIV (vimos /) 
         TABLA_TRANS[Q_DIV][DIV] = Q_COM_LINEA;  // //   → comentario de línea
         TABLA_TRANS[Q_DIV][POR] = Q_COM_BLOQ;    // /*   → comentario de bloque
-        // Cualquier otra cosa → SIN_TRANS → retroceder y emitir DIV
 
         //  Transiciones desde Q_COM_LINEA (//) 
-        // Todo se queda en Q_COM_LINEA excepto NL que vuelve a Q0
         for (int c = 0; c < NUM_CLASES; c++) {
             if (c != NL) TABLA_TRANS[Q_COM_LINEA][c] = Q_COM_LINEA;
         }
         TABLA_TRANS[Q_COM_LINEA][NL] = Q0;
 
         //  Transiciones desde Q_COM_BLOQ (/*) 
-        // Todo se queda salvo POR que va a Q_COM_BLOQ_FIN
         for (int c = 0; c < NUM_CLASES; c++) {
             if (c != POR) TABLA_TRANS[Q_COM_BLOQ][c] = Q_COM_BLOQ;
         }
@@ -129,6 +121,12 @@ public class Lexer {
             if (c != DIV && c != POR)
                 TABLA_TRANS[Q_COM_BLOQ_FIN][c] = Q_COM_BLOQ; // vuelve a comentario
         }
+
+        //  Transiciones desde Q_CADENA (") 
+        for (int c = 0; c < NUM_CLASES; c++) {
+            if (c != COMILLAS) TABLA_TRANS[Q_CADENA][c] = Q_CADENA;
+        }
+        TABLA_TRANS[Q_CADENA][COMILLAS] = Q0;
     }
 
     // ---- 5. ATRIBUTOS DEL LEXER ----
@@ -167,12 +165,14 @@ public class Lexer {
             case '(' -> PIZQ;
             case ')' -> PDER;
             case ',' -> COMA_;
+            case '{' -> LIZQ;
+            case '}' -> LDER;
+            case '"' -> COMILLAS;
             default -> OTRO;
         };
     }
 
     // ---- 7. SIMULADOR DEL AFD 
-    
     public List<Token> escanear() {
         while (!fin()) {
             int inicio = actual;
@@ -205,16 +205,28 @@ public class Lexer {
                 if (sigEstado == Q0 && estado != Q0) {
                     if (estado == Q_COM_BLOQ_FIN && clase == DIV) {
                         // */ — comentario de bloque cerrado
+                        String lexema = fuente.substring(inicio, actual);
+                        agregar(TipoToken.COMENTARIO, lexema, inicioLinea, inicioColumna);
                         inicio = actual;
                         break;
                     }
                     if (estado == Q_COM_LINEA && clase == NL) {
                         // // comentario — termina en nueva línea
+                        String lexema = fuente.substring(inicio, actual - 1);
+                        agregar(TipoToken.COMENTARIO, lexema, inicioLinea, inicioColumna);
                         linea++;
                         columna = 1;
                         inicio = actual;
                         break;
                     }
+                    if (estado == Q_CADENA && clase == COMILLAS) {
+                        // "cadena" — literal de cadena
+                        String lexema = fuente.substring(inicio, actual);
+                        agregar(TipoToken.CADENA, lexema, inicioLinea, inicioColumna);
+                        inicio = actual;
+                        break;
+                    }
+                    
                     // Solo llegamos aquí para ==, >=, <=, !=, <>
                     String lexema = fuente.substring(inicio, actual);
                     emitirTokenCompuesto(estado, clase, lexema, inicioLinea, inicioColumna);
@@ -251,6 +263,8 @@ public class Lexer {
                 char cActual = fuente.charAt(actual);
                 int claseActual = clasificar(cActual);
                 if (TABLA_TRANS[Q0][claseActual] == SIN_TRANS) {
+                    String lexema = String.valueOf(cActual);
+                    agregar(TipoToken.DESCONOCIDO, lexema, inicioLinea, inicioColumna);
                     erroresLexicos.add("Error lexico en linea " + inicioLinea
                         + ": Caracter '" + cActual + "' no pertenece al alfabeto del lenguaje");
                     columna = inicioColumna + 1;
@@ -266,24 +280,31 @@ public class Lexer {
                 emitirTokenUnario(estado, lexema, inicioLinea, inicioColumna);
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
+            } else if (estado == Q_COM_LINEA) {
+                // Comentario de línea al final del archivo
+                String lexema = fuente.substring(inicio, actual);
+                agregar(TipoToken.COMENTARIO, lexema, inicioLinea, inicioColumna);
             } else if (estado == Q_COM_BLOQ || estado == Q_COM_BLOQ_FIN) {
+                String lexema = fuente.substring(inicio, actual);
+                agregar(TipoToken.DESCONOCIDO, lexema, inicioLinea, inicioColumna);
                 erroresLexicos.add("Error lexico en linea " + inicioLinea
                     + ": Comentario de bloque iniciado en linea " + inicioLinea + " no fue cerrado, se esperaba '*/'");
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
-            } else if (actual > inicio) {
+            } else if (estado == Q_CADENA) {
+                String lexema = fuente.substring(inicio, actual);
+                agregar(TipoToken.DESCONOCIDO, lexema, inicioLinea, inicioColumna);
                 erroresLexicos.add("Error lexico en linea " + inicioLinea
-                    + ": Secuencia no reconocida en el lenguaje: \"" + fuente.substring(inicio, actual) + "\"");
+                    + ": Cadena iniciada en linea " + inicioLinea + " no fue cerrada, se esperaba '\"'");
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
-            }
-        }
-
-        //  Mostrar errores acumulados 
-        if (!erroresLexicos.isEmpty()) {
-            System.out.println("\n===== ERRORES LÉXICOS =====");
-            for (String err : erroresLexicos) {
-                System.out.println(err);
+            } else if (actual > inicio) {
+                String lexema = fuente.substring(inicio, actual);
+                agregar(TipoToken.DESCONOCIDO, lexema, inicioLinea, inicioColumna);
+                erroresLexicos.add("Error lexico en linea " + inicioLinea
+                    + ": Secuencia no reconocida en el lenguaje: \"" + lexema + "\"");
+                columna = inicioColumna + 1;
+                actual = inicio + 1;
             }
         }
 
@@ -291,11 +312,9 @@ public class Lexer {
         return tokens;
     }
 
-    // ---- 8. EMISIÓN DE TOKENS 
-
+    // ---- 8. EMISIÓN DE TOKENS ----
     void emitirToken(int estado, String lexema, int linea, int columna) {
         if (estado == Q_ID) {
-
             String lexemaLower = lexema.toLowerCase();
             switch (lexemaLower) {
                 case "sensor"     -> agregar(TipoToken.SENSOR, lexema, linea, columna);
@@ -318,6 +337,18 @@ public class Lexer {
                 case "ventana"    -> agregar(TipoToken.VENTANA, lexema, linea, columna);
                 case "con"        -> agregar(TipoToken.CON, lexema, linea, columna);
                 case "fin"        -> agregar(TipoToken.FIN, lexema, linea, columna);
+                
+                // Nuevas palabras reservadas
+                case "tipo"       -> agregar(TipoToken.TIPO, lexema, linea, columna);
+                case "electrico"  -> agregar(TipoToken.ELECTRICO, lexema, linea, columna);
+                case "termico"    -> agregar(TipoToken.TERMICO, lexema, linea, columna);
+                case "rango"      -> agregar(TipoToken.RANGO, lexema, linea, columna);
+                case "minimo"     -> agregar(TipoToken.MINIMO, lexema, linea, columna);
+                case "y"          -> agregar(TipoToken.Y, lexema, linea, columna);
+                case "o"          -> agregar(TipoToken.O, lexema, linea, columna);
+                case "alerta"     -> agregar(TipoToken.ALERTA, lexema, linea, columna);
+                case "fluctuacion"-> agregar(TipoToken.FLUCTUACION, lexema, linea, columna);
+
                 default -> agregar(TipoToken.ID, lexema, linea, columna);
             }
         } else if (estado == Q_NUM || estado == Q_NUM_DEC) {
@@ -334,8 +365,10 @@ public class Lexer {
             case PIZQ -> agregar(TipoToken.PAREN_IZQ, lexema, linea, columna);
             case PDER -> agregar(TipoToken.PAREN_DER, lexema, linea, columna);
             case COMA_ -> agregar(TipoToken.COMA, lexema, linea, columna);
-            case ESP, NL -> {}  // espacios y saltos de línea se ignoran
-            default -> { /* no debería ocurrir */ }
+            case LIZQ -> agregar(TipoToken.LLAVE_IZQ, lexema, linea, columna);
+            case LDER -> agregar(TipoToken.LLAVE_DER, lexema, linea, columna);
+            case ESP, NL -> {}  // ignorar
+            default -> { }
         }
     }
 
@@ -361,12 +394,15 @@ public class Lexer {
             case Q_GT  -> agregar(TipoToken.MAYOR, lexema, linea, columna);
             case Q_LT  -> agregar(TipoToken.MENOR, lexema, linea, columna);
             case Q_DIV -> agregar(TipoToken.DIV, lexema, linea, columna);
-            case Q_NOT -> erroresLexicos.add("Error lexico en linea " + linea
-                + ": Se esperaba '=' despues de '!' para formar el operador '!='");
+            case Q_NOT -> {
+                agregar(TipoToken.DESCONOCIDO, lexema, linea, columna);
+                erroresLexicos.add("Error lexico en linea " + linea
+                    + ": Se esperaba '=' despues de '!' para formar el operador '!='");
+            }
         }
     }
 
-    // ---- 9. MÉTODOS AUXILIARES 
+    // ---- 9. MÉTODOS AUXILIARES ----
     char ver() {
         return fuente.charAt(actual);
     }

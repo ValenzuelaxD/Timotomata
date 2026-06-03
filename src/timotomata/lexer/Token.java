@@ -5,6 +5,7 @@ public class Token {
     public String lexema;
     public int linea;
     public int columna;
+    public boolean tieneError = false;
 
     public Token(TipoToken tipo, String lexema, int linea) {
         this(tipo, lexema, linea, 1);

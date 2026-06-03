@@ -305,3 +305,79 @@
     -fx-background-radius: 4;
     -fx-padding: 4 8;
 }
+
+/* ─── RichTextFX CodeArea (styled-text-area) ─── */
+.styled-text-area {
+    -fx-background-color: #1e1e2e;
+}
+
+.styled-text-area .caret {
+    -fx-stroke: #cdd6f4;
+}
+
+/* ─── Números de línea nativos de RichTextFX ─── */
+.lineno {
+    -fx-text-fill: #585b70;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 13px;
+    -fx-padding: 0 8 0 8;
+    -fx-background-color: #181825;
+}
+
+/* ─── Estilos de los Tokens (Catppuccin Mocha) ─── */
+.styled-text-area .texto-normal {
+    -fx-fill: #cdd6f4;
+}
+
+.styled-text-area .token-palabra-clave {
+    -fx-fill: #cba6f7;
+    -fx-font-weight: bold;
+}
+
+.styled-text-area .token-tipo-sensor {
+    -fx-fill: #b4befe;
+}
+
+.styled-text-area .token-funcion {
+    -fx-fill: #f5c2e7;
+}
+
+.styled-text-area .token-estado-sistema {
+    -fx-fill: #f9e2af;
+    -fx-font-weight: bold;
+}
+
+.styled-text-area .token-parametro {
+    -fx-fill: #f2cdcd;
+}
+
+.styled-text-area .token-numero {
+    -fx-fill: #fab387;
+}
+
+.styled-text-area .token-operador-relacional {
+    -fx-fill: #94e2d5;
+}
+
+.styled-text-area .token-operador-aritmetico {
+    -fx-fill: #89dceb;
+}
+
+.styled-text-area .token-identificador {
+    -fx-fill: #89b4fa;
+}
+
+.styled-text-area .token-cadena {
+    -fx-fill: #a6e3a1;
+}
+
+.styled-text-area .token-comentario {
+    -fx-fill: #585b70;
+    -fx-font-style: italic;
+}
+
+.styled-text-area .token-error {
+    -fx-fill: #f38ba8;
+    -fx-underline: true;
+    -fx-underline-color: #f38ba8;
+}

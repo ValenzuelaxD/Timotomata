@@ -5,7 +5,6 @@ import timotomata.lexer.Token;
 import timotomata.lexer.TipoToken;
 import timotomata.parser.ast.*;
 
-
 public class Parser {
     private List<Token> tokens;
     private int actual = 0;
@@ -28,12 +27,16 @@ public class Parser {
     public List<String> getErroresSintacticos() { return erroresSintacticos; }
 
     public Parser(List<Token> tokens) {
-        this.tokens = tokens;
+        // Filtrar comentarios y tokens desconocidos antes del parseo
+        this.tokens = new ArrayList<>();
+        for (Token t : tokens) {
+            if (t.tipo != TipoToken.COMENTARIO && t.tipo != TipoToken.DESCONOCIDO) {
+                this.tokens.add(t);
+            }
+        }
     }
 
-    
     //  PUNTO DE ENTRADA
-    
     public Programa parsear() {
         programa = new Programa();
         erroresSintacticos.clear();
@@ -47,24 +50,12 @@ public class Parser {
         return programa;
     }
 
-    
     //  AUXILIAR: crear nodo terminal para un token consumido
-    
     private NodoDerivacion t(Token token) {
         return new NodoDerivacion(token.tipo.name() + "(" + token.lexema + ")");
     }
 
-    
     //  NO TERMINAL: PROGRAMA
-    //  PROGRAMA → SENTENCIA PROGRAMA | ε
-    
-    /**
-     * PROGRAMA → SENTENCIA PROGRAMA | ε
-     *
-     * Con recuperación de errores: si una sentencia falla,
-     * se registra el error, se sincroniza (avanzando hasta ; o EOF)
-     * y se continúa con la siguiente sentencia.
-     */
     private void programa(NodoDerivacion nodo) {
         while (actual < tokens.size()) {
             int prod = Gramatica.obtenerProduccion(Gramatica.PROGRAMA, ver().tipo);
@@ -73,6 +64,9 @@ public class Parser {
             }
             if (prod == -1) {
                 // Token que no pertenece a PROGRAMA — error de sincronización
+                if (actual < tokens.size()) {
+                    tokens.get(actual).tieneError = true;
+                }
                 erroresSintacticos.add("Error sintactico en linea " + ver().linea
                     + ": Token inesperado" + contexto());
                 avanzar();
@@ -88,7 +82,6 @@ public class Parser {
             } catch (RuntimeException e) {
                 erroresSintacticos.add(e.getMessage());
                 sincronizar();
-                // Después de sincronizar, intentar parsear más sentencias
                 continue;
             }
             NodoDerivacion nProg = new NodoDerivacion("PROGRAMA");
@@ -99,7 +92,6 @@ public class Parser {
     }
 
     // Modo panico
-     
     private void sincronizar() {
         while (actual < tokens.size()) {
             TipoToken t = tokens.get(actual).tipo;
@@ -107,7 +99,7 @@ public class Parser {
                 avanzar(); // consumir el ;
                 return;
             }
-            if (t == TipoToken.SENSOR || t == TipoToken.UMBRAL
+            if (t == TipoToken.SENSOR || t == TipoToken.UMBRAL || t == TipoToken.RANGO
                 || t == TipoToken.SI || t == TipoToken.CALCULAR
                 || t == TipoToken.EOF) {
                 return; // no consumir — es el inicio de la siguiente sentencia
@@ -116,26 +108,29 @@ public class Parser {
         }
     }
 
-    
     //  NO TERMINAL: SENTENCIA
-    //  SENTENCIA → SENSOR ID PUNTO_COMA
-    //            | UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA
-    //            | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
-    //            | CALCULAR ID COMA TIPO_OP COMA LISTA_PARAMS PUNTO_COMA
-    
     private void sentencia(NodoDerivacion nodo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.SENTENCIA, ver().tipo);
         if (prod == -1) {
-            throw error("Se esperaba SENSOR, UMBRAL, SI o CALCULAR" + contexto());
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
+            throw error("Se esperaba SENSOR, UMBRAL, RANGO, SI o CALCULAR" + contexto());
         }
 
         switch (prod) {
             case Gramatica.P_SENT_SENSOR: {
                 Token t1 = consumir(TipoToken.SENSOR, "Se esperaba SENSOR");
                 Token t2 = consumir(TipoToken.ID, "Se esperaba el nombre del sensor");
+                
+                NodoDerivacion nTipoOpc = new NodoDerivacion("TIPO_OPC");
+                nTipoOpc.sintetico = true;
+                tipoOpc(nTipoOpc, t2.lexema);
+                
                 Token t3 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
                 nodo.agregarHijo(t(t1));
                 nodo.agregarHijo(t(t2));
+                nodo.agregarHijo(nTipoOpc);
                 nodo.agregarHijo(t(t3));
                 programa.sensores.add(t2.lexema);
                 break;
@@ -154,48 +149,54 @@ public class Parser {
                 programa.umbrales.put(t2.lexema, (double) ultimoValorSemantico);
                 break;
             }
+            case Gramatica.P_SENT_RANGO: {
+                Token t1 = consumir(TipoToken.RANGO, "Se esperaba rango");
+                Token t2 = consumir(TipoToken.ID, "Se esperaba el nombre del sensor");
+                Token t3 = consumir(TipoToken.MINIMO, "Se esperaba minimo");
+                Token t4 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+                Token t5 = consumir(TipoToken.NUMERO, "Se esperaba un numero");
+                Token t6 = consumir(TipoToken.MAXIMO, "Se esperaba maximo");
+                Token t7 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+                Token t8 = consumir(TipoToken.NUMERO, "Se esperaba un numero");
+                Token t9 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+                
+                nodo.agregarHijo(t(t1));
+                nodo.agregarHijo(t(t2));
+                nodo.agregarHijo(t(t3));
+                nodo.agregarHijo(t(t4));
+                nodo.agregarHijo(t(t5));
+                nodo.agregarHijo(t(t6));
+                nodo.agregarHijo(t(t7));
+                nodo.agregarHijo(t(t8));
+                nodo.agregarHijo(t(t9));
+                
+                double minVal = Double.parseDouble(t5.lexema);
+                double maxVal = Double.parseDouble(t8.lexema);
+                programa.rangos.put(t2.lexema, new Programa.RangoSeguro(t2.lexema, minVal, maxVal));
+                break;
+            }
             case Gramatica.P_SENT_SI: {
                 Token t1 = consumir(TipoToken.SI, "Se esperaba SI");
                 nodo.agregarHijo(t(t1));
                 NodoDerivacion nCond = condicion();
                 nodo.agregarHijo(nCond);
                 Expresion cond = (Expresion) ultimoValorSemantico;
+                
                 Token t3 = consumir(TipoToken.ENTONCES, "Se esperaba ENTONCES");
-                Token t4 = consumir(TipoToken.ESTADO, "Se esperaba ESTADO");
-                Token t5 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
-                Token t6 = consumir(TipoToken.ESTADO_SISTEMA,
-                    "Se esperaba NORMAL, PICO, CAIDA o INESTABLE");
-                Token t7 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
                 nodo.agregarHijo(t(t3));
-                nodo.agregarHijo(t(t4));
-                nodo.agregarHijo(t(t5));
-                nodo.agregarHijo(t(t6));
-                nodo.agregarHijo(t(t7));
-                programa.reglas.add(new Regla(cond, t6.lexema));
+                
+                NodoDerivacion nConsec = new NodoDerivacion("CONSECUENCIA");
+                consecuencia(nConsec, cond);
+                nodo.agregarHijo(nConsec);
                 break;
             }
             case Gramatica.P_SENT_CALCULAR: {
                 Token t1 = consumir(TipoToken.CALCULAR, "Se esperaba CALCULAR");
-                Token t2 = consumir(TipoToken.PAREN_IZQ, "Se esperaba (");
-                Token t3 = consumir(TipoToken.ID, "Se esperaba nombre del sensor");
-                Token t4 = consumir(TipoToken.COMA, "Se esperaba ,");
                 nodo.agregarHijo(t(t1));
-                nodo.agregarHijo(t(t2));
-                nodo.agregarHijo(t(t3));
-                nodo.agregarHijo(t(t4));
-
-                Calculo calculo = new Calculo(t3.lexema, "");
-
-                NodoDerivacion nTipoOp = new NodoDerivacion("TIPO_OP");
-                tipoOp(nTipoOp, calculo);
-                nodo.agregarHijo(nTipoOp);
-
-                Token t6 = consumir(TipoToken.PAREN_DER, "Se esperaba )");
-                Token t7 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
-                nodo.agregarHijo(t(t6));
-                nodo.agregarHijo(t(t7));
-
-                programa.calculos.add(calculo);
+                
+                NodoDerivacion nAux = new NodoDerivacion("AUX_CALCULAR");
+                auxCalcular(nAux);
+                nodo.agregarHijo(nAux);
                 break;
             }
             case Gramatica.P_SENT_FIN: {
@@ -203,21 +204,234 @@ public class Parser {
                 Token t2 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
                 nodo.agregarHijo(t(t1));
                 nodo.agregarHijo(t(t2));
-                // fin; — sentencia que termina el programa sin acción adicional
                 break;
             }
         }
     }
 
+    // TIPO_OPC → TIPO TIPO_VAL | ε
+    private void tipoOpc(NodoDerivacion nodo, String sensorName) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.TIPO_OPC, ver().tipo);
+        if (prod == Gramatica.P_TIPO_OPC_TIPO) {
+            Token t1 = consumir(TipoToken.TIPO, "Se esperaba tipo");
+            Token t2 = ver();
+            int pVal = Gramatica.obtenerProduccion(Gramatica.TIPO_VAL, ver().tipo);
+            if (pVal == -1) {
+                if (actual < tokens.size()) {
+                    tokens.get(actual).tieneError = true;
+                }
+                throw error("Se esperaba electrico o termico" + contexto());
+            }
+            avanzar();
+            nodo.agregarHijo(t(t1));
+            nodo.agregarHijo(t(t2));
+            programa.tiposSensores.put(sensorName, t2.lexema.toLowerCase());
+        }
+    }
+
+    // AUX_CALCULAR → ( ID , TIPO_OP ) ; | FUNC_ANALISIS ( ID PARAMS_ANALISIS ) ;
+    private void auxCalcular(NodoDerivacion nodo) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.AUX_CALCULAR, ver().tipo);
+        if (prod == -1) {
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
+            throw error("Se esperaba '(' o una funcion de analisis (promedio, maximo, fluctuacion)" + contexto());
+        }
+        if (prod == Gramatica.P_AUX_CALCULAR_OLD) {
+            Token t1 = consumir(TipoToken.PAREN_IZQ, "Se esperaba (");
+            Token t2 = consumir(TipoToken.ID, "Se esperaba nombre del sensor");
+            Token t3 = consumir(TipoToken.COMA, "Se esperaba ,");
+            nodo.agregarHijo(t(t1));
+            nodo.agregarHijo(t(t2));
+            nodo.agregarHijo(t(t3));
+            
+            Calculo calculo = new Calculo(t2.lexema, "");
+            
+            NodoDerivacion nTipoOp = new NodoDerivacion("TIPO_OP");
+            tipoOp(nTipoOp, calculo);
+            nodo.agregarHijo(nTipoOp);
+            
+            Token t5 = consumir(TipoToken.PAREN_DER, "Se esperaba )");
+            Token t6 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+            nodo.agregarHijo(t(t5));
+            nodo.agregarHijo(t(t6));
+            
+            programa.calculos.add(calculo);
+        } else {
+            NodoDerivacion nFunc = new NodoDerivacion("FUNC_ANALISIS");
+            nFunc.sintetico = true;
+            String funcName = funcAnalisis(nFunc);
+            nodo.agregarHijo(nFunc);
+            
+            Token t1 = consumir(TipoToken.PAREN_IZQ, "Se esperaba (");
+            Token t2 = consumir(TipoToken.ID, "Se esperaba nombre del sensor");
+            nodo.agregarHijo(t(t1));
+            nodo.agregarHijo(t(t2));
+            
+            Calculo calculo = new Calculo(t2.lexema, funcName);
+            
+            NodoDerivacion nParamsAn = new NodoDerivacion("PARAMS_ANALISIS");
+            nParamsAn.sintetico = true;
+            paramsAnalisis(nParamsAn, calculo);
+            nodo.agregarHijo(nParamsAn);
+            
+            Token t3 = consumir(TipoToken.PAREN_DER, "Se esperaba )");
+            Token t4 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+            nodo.agregarHijo(t(t3));
+            nodo.agregarHijo(t(t4));
+            
+            programa.calculos.add(calculo);
+        }
+    }
+
+    private String funcAnalisis(NodoDerivacion nodo) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.FUNC_ANALISIS, ver().tipo);
+        if (prod == -1) {
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
+            throw error("Se esperaba promedio, maximo o fluctuacion" + contexto());
+        }
+        Token t = avanzar();
+        nodo.agregarHijo(t(t));
+        return t.lexema.toLowerCase();
+    }
+
+    private void paramsAnalisis(NodoDerivacion nodo, Calculo calculo) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.PARAMS_ANALISIS, ver().tipo);
+        if (prod == Gramatica.P_PARAMS_AN_COMA) {
+            Token t1 = consumir(TipoToken.COMA, "Se esperaba ,");
+            Token t2 = consumir(TipoToken.VENTANA, "Se esperaba ventana");
+            Token t3 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+            Token t4 = consumir(TipoToken.NUMERO, "Se esperaba un numero");
+            
+            nodo.agregarHijo(t(t1));
+            nodo.agregarHijo(t(t2));
+            nodo.agregarHijo(t(t3));
+            nodo.agregarHijo(t(t4));
+            
+            calculo.parametros.add(new Parametro("ventana", t4.lexema));
+        }
+    }
+
+    // CONSECUENCIA → ACCION | { ACCIONES }
+    private void consecuencia(NodoDerivacion nodo, Expresion cond) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.CONSECUENCIA, ver().tipo);
+        if (prod == -1) {
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
+            throw error("Se esperaba '{' o una accion (estado = ... o alerta = ...)" + contexto());
+        }
+        if (prod == Gramatica.P_CONSEC_ACCION) {
+            NodoDerivacion nAccion = new NodoDerivacion("ACCION");
+            nAccion.sintetico = true;
+            Map<String, String> actionData = new HashMap<>();
+            accion(nAccion, actionData);
+            nodo.agregarHijo(nAccion);
+            
+            String estado = actionData.get("estado");
+            String alerta = actionData.get("alerta");
+            programa.reglas.add(new Regla(cond, estado, alerta));
+        } else {
+            Token t1 = consumir(TipoToken.LLAVE_IZQ, "Se esperaba {");
+            nodo.agregarHijo(t(t1));
+            
+            NodoDerivacion nAcciones = new NodoDerivacion("ACCIONES");
+            nAcciones.sintetico = true;
+            List<Map<String, String>> actionsList = new ArrayList<>();
+            acciones(nAcciones, actionsList);
+            nodo.agregarHijo(nAcciones);
+            
+            Token t2 = consumir(TipoToken.LLAVE_DER, "Se esperaba }");
+            nodo.agregarHijo(t(t2));
+            
+            String estado = null;
+            String alerta = null;
+            for (Map<String, String> act : actionsList) {
+                if (act.containsKey("estado")) estado = act.get("estado");
+                if (act.containsKey("alerta")) alerta = act.get("alerta");
+            }
+            programa.reglas.add(new Regla(cond, estado, alerta));
+        }
+    }
+
+    private void accion(NodoDerivacion nodo, Map<String, String> actionData) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.ACCION, ver().tipo);
+        if (prod == -1) {
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
+            throw error("Se esperaba 'estado = ...' o 'alerta = ...'" + contexto());
+        }
+        if (prod == Gramatica.P_ACCION_ESTADO) {
+            Token t1 = consumir(TipoToken.ESTADO, "Se esperaba estado");
+            Token t2 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+            Token t3 = consumir(TipoToken.ESTADO_SISTEMA, "Se esperaba NORMAL, PICO, CAIDA o INESTABLE");
+            Token t4 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+            nodo.agregarHijo(t(t1));
+            nodo.agregarHijo(t(t2));
+            nodo.agregarHijo(t(t3));
+            nodo.agregarHijo(t(t4));
+            actionData.put("estado", t3.lexema);
+        } else {
+            Token t1 = consumir(TipoToken.ALERTA, "Se esperaba alerta");
+            Token t2 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+            Token t3 = consumir(TipoToken.CADENA, "Se esperaba una cadena de texto");
+            Token t4 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+            nodo.agregarHijo(t(t1));
+            nodo.agregarHijo(t(t2));
+            nodo.agregarHijo(t(t3));
+            nodo.agregarHijo(t(t4));
+            
+            String rawStr = t3.lexema;
+            if (rawStr.startsWith("\"") && rawStr.endsWith("\"") && rawStr.length() >= 2) {
+                rawStr = rawStr.substring(1, rawStr.length() - 1);
+            }
+            actionData.put("alerta", rawStr);
+        }
+    }
+
+    private void acciones(NodoDerivacion nodo, List<Map<String, String>> actionsList) {
+        NodoDerivacion nAccion = new NodoDerivacion("ACCION");
+        nAccion.sintetico = true;
+        Map<String, String> actionData = new HashMap<>();
+        accion(nAccion, actionData);
+        nodo.agregarHijo(nAccion);
+        actionsList.add(actionData);
+        
+        NodoDerivacion nRest = new NodoDerivacion("ACCIONES_REST");
+        nRest.sintetico = true;
+        accionesRest(nRest, actionsList);
+        nodo.agregarHijo(nRest);
+    }
     
+    private void accionesRest(NodoDerivacion nodo, List<Map<String, String>> actionsList) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.ACCIONES_REST, ver().tipo);
+        if (prod == Gramatica.P_ACC_REST_REC) {
+            NodoDerivacion nAccion = new NodoDerivacion("ACCION");
+            nAccion.sintetico = true;
+            Map<String, String> actionData = new HashMap<>();
+            accion(nAccion, actionData);
+            nodo.agregarHijo(nAccion);
+            actionsList.add(actionData);
+            
+            NodoDerivacion nRest = new NodoDerivacion("ACCIONES_REST");
+            nRest.sintetico = true;
+            accionesRest(nRest, actionsList);
+            nodo.agregarHijo(nRest);
+        }
+    }
+
     //  NO TERMINAL: VALOR_UMBRAL
-    //  VALOR_UMBRAL → MENOS NUMERO | NUMERO
-    //  Devuelve NodoDerivacion, deja el valor double en ultimoValorSemantico
-    
     private NodoDerivacion valorUmbral() {
         NodoDerivacion nodo = new NodoDerivacion("VALOR_UMBRAL");
         int prod = Gramatica.obtenerProduccion(Gramatica.VALOR_UMBRAL, ver().tipo);
         if (prod == -1) {
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
             throw error("Se esperaba NUMERO o MENOS" + contexto());
         }
 
@@ -240,17 +454,22 @@ public class Parser {
         return nodo;
     }
 
-    
-    //  NO TERMINAL: CONDICION
-    //  CONDICION → EXPRESION OP_REL EXPRESION
-    
+    //  NO TERMINAL: CONDICION (Compuesta)
     private NodoDerivacion condicion() {
         NodoDerivacion nodo = new NodoDerivacion("CONDICION");
-        int prod = Gramatica.obtenerProduccion(Gramatica.CONDICION, ver().tipo);
-        if (prod == -1) {
-            throw error("Se esperaba expresion en la condicion" + contexto());
-        }
-
+        NodoDerivacion nSimple = condSimple();
+        nodo.agregarHijo(nSimple);
+        Expresion expr = (Expresion) ultimoValorSemantico;
+        
+        NodoDerivacion nComp = new NodoDerivacion("COND_COMPUESTA");
+        nComp.sintetico = true;
+        condCompuesta(nComp, expr);
+        nodo.agregarHijo(nComp);
+        return nodo;
+    }
+    
+    private NodoDerivacion condSimple() {
+        NodoDerivacion nodo = new NodoDerivacion("COND_SIMPLE");
         NodoDerivacion nExprIzq = expresion();
         Expresion izq = (Expresion) ultimoValorSemantico;
         nodo.agregarHijo(nExprIzq);
@@ -266,15 +485,52 @@ public class Parser {
         ultimoValorSemantico = new Binaria(izq, op, der);
         return nodo;
     }
+    
+    private void condCompuesta(NodoDerivacion nodo, Expresion izquierda) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.COND_COMPUESTA, ver().tipo);
+        if (prod == Gramatica.P_COND_COMP_LOG) {
+            NodoDerivacion nLog = new NodoDerivacion("LOG_OP");
+            nLog.sintetico = true;
+            String op = logOp(nLog);
+            nodo.agregarHijo(nLog);
+            
+            NodoDerivacion nSimple = condSimple();
+            Expresion der = (Expresion) ultimoValorSemantico;
+            nodo.agregarHijo(nSimple);
+            
+            Expresion nuevaIzq = new Binaria(izquierda, op, der);
+            
+            NodoDerivacion nComp = new NodoDerivacion("COND_COMPUESTA");
+            nComp.sintetico = true;
+            condCompuesta(nComp, nuevaIzq);
+            nodo.agregarHijo(nComp);
+            ultimoValorSemantico = nuevaIzq;
+        } else {
+            ultimoValorSemantico = izquierda;
+        }
+    }
+    
+    private String logOp(NodoDerivacion nodo) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.LOG_OP, ver().tipo);
+        if (prod == -1) {
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
+            throw error("Se esperaba 'y' o 'o'" + contexto());
+        }
+        Token t = avanzar();
+        nodo.agregarHijo(t(t));
+        return t.lexema.toLowerCase();
+    }
 
-    
     //  NO TERMINAL: OP_REL
-    //  OP_REL → MAYOR | MENOR | IGUAL_IGUAL | ...
-    
     private NodoDerivacion operadorRelacional() {
         NodoDerivacion nodo = new NodoDerivacion("OP_REL");
         int prod = Gramatica.obtenerProduccion(Gramatica.OP_REL, ver().tipo);
         if (prod == -1) {
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
             throw error("Se esperaba operador relacional" + contexto());
         }
 
@@ -306,17 +562,14 @@ public class Parser {
                 opStr = "!=";
                 break;
             default:
-                throw error("Error interno en OP_REL"); // no contexto porque es interno
+                throw error("Error interno en OP_REL");
         }
         nodo.agregarHijo(t(op));
         ultimoValorSemantico = opStr;
         return nodo;
     }
 
-    
     //  NO TERMINAL: EXPRESION
-    //  EXPRESION → TERMINO EXPRESION_SIG
-    
     private NodoDerivacion expresion() {
         NodoDerivacion nodo = new NodoDerivacion("EXPRESION");
         NodoDerivacion nTerm = termino();
@@ -328,9 +581,7 @@ public class Parser {
         return nodo;
     }
 
-    
-    //  EXPRESION_SIG → MAS TERMINO EXPRESION_SIG | MENOS TERMINO EXPRESION_SIG | ε
-    
+    //  EXPRESION_SIG
     private NodoDerivacion expresionSig(Expresion izquierda) {
         NodoDerivacion nodo = new NodoDerivacion("EXPRESION_SIG");
         int prod = Gramatica.obtenerProduccion(Gramatica.EXPRESION_SIG, ver().tipo);
@@ -361,17 +612,13 @@ public class Parser {
                 break;
             }
             default:
-                // ε: ya tenemos el valor en izquierda
                 ultimoValorSemantico = izquierda;
                 break;
         }
         return nodo;
     }
 
-    
     //  NO TERMINAL: TERMINO
-    //  TERMINO → FACTOR TERMINO_SIG
-    
     private NodoDerivacion termino() {
         NodoDerivacion nodo = new NodoDerivacion("TERMINO");
         NodoDerivacion nFact = factor();
@@ -383,9 +630,7 @@ public class Parser {
         return nodo;
     }
 
-    
-    //  TERMINO_SIG → POR FACTOR TERMINO_SIG | DIV FACTOR TERMINO_SIG | ε
-    
+    //  TERMINO_SIG
     private NodoDerivacion terminoSig(Expresion izquierda) {
         NodoDerivacion nodo = new NodoDerivacion("TERMINO_SIG");
         int prod = Gramatica.obtenerProduccion(Gramatica.TERMINO_SIG, ver().tipo);
@@ -422,14 +667,14 @@ public class Parser {
         return nodo;
     }
 
-    
     //  NO TERMINAL: FACTOR
-    //  FACTOR → NUMERO | ID | ABS(...) | MENOS FACTOR
-    
     private NodoDerivacion factor() {
         NodoDerivacion nodo = new NodoDerivacion("FACTOR");
         int prod = Gramatica.obtenerProduccion(Gramatica.FACTOR, ver().tipo);
         if (prod == -1) {
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
             throw error("Se esperaba numero, identificador, abs() o -" + contexto());
         }
 
@@ -469,19 +714,18 @@ public class Parser {
                 break;
             }
             default:
-                throw error("Error interno en FACTOR"); // no contexto porque es interno
+                throw error("Error interno en FACTOR");
         }
         return nodo;
     }
 
-    
     //  NO TERMINAL: TIPO_OP
-    //  TIPO_OP → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER | ...
-    //  Ahora recibe el Calculo para setear operacion y agregar parametros internamente
-    
     private void tipoOp(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.TIPO_OP, ver().tipo);
         if (prod == -1) {
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
             throw error("Se esperaba SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO o SUMA" + contexto());
         }
 
@@ -501,12 +745,11 @@ public class Parser {
             case Gramatica.P_TIPO_SUMA:
                 t = consumir(TipoToken.SUMA, null); opStr = "suma"; break;
             default:
-                throw error("Error interno en TIPO_OP"); // no contexto porque es interno
+                throw error("Error interno en TIPO_OP");
         }
         nodo.agregarHijo(t(t));
         calculo.operacion = opStr;
 
-        // Consumir ( parametros )
         Token pIzq = consumir(TipoToken.PAREN_IZQ, "Se esperaba (");
         nodo.agregarHijo(t(pIzq));
 
@@ -521,13 +764,13 @@ public class Parser {
         ultimoValorSemantico = opStr;
     }
 
-    
     //  NO TERMINAL: LISTA_PARAMS
-    //  LISTA_PARAMS → PARAM LISTA_PARAMS_SIG | ε
-    
     private void listaParams(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.LISTA_PARAMS, ver().tipo);
         if (prod == -1) {
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
             throw error("Se esperaba AMPLITUD, FRECUENCIA, VENTANA o CON" + contexto());
         }
 
@@ -544,14 +787,11 @@ public class Parser {
                 break;
             }
             case Gramatica.P_PARAMS_EPS:
-                // ε — sin parámetros
                 break;
         }
     }
 
-    
-    //  LISTA_PARAMS_SIG → COMA LISTA_PARAMS | ε
-    
+    //  LISTA_PARAMS_SIG
     private void listaParamsSig(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.LISTA_PARAMS_SIG, ver().tipo);
 
@@ -566,19 +806,17 @@ public class Parser {
                 break;
             }
             case Gramatica.P_PARAMS_SIG_EPS:
-                // ε
                 break;
         }
     }
 
-    
     //  NO TERMINAL: PARAM
-    //  PARAM → AMPLITUD ASIGNACION NUMERO | FRECUENCIA ASIGNACION NUMERO
-    //        | VENTANA ASIGNACION NUMERO | CON ASIGNACION ID
-    
     private void param(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.PARAM, ver().tipo);
         if (prod == -1) {
+            if (actual < tokens.size()) {
+                tokens.get(actual).tieneError = true;
+            }
             throw error("Se esperaba AMPLITUD, FRECUENCIA, VENTANA o CON" + contexto());
         }
 
@@ -626,11 +864,12 @@ public class Parser {
         }
     }
 
-    
     //  MÉTODOS AUXILIARES
-    
     private Token consumir(TipoToken tipo, String mensaje) {
         if (verificar(tipo)) return avanzar();
+        if (actual < tokens.size()) {
+            tokens.get(actual).tieneError = true;
+        }
         if (mensaje != null) throw error(mensaje + contexto());
         throw error("Se esperaba " + tipo + contexto());
     }
@@ -645,10 +884,12 @@ public class Parser {
     }
 
     private Token ver() {
+        if (actual >= tokens.size()) {
+            return new Token(TipoToken.EOF, "", tokens.isEmpty() ? 1 : tokens.get(tokens.size() - 1).linea);
+        }
         return tokens.get(actual);
     }
 
-    /** Retorna contexto: " despues de 'X' pero se encontró 'Y'" */
     private String contexto() {
         StringBuilder sb = new StringBuilder();
         if (ultimoConsumido != null) {

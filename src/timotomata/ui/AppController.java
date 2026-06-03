@@ -15,10 +15,14 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
-import javafx.stage.FileChooser;
-import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.stage.FileChooser;
 import javafx.util.Duration;
+
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.LineNumberFactory;
+import org.fxmisc.richtext.model.StyleSpans;
+import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import timotomata.lexer.*;
 import timotomata.parser.*;
@@ -26,8 +30,8 @@ import timotomata.parser.ast.*;
 
 /**
  * Controlador principal de la interfaz gráfica.
- * Gestiona el editor de código, el análisis en tiempo real,
- * la visualización de tokens/AST y el árbol de derivación.
+ * Gestiona el editor de código basado en RichTextFX, el análisis en tiempo real,
+ * la visualización de tokens/AST, la tabla de símbolos y la simulación.
  */
 public class AppController {
 
@@ -71,8 +75,7 @@ public class AppController {
 
     // ─── Componentes de la UI ───
     private BorderPane root;
-    private TextArea editor;
-    private LineNumberColumn lineNumbers;
+    private CodeArea editor;
     private Label statusLabel;
     private ListView<String> errorList;
     private TitledPane erroresPane;
@@ -94,7 +97,8 @@ public class AppController {
         "sensor", "umbral", "si", "entonces", "estado",
         "abs", "calcular", "normal", "pico", "caida", "inestable",
         "seno", "coseno", "cuadrada", "promedio", "maximo", "suma",
-        "amplitud", "frecuencia", "ventana", "con", "fin"
+        "amplitud", "frecuencia", "ventana", "con", "fin",
+        "tipo", "electrico", "termico", "rango", "minimo", "maximo", "y", "o", "alerta", "fluctuacion"
     };
 
     // ─── Estado interno ───
@@ -136,7 +140,7 @@ public class AppController {
         bottomArea.getChildren().add(crearStatusBar());
         root.setBottom(bottomArea);
 
-        // ─── Atajos de teclado (sin toolbar) ───
+        // ─── Atajos de teclado ───
         root.setOnKeyReleased(e -> {
             if (e.isControlDown() && e.getCode() == KeyCode.N) {
                 nuevoArchivo();
@@ -152,33 +156,26 @@ public class AppController {
         });
     }
 
-    // ─── Panel del editor (con números de línea a la izquierda) ───
+    // ─── Panel del editor (con números de línea nativos de RichTextFX) ───
     private VBox crearPanelEditor() {
         VBox panel = new VBox(0);
         panel.setStyle("-fx-background-color: #1e1e2e;");
 
-        // ─── HBox: números de línea a la izquierda, editor a la derecha ───
         HBox editorRow = new HBox(0);
         editorRow.setStyle("-fx-background-color: #1e1e2e;");
 
-        editor = new TextArea();
-        editor.setStyle("-fx-control-inner-background: #1e1e2e;"
-            + " -fx-text-fill: #cdd6f4;"
-            + " -fx-highlight-fill: #45475a;"
-            + " -fx-highlight-text-fill: #cdd6f4;"
-            + " -fx-font-family: 'Consolas', 'Courier New', monospace;"
+        // Instanciar CodeArea de RichTextFX
+        editor = new CodeArea();
+        
+        // Habilitar números de línea nativos
+        editor.setParagraphGraphicFactory(LineNumberFactory.get(editor));
+        
+        editor.setStyle("-fx-font-family: 'Consolas', 'Courier New', monospace;"
             + " -fx-font-size: 14px;"
-            + " -fx-line-spacing: 2px;"
-            + " -fx-border-color: transparent;"
-            + " -fx-padding: 0 0 0 0;"
-            + " -fx-background-insets: 0;");
-        editor.setPromptText("Escribe tu código Timotomata aquí...");
-        editor.setPadding(new Insets(4, 8, 4, 0));
+            + " -fx-line-spacing: 2px;");
+        editor.getStyleClass().add("styled-text-area");
 
-        // Números de línea — se colocan a la izquierda del editor
-        lineNumbers = new LineNumberColumn(editor);
-
-        editorRow.getChildren().addAll(lineNumbers, editor);
+        editorRow.getChildren().add(editor);
         HBox.setHgrow(editor, Priority.ALWAYS);
 
         // Teclado: F5/F6 los maneja root, el resto dispara debounce
@@ -218,6 +215,7 @@ public class AppController {
 
         // Panel de Tokens — 3 columnas: Tipo, Lexema, Linea
         tokenTable = new TableView<>(tokenData);
+        tokenTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         tokenTable.setPrefHeight(180);
         tokenTable.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-table-cell-border-color: #313244;"
@@ -246,6 +244,7 @@ public class AppController {
 
         // ─── Panel de la Tabla de Símbolos (5 columnas) ───
         tablaSimbolos = new TableView<>(simbolosData);
+        tablaSimbolos.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         tablaSimbolos.setPrefHeight(150);
         tablaSimbolos.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-table-cell-border-color: #313244;"
@@ -382,7 +381,7 @@ public class AppController {
 
         // ─── Fase 3: Tabla de símbolos y detección de IDs no declarados ───
         construirTablaSimbolos(programa, tokens);
-        List<String> erroresNoDecl = detectarNoDeclarados(programa);
+        List<String> erroresNoDecl = detectarNoDeclarados(programa, tokens);
 
         // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
         List<String> sugerenciasReservadas = sugerirIDsMalEscritos(tokens, programa);
@@ -410,6 +409,9 @@ public class AppController {
         actualizarDerivacion(programa, parser);
         actualizarStatus(tokens.size(), erroresLex.size(), erroresSintFiltrados.size(),
             erroresNoDecl.size() + sugerenciasReservadas.size());
+
+        // Colorear el editor usando RichTextFX StyleSpans
+        colorearEditor(tokens, codigo);
     }
 
     // =============================================================
@@ -457,7 +459,7 @@ public class AppController {
         }
     }
 
-    // ─── Tokens (con columna de línea) ───
+    // ─── Tokens ───
     private void actualizarTokens(List<Token> tokens) {
         tokenData.clear();
         for (Token t : tokens) {
@@ -488,6 +490,26 @@ public class AppController {
         sensores.setExpanded(true);
         raiz.getChildren().add(sensores);
 
+        // Tipos de Sensores
+        if (!programa.tiposSensores.isEmpty()) {
+            TreeItem<String> tipos = new TreeItem<>("Tipos de Sensores");
+            tipos.setExpanded(true);
+            programa.tiposSensores.forEach((sensor, tipo) -> 
+                tipos.getChildren().add(new TreeItem<>(sensor + " -> " + tipo.toUpperCase()))
+            );
+            raiz.getChildren().add(tipos);
+        }
+
+        // Rangos seguros
+        if (!programa.rangos.isEmpty()) {
+            TreeItem<String> rangos = new TreeItem<>("Rangos de Seguridad");
+            rangos.setExpanded(true);
+            programa.rangos.forEach((sensor, rango) -> 
+                rangos.getChildren().add(new TreeItem<>(sensor + " -> Mín: " + rango.minimo + ", Máx: " + rango.maximo))
+            );
+            raiz.getChildren().add(rangos);
+        }
+
         // Umbrales
         if (programa.umbrales.isEmpty()) {
             raiz.getChildren().add(new TreeItem<>("Umbrales: (ninguno)"));
@@ -508,9 +530,13 @@ public class AppController {
             for (int i = 0; i < programa.reglas.size(); i++) {
                 Regla r = programa.reglas.get(i);
                 String condStr = expresionToString(r.condicion);
-                TreeItem<String> regla = new TreeItem<>(
-                    "Regla " + (i + 1) + ": Si " + condStr);
-                regla.getChildren().add(new TreeItem<>("\u2192 Estado: " + r.estado));
+                TreeItem<String> regla = new TreeItem<>("Regla " + (i + 1) + ": Si " + condStr);
+                if (r.estado != null) {
+                    regla.getChildren().add(new TreeItem<>("\u2192 Estado: " + r.estado));
+                }
+                if (r.alerta != null) {
+                    regla.getChildren().add(new TreeItem<>("\u2192 Alerta: \"" + r.alerta + "\""));
+                }
                 reglas.getChildren().add(regla);
             }
             raiz.getChildren().add(reglas);
@@ -566,7 +592,7 @@ public class AppController {
 
         btnAbrirArbol.setDisable(false);
 
-        // Vista previa del árbol en texto (solo primeros niveles)
+        // Vista previa del árbol en texto
         String arbolTexto = arbolPreviewCompleto(parser.arbolDerivacion);
         TextArea arbolPreviewArea = new TextArea(arbolTexto);
         arbolPreviewArea.setEditable(false);
@@ -582,10 +608,6 @@ public class AppController {
         derivacionPanel.getChildren().add(arbolPreviewArea);
     }
 
-    /**
-     * Convierte el árbol de derivación completo a texto indentado (sin límite de profundidad).
-     * Usa caracteres ASCII para compatibilidad con todas las fuentes.
-     */
     private String arbolPreviewCompleto(NodoDerivacion nodo) {
         return arbolPreviewCompleto(nodo, "", true);
     }
@@ -606,7 +628,6 @@ public class AppController {
         return sb.toString();
     }
 
-    // ─── Abrir ventana gráfica del árbol de derivación ───
     private void abrirArbolDerivacion() {
         if (ultimoParser == null || ultimoParser.arbolDerivacion == null) {
             mostrarError("No hay \u00E1rbol de derivaci\u00F3n disponible. Analiza el c\u00F3digo primero.");
@@ -616,7 +637,8 @@ public class AppController {
         panel.mostrarEnVentana();
     }
 
-    // ─── Convertir expresión a string para el AST ───
+
+
     private String expresionToString(Expresion e) {
         if (e instanceof Numero n) return String.valueOf(n.valor);
         if (e instanceof Variable v) return v.nombre;
@@ -629,7 +651,6 @@ public class AppController {
         return "?";
     }
 
-    // ─── Barra de estado ───
     private void actualizarStatus(int numTokens, int numErroresLex, int numErroresSint, int numErroresNoDecl) {
         int totalErrores = numErroresLex + numErroresSint + numErroresNoDecl;
         String color = totalErrores > 0 ? "#f38ba8" : "#a6e3a1";
@@ -661,26 +682,20 @@ public class AppController {
         }
     }
 
-    // =============================================================
-    //  TABLA DE SÍMBOLOS Y VERIFICACIÓN DE IDs
-    // =============================================================
-
-    /**
-     * Construye la tabla de símbolos a partir del AST y los tokens.
-     * Sin análisis semántico: solo recopila información ya disponible
-     * del parser (sensores declarados, umbrales) y detecta referencias
-     * a variables no declaradas.
-     */
     private void construirTablaSimbolos(Programa programa, List<Token> tokens) {
         simbolosData.clear();
         if (programa == null) return;
 
         Set<String> declaradas = new HashSet<>();
 
-        // 1. Sensores declarados
+        // 1. Sensores declarados (mostrando el tipo específico si existe)
         for (String s : programa.sensores) {
             int linea = buscarLineaDeclaracion(s, tokens, TipoToken.SENSOR);
-            simbolosData.add(new InfoSimbolo(s, "SENSOR", linea, "\u2014", "\u2014"));
+            String tipoStr = "SENSOR";
+            if (programa.tiposSensores.containsKey(s)) {
+                tipoStr = "SENSOR (" + programa.tiposSensores.get(s).toUpperCase() + ")";
+            }
+            simbolosData.add(new InfoSimbolo(s, tipoStr, linea, "\u2014", "\u2014"));
             declaradas.add(s);
         }
 
@@ -688,7 +703,6 @@ public class AppController {
         for (Map.Entry<String, Double> e : programa.umbrales.entrySet()) {
             int linea = buscarLineaDeclaracion(e.getKey(), tokens, TipoToken.UMBRAL);
             String valorStr = String.valueOf(e.getValue());
-            // Determinar si es ENTERO o DECIMAL según si tiene punto decimal
             String tipoNum = esEntero(e.getValue()) ? "ENTERO" : "DECIMAL";
             simbolosData.add(new InfoSimbolo(e.getKey(), "UMBRAL", linea, valorStr, tipoNum));
             declaradas.add(e.getKey());
@@ -706,12 +720,10 @@ public class AppController {
         tablaPane.setText("\u25C6 TABLA SIMBOLOS (" + simbolosData.size() + ")");
     }
 
-    /** Determina si un valor double es entero (sin parte decimal) */
     private boolean esEntero(double valor) {
         return valor == Math.floor(valor) && !Double.isInfinite(valor);
     }
 
-    /** Busca la línea donde se declaró un sensor o umbral */
     private int buscarLineaDeclaracion(String nombre, List<Token> tokens, TipoToken tipoDecl) {
         for (int i = 0; i < tokens.size() - 1; i++) {
             Token t = tokens.get(i);
@@ -723,7 +735,6 @@ public class AppController {
         return 0;
     }
 
-    /** Busca la primera línea donde aparece una referencia a un identificador */
     private int buscarLineaPrimerUso(String nombre, List<Token> tokens) {
         for (Token t : tokens) {
             if (t.tipo == TipoToken.ID && t.lexema.equals(nombre)) {
@@ -733,10 +744,6 @@ public class AppController {
         return 0;
     }
 
-    /**
-     * Extrae todas las variables referenciadas en condiciones y expresiones
-     * del AST (Reglas, Cálculos).
-     */
     private Set<String> extraerVariablesReferenciadas(Programa programa) {
         Set<String> vars = new HashSet<>();
         for (Regla r : programa.reglas) {
@@ -746,14 +753,13 @@ public class AppController {
             vars.add(c.sensor);
             for (Parametro p : c.parametros) {
                 if ("con".equals(p.nombre)) {
-                    vars.add(p.valor); // con = identificador
+                    vars.add(p.valor);
                 }
             }
         }
         return vars;
     }
 
-    /** Recorre recursivamente una expresión para extraer Variables */
     private void extraerVariablesDeExpresion(Expresion e, Set<String> vars) {
         if (e instanceof Variable v) {
             vars.add(v.nombre);
@@ -765,14 +771,9 @@ public class AppController {
         } else if (e instanceof Abs a) {
             extraerVariablesDeExpresion(a.expresion, vars);
         }
-        // Numero no tiene variables
     }
 
-    /**
-     * Detecta identificadores usados pero no declarados y genera errores
-     * con sugerencias ortográficas usando distancia de Levenshtein.
-     */
-    private List<String> detectarNoDeclarados(Programa programa) {
+    private List<String> detectarNoDeclarados(Programa programa, List<Token> tokens) {
         List<String> errores = new ArrayList<>();
         if (programa == null) return errores;
 
@@ -783,6 +784,13 @@ public class AppController {
         Set<String> referenciadas = extraerVariablesReferenciadas(programa);
         for (String ref : referenciadas) {
             if (!declaradas.contains(ref)) {
+                // Marcar el token ID en la lista con error para subrayarlo
+                for (Token t : tokens) {
+                    if (t.tipo == TipoToken.ID && t.lexema.equals(ref)) {
+                        t.tieneError = true;
+                    }
+                }
+
                 StringBuilder sb = new StringBuilder();
                 sb.append("El identificador '").append(ref).append("' no ha sido declarado.");
 
@@ -802,21 +810,11 @@ public class AppController {
         return errores;
     }
 
-    /**
-     * Escanea TODOS los tokens ID del código y los compara con las
-     * palabras reservadas del lenguaje usando distancia de Levenshtein.
-     * Esto funciona incluso cuando el parseo falla (AST vacío).
-     *
-     * Ejemplo: si escribes "sensorr" se sugerirá "sensor".
-     * Si escribes "sí" se sugerirá "si".
-     * Si no se parece a nada, no se agrega sugerencia.
-     */
     private List<String> sugerirIDsMalEscritos(List<Token> tokens, Programa programa) {
         List<String> sugerencias = new ArrayList<>();
         idsConSugerencia.clear();
-        Set<String> yaSugeridos = new HashSet<>(); // evita duplicados
+        Set<String> yaSugeridos = new HashSet<>();
 
-        // Identificadores declarados (sensores, umbrales) — no sugerir sobre ellos
         Set<String> declaradas = new HashSet<>();
         if (programa != null) {
             declaradas.addAll(programa.sensores);
@@ -825,13 +823,11 @@ public class AppController {
             }
         }
 
-        // Recorrer todos los tokens buscando IDs
         for (Token t : tokens) {
             if (t.tipo != TipoToken.ID) continue;
             String lexema = t.lexema;
             String idLower = lexema.toLowerCase();
 
-            // Si ya está declarado o ya sugerimos para este ID, ignorar
             if (declaradas.contains(idLower)) continue;
             if (yaSugeridos.contains(idLower)) continue;
             boolean esReservadaExacta = false;
@@ -840,11 +836,11 @@ public class AppController {
             }
             if (esReservadaExacta) continue;
 
-            // Buscar palabra reservada similar (distancia Levenshtein ≤ 2)
             String sugerencia = buscarSugerencia(idLower, PALABRAS_RESERVADAS);
             if (sugerencia != null) {
                 yaSugeridos.add(idLower);
                 idsConSugerencia.add(idLower);
+                t.tieneError = true; // Marcar token con error
                 sugerencias.add("Error lexico en linea " + t.linea
                     + ": La palabra '" + lexema + "' no es una palabra reservada del lenguaje."
                     + " \u00BFQuisiste decir '" + sugerencia + "'?");
@@ -854,9 +850,6 @@ public class AppController {
         return sugerencias;
     }
 
-    /**
-     * Distancia de Levenshtein entre dos cadenas.
-     */
     private int levenshtein(String a, String b) {
         int m = a.length(), n = b.length();
         int[][] dp = new int[m + 1][n + 1];
@@ -874,10 +867,6 @@ public class AppController {
         return dp[m][n];
     }
 
-    /**
-     * Busca la palabra más cercana (distancia ≤ 2) entre los candidatos.
-     * Retorna null si no hay ninguna lo suficientemente parecida.
-     */
     private String buscarSugerencia(String texto, String[] candidatos) {
         String mejor = null;
         int menorDist = Integer.MAX_VALUE;
@@ -890,6 +879,100 @@ public class AppController {
             }
         }
         return mejor;
+    }
+
+    // =============================================================
+    //  COLOREADO DE EDITOR NATIVO CON RICHTEXTFX
+    // =============================================================
+    private void colorearEditor(List<Token> tokens, String fuente) {
+        if (editor == null || fuente.isEmpty()) return;
+
+        StyleSpansBuilder<Collection<String>> spansBuilder = new StyleSpansBuilder<>();
+        int pos = 0;
+
+        for (Token t : tokens) {
+            if (t.tipo == TipoToken.EOF) continue;
+
+            int tokenStart = fuente.indexOf(t.lexema, pos);
+            if (tokenStart < pos) {
+                tokenStart = fuente.indexOf(t.lexema, 0);
+            }
+
+            if (tokenStart >= pos) {
+                // Texto intermedio (espacios, saltos de línea)
+                if (tokenStart > pos) {
+                    spansBuilder.add(Collections.singleton("texto-normal"), tokenStart - pos);
+                }
+
+                // Determinar clase de estilo según token
+                String styleClass = obtenerClaseEstiloToken(t);
+                spansBuilder.add(Collections.singleton(styleClass), t.lexema.length());
+                pos = tokenStart + t.lexema.length();
+            } else {
+                spansBuilder.add(Collections.singleton("texto-normal"), t.lexema.length());
+            }
+        }
+
+        if (pos < fuente.length()) {
+            spansBuilder.add(Collections.singleton("texto-normal"), fuente.length() - pos);
+        }
+
+        try {
+            editor.setStyleSpans(0, spansBuilder.create());
+        } catch (Exception e) {
+            // Prevenir excepciones por modificaciones concurrentes rápidas
+        }
+    }
+
+    private String obtenerClaseEstiloToken(Token t) {
+        if (t.tieneError || t.tipo == TipoToken.DESCONOCIDO) {
+            return "token-error";
+        }
+        
+        TipoToken tipo = t.tipo;
+
+        if (tipo == TipoToken.COMENTARIO) return "token-comentario";
+        if (tipo == TipoToken.CADENA) return "token-cadena";
+
+        if (tipo == TipoToken.SENSOR || tipo == TipoToken.UMBRAL || tipo == TipoToken.SI ||
+            tipo == TipoToken.ENTONCES || tipo == TipoToken.ESTADO || tipo == TipoToken.CALCULAR ||
+            tipo == TipoToken.FIN || tipo == TipoToken.TIPO || tipo == TipoToken.RANGO ||
+            tipo == TipoToken.MINIMO || tipo == TipoToken.MAXIMO || tipo == TipoToken.ALERTA ||
+            tipo == TipoToken.Y || tipo == TipoToken.O) {
+            return "token-palabra-clave";
+        }
+
+        if (tipo == TipoToken.ELECTRICO || tipo == TipoToken.TERMICO) {
+            return "token-tipo-sensor";
+        }
+
+        if (tipo == TipoToken.ABS || tipo == TipoToken.SENO || tipo == TipoToken.COSENO ||
+            tipo == TipoToken.CUADRADA || tipo == TipoToken.PROMEDIO || tipo == TipoToken.MAXIMO ||
+            tipo == TipoToken.SUMA || tipo == TipoToken.FLUCTUACION) {
+            return "token-funcion";
+        }
+
+        if (tipo == TipoToken.ESTADO_SISTEMA) return "token-estado-sistema";
+
+        if (tipo == TipoToken.AMPLITUD || tipo == TipoToken.FRECUENCIA || tipo == TipoToken.VENTANA ||
+            tipo == TipoToken.CON) {
+            return "token-parametro";
+        }
+
+        if (tipo == TipoToken.NUMERO) return "token-numero";
+
+        if (tipo == TipoToken.MAYOR || tipo == TipoToken.MENOR || tipo == TipoToken.IGUAL_IGUAL ||
+            tipo == TipoToken.MAYOR_IGUAL || tipo == TipoToken.MENOR_IGUAL || tipo == TipoToken.DIFERENTE) {
+            return "token-operador-relacional";
+        }
+
+        if (tipo == TipoToken.MAS || tipo == TipoToken.MENOS || tipo == TipoToken.POR || tipo == TipoToken.DIV) {
+            return "token-operador-aritmetico";
+        }
+
+        if (tipo == TipoToken.ID) return "token-identificador";
+
+        return "texto-normal";
     }
 
     // =============================================================
@@ -911,7 +994,8 @@ public class AppController {
         File file = fc.showOpenDialog(root.getScene().getWindow());
         if (file != null) {
             try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-                editor.setText(br.lines().collect(Collectors.joining("\n")));
+                editor.clear();
+                editor.appendText(br.lines().collect(Collectors.joining("\n")));
                 archivoActual = file.getAbsolutePath();
                 analizarCodigo();
             } catch (IOException ex) {
@@ -950,23 +1034,28 @@ public class AppController {
     }
 
     private void cargarEjemploPorDefecto() {
-        editor.setText(
-            "sensor voltaje;\n"
-            + "sensor temperatura;\n"
-            + "umbral maxValor = 220;\n"
-            + "umbral minValor = 100;\n"
+        editor.clear();
+        editor.appendText(
+            "// Monitoreo de subestacion electrica\n"
+            + "sensor voltaje tipo electrico;\n"
+            + "sensor temperatura tipo termico;\n"
             + "\n"
-            + "si voltaje >= maxValor entonces estado = PICO;\n"
-            + "si voltaje <= minValor entonces estado = CAIDA;\n"
-            + "si temperatura > 80 entonces estado = INESTABLE;\n"
+            + "rango voltaje minimo = 110 maximo = 127;\n"
+            + "rango temperatura minimo = -10 maximo = 80;\n"
             + "\n"
-            + "calcular(voltaje, SENO(AMPLITUD=300, FRECUENCIA=0.1));\n"
+            + "umbral maxVolt = 127;\n"
+            + "umbral minVolt = 110;\n"
+            + "\n"
+            + "si voltaje >= maxVolt o temperatura > 80 entonces {\n"
+            + "    estado = PICO;\n"
+            + "    alerta = \"Voltaje o temperatura elevada\";\n"
+            + "}\n"
+            + "si voltaje <= minVolt entonces estado = CAIDA;\n"
+            + "\n"
+            + "calcular promedio(voltaje, ventana = 10);\n"
+            + "calcular fluctuacion(temperatura);\n"
         );
     }
-
-    // =============================================================
-    //  UTILERÍAS
-    // =============================================================
 
     private void mostrarError(String msg) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
