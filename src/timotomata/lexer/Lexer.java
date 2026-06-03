@@ -208,6 +208,7 @@ public class Lexer {
                         String lexema = fuente.substring(inicio, actual);
                         agregar(TipoToken.COMENTARIO, lexema, inicioLinea, inicioColumna);
                         inicio = actual;
+                        estado = Q0;
                         break;
                     }
                     if (estado == Q_COM_LINEA && clase == NL) {
@@ -217,6 +218,7 @@ public class Lexer {
                         linea++;
                         columna = 1;
                         inicio = actual;
+                        estado = Q0;
                         break;
                     }
                     if (estado == Q_CADENA && clase == COMILLAS) {
@@ -224,6 +226,7 @@ public class Lexer {
                         String lexema = fuente.substring(inicio, actual);
                         agregar(TipoToken.CADENA, lexema, inicioLinea, inicioColumna);
                         inicio = actual;
+                        estado = Q0;
                         break;
                     }
                     
@@ -232,6 +235,7 @@ public class Lexer {
                     emitirTokenCompuesto(estado, clase, lexema, inicioLinea, inicioColumna);
                     inicio = actual;
                     inicioColumna = columna;
+                    estado = Q0;
                     ultimoAcept = -1;
                     posUltimaAcept = -1;
                     break;

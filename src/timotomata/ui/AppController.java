@@ -26,6 +26,7 @@ import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
+
 import timotomata.lexer.*;
 import timotomata.parser.*;
 import timotomata.parser.ast.*;
