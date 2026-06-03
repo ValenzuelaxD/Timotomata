@@ -1,0 +1,10 @@
+{
+    "java.project.sourcePaths": ["src"],
+    "java.project.outputPath": "out",
+    "java.project.referencedLibraries": [
+        "javafx-sdk-23.0.2/lib/**/*.jar",
+        "lib/**/*.jar"
+    ],
+    "java.inlayHints.parameterNames.enabled": "none",
+    "java.configuration.updateBuildConfiguration": "automatic"
+}

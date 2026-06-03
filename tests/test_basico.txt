@@ -1,0 +1,8 @@
+sensor temperatura;
+sensor presion;
+umbral temp_max = 100;
+umbral temp_min = 0;
+si temperatura > temp_max entonces estado = PICO;
+si temperatura < temp_min entonces estado = CAIDA;
+si presion > 50 entonces estado = INESTABLE;
+FIN

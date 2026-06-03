@@ -1,0 +1,13 @@
+// Esto es un comentario de linea
+// El sensor y umbral de abajo deberian funcionar
+sensor voltaje;
+sensor corriente;
+/* Esto es un comentario
+   de bloque que abarca
+   varias lineas */
+umbral max = 150;
+/* Comentario */ umbral min = 5; /* otro comentario */
+// Comentario al final
+si voltaje >= max entonces estado = NORMAL;
+// Esto tambien es comentario
+FIN

@@ -1,0 +1,34 @@
+# ─── Compilados ───
+*.class
+*.war
+*.ear
+/out/
+/bin/
+
+# ─── JavaFX SDK (descargar manualmente) ───
+/javafx-sdk/
+/javafx-sdk-*/
+javafx-sdk*.zip
+
+# ─── Recursos academicos ───
+/Recursos/
+
+# ─── IDEs ───
+/.idea/
+*.iml
+/.settings/
+.classpath
+.project
+.sonarlint/
+
+# ─── Sistema operativo ───
+.DS_Store
+Thumbs.db
+
+# ─── Logs y respaldos ───
+*.log
+*.bak
+
+# ─── Otros ───
+node_modules/
+test_input.txt

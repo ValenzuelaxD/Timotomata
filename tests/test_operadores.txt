@@ -1,0 +1,17 @@
+// Prueba de todos los operadores relacionales
+sensor a;
+sensor b;
+umbral x = 10;
+umbral y = 20;
+si a > x entonces estado = NORMAL;
+si a < y entonces estado = PICO;
+si a == x entonces estado = CAIDA;
+si a >= x entonces estado = INESTABLE;
+si a <= y entonces estado = NORMAL;
+si a != x entonces estado = PICO;
+// Prueba de expresiones aritmeticas con abs
+sensor valor;
+umbral limite = 100;
+si abs(valor - 5) > limite entonces estado = CAIDA;
+si abs(valor + 10) <= 50 entonces estado = NORMAL;
+FIN
