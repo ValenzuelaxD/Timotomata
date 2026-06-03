@@ -311,6 +311,10 @@
     -fx-background-color: #1e1e2e;
 }
 
+.styled-text-area .text {
+    -fx-fill: #cdd6f4;
+}
+
 .styled-text-area .caret {
     -fx-stroke: #cdd6f4;
 }

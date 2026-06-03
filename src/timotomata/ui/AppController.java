@@ -11,7 +11,9 @@ import javafx.geometry.*;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.application.Platform;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
@@ -92,20 +94,10 @@ public class AppController {
     private ObservableList<InfoSimbolo> simbolosData = FXCollections.observableArrayList();
     private TitledPane tablaPane;
 
-    // ─── Palabras reservadas para sugerencias ───
-    private static final String[] PALABRAS_RESERVADAS = {
-        "sensor", "umbral", "si", "entonces", "estado",
-        "abs", "calcular", "normal", "pico", "caida", "inestable",
-        "seno", "coseno", "cuadrada", "promedio", "maximo", "suma",
-        "amplitud", "frecuencia", "ventana", "con", "fin",
-        "tipo", "electrico", "termico", "rango", "minimo", "maximo", "y", "o", "alerta", "fluctuacion"
-    };
-
     // ─── Estado interno ───
     private Programa ultimoPrograma;
     private Parser ultimoParser;
     private String archivoActual = null;
-    private Set<String> idsConSugerencia = new HashSet<>();
 
     // =============================================================
     //  CONSTRUCTOR
@@ -129,7 +121,7 @@ public class AppController {
 
         // ─── Panel central ───
         SplitPane split = new SplitPane();
-        split.setDividerPositions(0.62);
+        split.setDividerPositions(0.38);
         split.getItems().addAll(crearPanelEditor(), crearPanelInfo());
         SplitPane.setResizableWithParent(split.getItems().get(0), true);
         root.setCenter(split);
@@ -177,6 +169,21 @@ public class AppController {
 
         editorRow.getChildren().add(editor);
         HBox.setHgrow(editor, Priority.ALWAYS);
+
+        // Propagar estilo del carácter anterior cuando se escribe un carácter nuevo
+        // Si el carácter anterior tiene estilo (ej: palabra clave morada), el nuevo
+        // carácter hereda ese estilo hasta que el debounce revalide.
+        editor.addEventHandler(KeyEvent.KEY_TYPED, e -> {
+            Platform.runLater(() -> {
+                int caret = editor.getCaretPosition();
+                if (caret > 1) {
+                    Collection<String> prevStyle = editor.getStyleAtPosition(caret - 2);
+                    if (prevStyle != null && !prevStyle.isEmpty()) {
+                        editor.setStyle(caret - 1, caret, prevStyle);
+                    }
+                }
+            });
+        });
 
         // Teclado: F5/F6 los maneja root, el resto dispara debounce
         editor.setOnKeyReleased(e -> {
@@ -292,8 +299,7 @@ public class AppController {
         astPane.getStyleClass().add("titled-pane-custom");
         astPane.setCollapsible(false);
 
-        panel.getChildren().addAll(erroresPane, tokensPane, tablaPane, astPane);
-        VBox.setVgrow(astPane, Priority.ALWAYS);
+        panel.getChildren().addAll(erroresPane, tokensPane, tablaPane);
         return panel;
     }
 
@@ -379,36 +385,15 @@ public class AppController {
         ultimoPrograma = programa;
         ultimoParser = parser;
 
-        // ─── Fase 3: Tabla de símbolos y detección de IDs no declarados ───
+        // ─── Fase 3: Tabla de símbolos ───
         construirTablaSimbolos(programa, tokens);
-        List<String> erroresNoDecl = detectarNoDeclarados(programa, tokens);
-
-        // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
-        List<String> sugerenciasReservadas = sugerirIDsMalEscritos(tokens, programa);
-
-        // ─── Filtrar errores sintácticos que duplican sugerencias ───
-        List<String> erroresSintFiltrados = new ArrayList<>();
-        for (String err : erroresSint) {
-            boolean duplicado = false;
-            String errLower = err.toLowerCase();
-            for (String id : idsConSugerencia) {
-                if (errLower.contains("'" + id + "'")) {
-                    duplicado = true;
-                    break;
-                }
-            }
-            if (!duplicado) {
-                erroresSintFiltrados.add(err);
-            }
-        }
 
         // ─── Actualizar UI ───
-        actualizarErrores(erroresLex, erroresSintFiltrados, erroresNoDecl, sugerenciasReservadas);
+        actualizarErrores(erroresLex, erroresSint);
         actualizarTokens(tokens);
         actualizarAST(programa);
         actualizarDerivacion(programa, parser);
-        actualizarStatus(tokens.size(), erroresLex.size(), erroresSintFiltrados.size(),
-            erroresNoDecl.size() + sugerenciasReservadas.size());
+        actualizarStatus(tokens.size(), erroresLex.size(), erroresSint.size());
 
         // Colorear el editor usando RichTextFX StyleSpans
         colorearEditor(tokens, codigo);
@@ -419,37 +404,34 @@ public class AppController {
     // =============================================================
 
     // ─── Errores ───
-    private void actualizarErrores(List<String> erroresLex, List<String> erroresSint,
-                                    List<String> erroresNoDecl, List<String> sugerencias) {
+    private void actualizarErrores(List<String> erroresLex, List<String> erroresSint) {
         ObservableList<String> items = errorList.getItems();
         items.clear();
 
-        int totalErrores = 0;
+        // Recopilar todos los errores con su prefijo y línea para ordenarlos
+        List<String[]> erroresConLinea = new ArrayList<>();
 
         for (String err : erroresLex) {
-            items.add("[LEXICO] " + err);
-            totalErrores++;
+            erroresConLinea.add(new String[]{"[LEXICO]", err, String.valueOf(extraerLinea(err))});
         }
-
-        for (String err : sugerencias) {
-            items.add("[LEXICO] " + err);
-            totalErrores++;
-        }
-
         for (String err : erroresSint) {
-            items.add("[SINTACTICO] " + err);
-            totalErrores++;
+            erroresConLinea.add(new String[]{"[SINTACTICO]", err, String.valueOf(extraerLinea(err))});
         }
 
-        for (String err : erroresNoDecl) {
-            items.add("[ERROR] " + err);
-            totalErrores++;
+        // Ordenar por número de línea
+        erroresConLinea.sort((a, b) -> Integer.compare(
+            Integer.parseInt(a[2]), Integer.parseInt(b[2])));
+
+        // Agregar ordenados a la lista
+        for (String[] error : erroresConLinea) {
+            items.add(error[0] + " " + error[1]);
         }
 
-        if (totalErrores == 0) {
+        if (erroresConLinea.isEmpty()) {
             items.add("Sin errores.");
         }
 
+        int totalErrores = erroresConLinea.size();
         if (totalErrores > 0) {
             erroresPane.setText("ERRORES (" + totalErrores + ")");
             erroresPane.setStyle("-fx-text-fill: #f38ba8;");
@@ -457,6 +439,18 @@ public class AppController {
             erroresPane.setText("OK (0)");
             erroresPane.setStyle("-fx-text-fill: #a6e3a1;");
         }
+    }
+
+    // Extraer número de línea de un mensaje de error
+    private int extraerLinea(String mensaje) {
+        // Buscar patrón "línea X" o "linea X" (con o sin tilde)
+        java.util.regex.Matcher m = java.util.regex.Pattern
+            .compile("(?i)(?:l[ií]nea\\s+)(\\d+)")
+            .matcher(mensaje);
+        if (m.find()) {
+            return Integer.parseInt(m.group(1));
+        }
+        return Integer.MAX_VALUE; // Si no se encuentra línea, va al final
     }
 
     // ─── Tokens ───
@@ -651,8 +645,8 @@ public class AppController {
         return "?";
     }
 
-    private void actualizarStatus(int numTokens, int numErroresLex, int numErroresSint, int numErroresNoDecl) {
-        int totalErrores = numErroresLex + numErroresSint + numErroresNoDecl;
+    private void actualizarStatus(int numTokens, int numErroresLex, int numErroresSint) {
+        int totalErrores = numErroresLex + numErroresSint;
         String color = totalErrores > 0 ? "#f38ba8" : "#a6e3a1";
         statusLabel.setStyle("-fx-text-fill: " + color
             + "; -fx-font-family: 'Consolas', monospace; -fx-font-size: 11;");
@@ -686,8 +680,6 @@ public class AppController {
         simbolosData.clear();
         if (programa == null) return;
 
-        Set<String> declaradas = new HashSet<>();
-
         // 1. Sensores declarados (mostrando el tipo específico si existe)
         for (String s : programa.sensores) {
             int linea = buscarLineaDeclaracion(s, tokens, TipoToken.SENSOR);
@@ -696,7 +688,6 @@ public class AppController {
                 tipoStr = "SENSOR (" + programa.tiposSensores.get(s).toUpperCase() + ")";
             }
             simbolosData.add(new InfoSimbolo(s, tipoStr, linea, "\u2014", "\u2014"));
-            declaradas.add(s);
         }
 
         // 2. Umbrales declarados
@@ -705,16 +696,6 @@ public class AppController {
             String valorStr = String.valueOf(e.getValue());
             String tipoNum = esEntero(e.getValue()) ? "ENTERO" : "DECIMAL";
             simbolosData.add(new InfoSimbolo(e.getKey(), "UMBRAL", linea, valorStr, tipoNum));
-            declaradas.add(e.getKey());
-        }
-
-        // 3. Referencias a identificadores en expresiones
-        Set<String> referenciadas = extraerVariablesReferenciadas(programa);
-        for (String ref : referenciadas) {
-            if (!declaradas.contains(ref)) {
-                int linea = buscarLineaPrimerUso(ref, tokens);
-                simbolosData.add(new InfoSimbolo(ref, "NO DECLARADO", linea, "\u2014", "\u2014"));
-            }
         }
 
         tablaPane.setText("\u25C6 TABLA SIMBOLOS (" + simbolosData.size() + ")");
@@ -733,152 +714,6 @@ public class AppController {
             }
         }
         return 0;
-    }
-
-    private int buscarLineaPrimerUso(String nombre, List<Token> tokens) {
-        for (Token t : tokens) {
-            if (t.tipo == TipoToken.ID && t.lexema.equals(nombre)) {
-                return t.linea;
-            }
-        }
-        return 0;
-    }
-
-    private Set<String> extraerVariablesReferenciadas(Programa programa) {
-        Set<String> vars = new HashSet<>();
-        for (Regla r : programa.reglas) {
-            extraerVariablesDeExpresion(r.condicion, vars);
-        }
-        for (Calculo c : programa.calculos) {
-            vars.add(c.sensor);
-            for (Parametro p : c.parametros) {
-                if ("con".equals(p.nombre)) {
-                    vars.add(p.valor);
-                }
-            }
-        }
-        return vars;
-    }
-
-    private void extraerVariablesDeExpresion(Expresion e, Set<String> vars) {
-        if (e instanceof Variable v) {
-            vars.add(v.nombre);
-        } else if (e instanceof Binaria b) {
-            extraerVariablesDeExpresion(b.izquierda, vars);
-            extraerVariablesDeExpresion(b.derecha, vars);
-        } else if (e instanceof Negacion n) {
-            extraerVariablesDeExpresion(n.expresion, vars);
-        } else if (e instanceof Abs a) {
-            extraerVariablesDeExpresion(a.expresion, vars);
-        }
-    }
-
-    private List<String> detectarNoDeclarados(Programa programa, List<Token> tokens) {
-        List<String> errores = new ArrayList<>();
-        if (programa == null) return errores;
-
-        Set<String> declaradas = new HashSet<>();
-        declaradas.addAll(programa.sensores);
-        declaradas.addAll(programa.umbrales.keySet());
-
-        Set<String> referenciadas = extraerVariablesReferenciadas(programa);
-        for (String ref : referenciadas) {
-            if (!declaradas.contains(ref)) {
-                // Marcar el token ID en la lista con error para subrayarlo
-                for (Token t : tokens) {
-                    if (t.tipo == TipoToken.ID && t.lexema.equals(ref)) {
-                        t.tieneError = true;
-                    }
-                }
-
-                StringBuilder sb = new StringBuilder();
-                sb.append("El identificador '").append(ref).append("' no ha sido declarado.");
-
-                // Sugerencia 1: comparar con sensores/umbrales declarados
-                String sugerencia = buscarSugerencia(ref, declaradas.toArray(new String[0]));
-                if (sugerencia == null) {
-                    // Sugerencia 2: comparar con palabras reservadas
-                    sugerencia = buscarSugerencia(ref, PALABRAS_RESERVADAS);
-                }
-
-                if (sugerencia != null) {
-                    sb.append(" [SUGERENCIA: \u00BFQuisiste decir '").append(sugerencia).append("'?]");
-                }
-                errores.add(sb.toString());
-            }
-        }
-        return errores;
-    }
-
-    private List<String> sugerirIDsMalEscritos(List<Token> tokens, Programa programa) {
-        List<String> sugerencias = new ArrayList<>();
-        idsConSugerencia.clear();
-        Set<String> yaSugeridos = new HashSet<>();
-
-        Set<String> declaradas = new HashSet<>();
-        if (programa != null) {
-            declaradas.addAll(programa.sensores);
-            for (String k : programa.umbrales.keySet()) {
-                declaradas.add(k);
-            }
-        }
-
-        for (Token t : tokens) {
-            if (t.tipo != TipoToken.ID) continue;
-            String lexema = t.lexema;
-            String idLower = lexema.toLowerCase();
-
-            if (declaradas.contains(idLower)) continue;
-            if (yaSugeridos.contains(idLower)) continue;
-            boolean esReservadaExacta = false;
-            for (String r : PALABRAS_RESERVADAS) {
-                if (idLower.equals(r)) { esReservadaExacta = true; break; }
-            }
-            if (esReservadaExacta) continue;
-
-            String sugerencia = buscarSugerencia(idLower, PALABRAS_RESERVADAS);
-            if (sugerencia != null) {
-                yaSugeridos.add(idLower);
-                idsConSugerencia.add(idLower);
-                t.tieneError = true; // Marcar token con error
-                sugerencias.add("Error lexico en linea " + t.linea
-                    + ": La palabra '" + lexema + "' no es una palabra reservada del lenguaje."
-                    + " \u00BFQuisiste decir '" + sugerencia + "'?");
-            }
-        }
-
-        return sugerencias;
-    }
-
-    private int levenshtein(String a, String b) {
-        int m = a.length(), n = b.length();
-        int[][] dp = new int[m + 1][n + 1];
-        for (int i = 0; i <= m; i++) dp[i][0] = i;
-        for (int j = 0; j <= n; j++) dp[0][j] = j;
-        for (int i = 1; i <= m; i++) {
-            for (int j = 1; j <= n; j++) {
-                int cost = (a.charAt(i - 1) == b.charAt(j - 1)) ? 0 : 1;
-                dp[i][j] = Math.min(Math.min(
-                    dp[i - 1][j] + 1,
-                    dp[i][j - 1] + 1),
-                    dp[i - 1][j - 1] + cost);
-            }
-        }
-        return dp[m][n];
-    }
-
-    private String buscarSugerencia(String texto, String[] candidatos) {
-        String mejor = null;
-        int menorDist = Integer.MAX_VALUE;
-        String tLower = texto.toLowerCase();
-        for (String c : candidatos) {
-            int dist = levenshtein(tLower, c.toLowerCase());
-            if (dist < menorDist && dist <= 2) {
-                menorDist = dist;
-                mejor = c;
-            }
-        }
-        return mejor;
     }
 
     // =============================================================

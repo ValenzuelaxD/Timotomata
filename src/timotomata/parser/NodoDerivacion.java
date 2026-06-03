@@ -11,6 +11,7 @@ import java.util.*;
  */
 public class NodoDerivacion {
     public String valor;
+    public String lexema;  // Solo para nodos terminales: el lexema real del token
     public List<NodoDerivacion> hijos = new ArrayList<>();
     public boolean sintetico = false; // true para nodos gramaticales internos (EXPRESION_SIG, etc.)
 

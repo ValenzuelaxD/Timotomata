@@ -3,24 +3,11 @@
     "configurations": [
         {
             "type": "java",
-            "name": "MainApp",
-            "request": "launch",
-            "mainClass": "timotomata.ui.MainApp",
-            "projectName": "Timotomata_5e29d4ec"
-        },
-        {
-            "type": "java",
-            "name": "Main",
-            "request": "launch",
-            "mainClass": "timotomata.Main",
-            "projectName": "Timotomata_5e29d4ec"
-        },
-        {
-            "type": "java",
             "name": "Timotomata GUI",
             "request": "launch",
             "mainClass": "timotomata.ui.MainApp",
             "vmArgs": "--module-path javafx-sdk-23.0.2/lib --add-modules javafx.controls,javafx.graphics",
+            "classpath": ["out", "lib/*"],
             "projectName": "Timotomata",
             "cwd": "${workspaceFolder}"
         },
@@ -29,6 +16,7 @@
             "name": "Timotomata CLI",
             "request": "launch",
             "mainClass": "timotomata.Main",
+            "classpath": ["out", "lib/*"],
             "projectName": "Timotomata",
             "cwd": "${workspaceFolder}"
         }
