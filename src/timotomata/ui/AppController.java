@@ -101,6 +101,7 @@ public class AppController {
     private Programa ultimoPrograma;
     private Parser ultimoParser;
     private String archivoActual = null;
+    private Set<String> idsConSugerencia = new HashSet<>();
 
     // =============================================================
     //  CONSTRUCTOR
@@ -386,15 +387,29 @@ public class AppController {
         // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
         List<String> sugerenciasReservadas = sugerirIDsMalEscritos(tokens, programa);
 
+        // ─── Filtrar errores sintácticos que duplican sugerencias ───
+        List<String> erroresSintFiltrados = new ArrayList<>();
+        for (String err : erroresSint) {
+            boolean duplicado = false;
+            String errLower = err.toLowerCase();
+            for (String id : idsConSugerencia) {
+                if (errLower.contains("'" + id + "'")) {
+                    duplicado = true;
+                    break;
+                }
+            }
+            if (!duplicado) {
+                erroresSintFiltrados.add(err);
+            }
+        }
+
         // ─── Actualizar UI ───
-        List<String> todosErrores = new ArrayList<>();
-        todosErrores.addAll(erroresNoDecl);
-        todosErrores.addAll(sugerenciasReservadas);
-        actualizarErrores(erroresLex, erroresSint, todosErrores);
+        actualizarErrores(erroresLex, erroresSintFiltrados, erroresNoDecl, sugerenciasReservadas);
         actualizarTokens(tokens);
         actualizarAST(programa);
         actualizarDerivacion(programa, parser);
-        actualizarStatus(tokens.size(), erroresLex.size(), erroresSint.size(), todosErrores.size());
+        actualizarStatus(tokens.size(), erroresLex.size(), erroresSintFiltrados.size(),
+            erroresNoDecl.size() + sugerenciasReservadas.size());
     }
 
     // =============================================================
@@ -402,13 +417,19 @@ public class AppController {
     // =============================================================
 
     // ─── Errores ───
-    private void actualizarErrores(List<String> erroresLex, List<String> erroresSint, List<String> erroresNoDecl) {
+    private void actualizarErrores(List<String> erroresLex, List<String> erroresSint,
+                                    List<String> erroresNoDecl, List<String> sugerencias) {
         ObservableList<String> items = errorList.getItems();
         items.clear();
 
         int totalErrores = 0;
 
         for (String err : erroresLex) {
+            items.add("[LEXICO] " + err);
+            totalErrores++;
+        }
+
+        for (String err : sugerencias) {
             items.add("[LEXICO] " + err);
             totalErrores++;
         }
@@ -792,6 +813,7 @@ public class AppController {
      */
     private List<String> sugerirIDsMalEscritos(List<Token> tokens, Programa programa) {
         List<String> sugerencias = new ArrayList<>();
+        idsConSugerencia.clear();
         Set<String> yaSugeridos = new HashSet<>(); // evita duplicados
 
         // Identificadores declarados (sensores, umbrales) — no sugerir sobre ellos
@@ -822,9 +844,10 @@ public class AppController {
             String sugerencia = buscarSugerencia(idLower, PALABRAS_RESERVADAS);
             if (sugerencia != null) {
                 yaSugeridos.add(idLower);
-                sugerencias.add("El identificador '" + lexema
-                    + "' no coincide con ninguna palabra reservada."
-                    + " [SUGERENCIA: \u00BFQuisiste decir '" + sugerencia + "'?]");
+                idsConSugerencia.add(idLower);
+                sugerencias.add("Error lexico en linea " + t.linea
+                    + ": La palabra '" + lexema + "' no es una palabra reservada del lenguaje."
+                    + " \u00BFQuisiste decir '" + sugerencia + "'?");
             }
         }
 

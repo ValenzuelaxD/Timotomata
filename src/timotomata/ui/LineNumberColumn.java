@@ -1,200 +1,177 @@
 package timotomata.ui;
 
 import javafx.application.Platform;
-import javafx.geometry.VPos;
-import javafx.scene.canvas.Canvas;
-import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextArea;
-import javafx.scene.paint.Color;
-import javafx.scene.text.Font;
-import javafx.scene.text.TextAlignment;
+import javafx.scene.layout.Region;
 
 /**
- * Columna de números de línea que se sincroniza con un TextArea.
- * Se coloca a la izquierda del editor dentro de un HBox.
- * 
- * Canvas redimensionable: override isResizable() = true y prefWidth()
- * devuelve un ancho calculado, no getWidth().
+ * Columna de números de línea como un TextArea de solo lectura.
+ * Usa el mismo font, padding y line-spacing que el editor,
+ * por lo que las líneas se alinean perfectamente sin necesidad
+ * de calcular alturas de línea manualmente.
  */
-public class LineNumberColumn extends Canvas {
+public class LineNumberColumn extends TextArea {
 
-    private static final Color FONDO = Color.web("#181825");
-    private static final Color TEXTO_NORMAL = Color.web("#585b70");
-    private static final Color TEXTO_ACTIVO = Color.web("#89b4fa");
-    private static final Color BORDE_DERECHO = Color.web("#313244");
+    private final TextArea editor;
+    private ScrollPane editorScroll;
+    private ScrollPane miScroll;
+    private boolean sincronizandoScroll = false;
 
-    private final TextArea textArea;
-    private int lineaActual = 1;
-    private double lineHeight = -1;
-    private ScrollPane scrollPane;
-    
-    /** Ancho deseado de la columna, independiente del layout de JavaFX */
-    private double anchoColumna = 48;
+    public LineNumberColumn(TextArea editor) {
+        this.editor = editor;
 
-    public LineNumberColumn(TextArea textArea) {
-        this.textArea = textArea;
-        
-        // Ancho inicial — CRUCIAL: si el Canvas tiene ancho 0, todo dibujo se recorta
-        anchoColumna = 48;
-        setWidth(48);
-        setHeight(200);
+        // Configuración básica: solo lectura, sin foco
+        setEditable(false);
+        setFocusTraversable(false);
 
-        // Redibujar al cambiar el texto
-        textArea.textProperty().addListener((obs, old, neu) -> {
-            Platform.runLater(this::redibujar);
+        // Mismo estilo CSS que el editor (heredar font, line-spacing, fondo)
+        setStyle(editor.getStyle());
+
+        // Mismo padding que el editor (4px arriba/abajo, 8px derecha, 0 izquierda)
+        setPadding(editor.getPadding());
+
+        // Color de texto: gris tenue para los números
+        setStyle(getStyle()
+            + " -fx-text-fill: #585b70;"
+            + " -fx-highlight-fill: transparent;"
+            + " -fx-highlight-text-fill: #585b70;");
+
+        // Ancho inicial
+        setPrefWidth(48);
+        setMaxWidth(48);
+
+        // Sincronizar contenido: cuando el texto del editor cambia,
+        // actualizar los números de línea
+        editor.textProperty().addListener((obs, old, neu) ->
+            Platform.runLater(this::actualizarNumeros));
+
+        // Sincronizar línea activa (cursor)
+        editor.caretPositionProperty().addListener((obs, old, neu) ->
+            actualizarLineaActiva());
+
+        // Si el editor cambia de fuente, sincronizar
+        editor.fontProperty().addListener((obs, old, neu) -> {
+            setFont(neu);
+            Platform.runLater(this::actualizarNumeros);
         });
 
-        // Redibujar al cambiar la posición del cursor
-        textArea.caretPositionProperty().addListener((obs, old, neu) -> {
-            actualizarLineaActual();
-            redibujar();
-        });
-
-        // Redibujar al cambiar la fuente
-        textArea.fontProperty().addListener((obs, old, neu) -> {
-            Platform.runLater(this::redibujar);
-        });
-
-        // Redibujar al cambiar altura
-        textArea.heightProperty().addListener((obs, old, neu) -> {
-            Platform.runLater(this::redibujar);
-        });
-
-        // Esperar a que el TextArea esté renderizado
+        // Sincronizar scroll cuando ambos estén renderizados
         Platform.runLater(() -> {
             conectarScroll();
-            redibujar();
+            ocultarScrollBars();
+            actualizarNumeros();
         });
     }
 
-    // ─── Redimensionable: CRUCIAL para que HBox respete el ancho ───
+    /**
+     * Actualiza el contenido del TextArea con los números de línea
+     * y ajusta el ancho según la cantidad de dígitos.
+     */
+    private void actualizarNumeros() {
+        String texto = editor.getText();
+        int numLineas = texto.isEmpty() ? 1 : texto.split("\n", -1).length;
 
-    @Override
-    public boolean isResizable() {
-        return true;
-    }
-
-    @Override
-    public double prefWidth(double height) {
-        return anchoColumna;
-    }
-
-    @Override
-    public double minWidth(double height) {
-        return 36;
-    }
-
-    @Override
-    public double maxWidth(double height) {
-        return 120;
-    }
-
-    // ─── Sincronización de scroll ───
-
-    private void conectarScroll() {
-        try {
-            scrollPane = (ScrollPane) textArea.lookup(".scroll-pane");
-            if (scrollPane != null) {
-                scrollPane.vvalueProperty().addListener((obs, old, val) -> {
-                    setTranslateY(-getScrollOffset());
-                    redibujar();
-                });
-            }
-        } catch (Exception e) {
-            // Sin sincronización de scroll si no se puede conectar
+        // Construir el texto con los números de línea
+        StringBuilder sb = new StringBuilder();
+        for (int i = 1; i <= numLineas; i++) {
+            sb.append(i).append("\n");
         }
+        setText(sb.toString());
+
+        // Ajustar ancho según dígitos
+        int digitos = String.valueOf(numLineas).length();
+        double ancho = Math.max(40, digitos * 10 + 18);
+        setPrefWidth(ancho);
+        setMaxWidth(ancho);
     }
 
-    private double getScrollOffset() {
-        if (scrollPane == null) return 0;
-        double max = scrollPane.getVmax();
-        double value = scrollPane.getVvalue();
-        if (max == 0) return 0;
-        double contentHeight = textArea.getHeight() * 1.5;
-        return value * (contentHeight - textArea.getHeight());
-    }
-
-    private void actualizarLineaActual() {
-        String texto = textArea.getText();
-        int pos = textArea.getCaretPosition();
+    /**
+     * Busca y resalta la línea activa donde está el cursor del editor.
+     * Lo hace posicionando el cursor en la misma línea en este TextArea.
+     */
+    private void actualizarLineaActiva() {
+        String texto = editor.getText();
+        int pos = editor.getCaretPosition();
         if (texto.isEmpty() || pos > texto.length()) {
-            lineaActual = 1;
+            positionCaret(0);
             return;
         }
-        int linea = 1;
+        // Calcular en qué línea está el cursor
+        int linea = 0;
         for (int i = 0; i < pos && i < texto.length(); i++) {
             if (texto.charAt(i) == '\n') linea++;
         }
-        lineaActual = linea;
+        // Posicionar el caret en la misma línea de los números
+        // Simplemente contamos saltos de línea en este TextArea hasta llegar
+        // a la línea correspondiente
+        String miTexto = getText();
+        int miPos = 0;
+        int count = 0;
+        for (int i = 0; i < miTexto.length() && count < linea; i++) {
+            if (miTexto.charAt(i) == '\n') {
+                count++;
+                miPos = i + 1;
+            }
+        }
+        positionCaret(miPos);
     }
 
-    // ─── Dibujado ───
+    /**
+     * Conecta el scroll de este TextArea con el del editor,
+     * sincronización bidireccional.
+     */
+    private void conectarScroll() {
+        try {
+            editorScroll = (ScrollPane) editor.lookup(".scroll-pane");
+            miScroll = (ScrollPane) this.lookup(".scroll-pane");
 
-    public void redibujar() {
-        GraphicsContext gc = getGraphicsContext2D();
-        double h = textArea.getHeight();
-        if (h <= 0) h = 200;
+            if (editorScroll != null && miScroll != null) {
+                // Cuando el editor scrollea, los números scrollean igual
+                editorScroll.vvalueProperty().addListener((obs, old, val) -> {
+                    if (!sincronizandoScroll) {
+                        sincronizandoScroll = true;
+                        miScroll.setVvalue(val.doubleValue());
+                        sincronizandoScroll = false;
+                    }
+                });
 
-        // Contar líneas y recalcular ancho
-        String texto = textArea.getText();
-        String[] lineas = texto.isEmpty() ? new String[]{""} : texto.split("\n", -1);
-        int numLineas = lineas.length;
-
-        int digitos = String.valueOf(numLineas).length();
-        double nuevoAncho = Math.max(40, digitos * 10 + 18);
-        
-        // Solo redimensionar si cambió el ancho (evita loops)
-        if (Math.abs(nuevoAncho - anchoColumna) > 1) {
-            anchoColumna = nuevoAncho;
-            // Forzar relayout del HBox padre
-            if (getParent() != null) {
-                getParent().requestLayout();
+                // Cuando los números scrollean, el editor scrollea igual
+                miScroll.vvalueProperty().addListener((obs, old, val) -> {
+                    if (!sincronizandoScroll) {
+                        sincronizandoScroll = true;
+                        editorScroll.setVvalue(val.doubleValue());
+                        sincronizandoScroll = false;
+                    }
+                });
             }
+        } catch (Exception e) {
+            // Si falla la conexión, intentar de nuevo más tarde
+            Platform.runLater(this::conectarScroll);
         }
+    }
 
-        double w = anchoColumna;
-        // Asegurar que el Canvas interno tenga el ancho correcto para el clip
-        if (Math.abs(getWidth() - w) > 0.5) {
-            setWidth(w);
-        }
-        if (Math.abs(getHeight() - h) > 0.5) {
-            setHeight(h);
-        }
+    /**
+     * Oculta las barras de scroll de este TextArea de números
+     * configurando las políticas del ScrollPane interno.
+     */
+    private int reintentosOcultarScroll = 0;
 
-        // Fondo
-        gc.setFill(FONDO);
-        gc.clearRect(0, 0, w, h);
-        gc.fillRect(0, 0, w, h);
-
-        // Línea separadora derecha
-        gc.setStroke(BORDE_DERECHO);
-        gc.setLineWidth(1);
-        gc.strokeLine(w - 1, 0, w - 1, h);
-
-        // Calcular altura de línea
-        String fontName = textArea.getFont().getFamily();
-        double fontSize = textArea.getFont().getSize();
-        lineHeight = fontSize * 1.5;
-        if (lineHeight < 18) lineHeight = 18;
-
-        // Dibujar números
-        gc.setTextAlign(TextAlignment.RIGHT);
-        gc.setTextBaseline(VPos.TOP);
-
-        for (int i = 0; i < numLineas; i++) {
-            int numLinea = i + 1;
-            double y = i * lineHeight + 4;
-
-            if (numLinea == lineaActual) {
-                gc.setFill(TEXTO_ACTIVO);
-                gc.setFont(Font.font(fontName, 13));
-            } else {
-                gc.setFill(TEXTO_NORMAL);
-                gc.setFont(Font.font(fontName, 12));
+    private void ocultarScrollBars() {
+        if (reintentosOcultarScroll > 5) return;
+        reintentosOcultarScroll++;
+        try {
+            ScrollPane sp = (ScrollPane) lookup(".scroll-pane");
+            if (sp != null) {
+                sp.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+                sp.setVbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+            } else if (reintentosOcultarScroll <= 5) {
+                Platform.runLater(this::ocultarScrollBars);
             }
-
-            gc.fillText(String.valueOf(numLinea), w - 6, y);
+        } catch (Exception e) {
+            if (reintentosOcultarScroll <= 5) {
+                Platform.runLater(this::ocultarScrollBars);
+            }
         }
     }
 }

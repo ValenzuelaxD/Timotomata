@@ -251,8 +251,8 @@ public class Lexer {
                 char cActual = fuente.charAt(actual);
                 int claseActual = clasificar(cActual);
                 if (TABLA_TRANS[Q0][claseActual] == SIN_TRANS) {
-                    erroresLexicos.add("Error léxico en línea " + inicioLinea
-                        + ": caracter no válido '" + cActual + "'");
+                    erroresLexicos.add("Error lexico en linea " + inicioLinea
+                        + ": Caracter '" + cActual + "' no pertenece al alfabeto del lenguaje");
                     columna = inicioColumna + 1;
                     actual++;
                 }
@@ -267,13 +267,13 @@ public class Lexer {
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
             } else if (estado == Q_COM_BLOQ || estado == Q_COM_BLOQ_FIN) {
-                erroresLexicos.add("Error léxico en línea " + inicioLinea
-                    + ": comentario de bloque no cerrado");
+                erroresLexicos.add("Error lexico en linea " + inicioLinea
+                    + ": Comentario de bloque iniciado en linea " + inicioLinea + " no fue cerrado, se esperaba '*/'");
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
             } else if (actual > inicio) {
-                erroresLexicos.add("Error léxico en línea " + inicioLinea
-                    + ": secuencia no válida \"" + fuente.substring(inicio, actual) + "\"");
+                erroresLexicos.add("Error lexico en linea " + inicioLinea
+                    + ": Secuencia no reconocida en el lenguaje: \"" + fuente.substring(inicio, actual) + "\"");
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
             }
@@ -295,8 +295,7 @@ public class Lexer {
 
     void emitirToken(int estado, String lexema, int linea, int columna) {
         if (estado == Q_ID) {
-            // Comparar en minúsculas para que las palabras reservadas
-            // sean case-insensitive (Sensor, SENSOR, sensor → SENSOR)
+
             String lexemaLower = lexema.toLowerCase();
             switch (lexemaLower) {
                 case "sensor"     -> agregar(TipoToken.SENSOR, lexema, linea, columna);
@@ -362,8 +361,8 @@ public class Lexer {
             case Q_GT  -> agregar(TipoToken.MAYOR, lexema, linea, columna);
             case Q_LT  -> agregar(TipoToken.MENOR, lexema, linea, columna);
             case Q_DIV -> agregar(TipoToken.DIV, lexema, linea, columna);
-            case Q_NOT -> erroresLexicos.add("Error léxico en línea " + linea
-                + ": '!' debe ir seguido de '=' para formar !=");
+            case Q_NOT -> erroresLexicos.add("Error lexico en linea " + linea
+                + ": Se esperaba '=' despues de '!' para formar el operador '!='");
         }
     }
 
