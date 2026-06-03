@@ -1,8 +1,7 @@
 package timotomata.parser;
 
 import java.util.*;
-import timotomata.lexer.Token;
-import timotomata.lexer.TipoToken;
+import timotomata.lexer.*;
 import timotomata.parser.ast.*;
 
 public class Parser {
@@ -22,9 +21,9 @@ public class Parser {
     public NodoDerivacion arbolDerivacion;
 
     // Errores sintácticos recolectados durante el parseo (panic-mode recovery)
-    public List<String> erroresSintacticos = new ArrayList<>();
+    public List<ErrorInfo> erroresSintacticos = new ArrayList<>();
 
-    public List<String> getErroresSintacticos() { return erroresSintacticos; }
+    public List<ErrorInfo> getErroresSintacticos() { return erroresSintacticos; }
 
     public Parser(List<Token> tokens) {
         // Filtrar comentarios y tokens desconocidos antes del parseo
@@ -51,8 +50,8 @@ public class Parser {
         NodoDerivacion raiz = new NodoDerivacion("PROGRAMA");
         try {
             programa(raiz);  // PROGRAMA → SENTENCIA PROGRAMA | ε
-        } catch (RuntimeException e) {
-            erroresSintacticos.add(e.getMessage());
+        } catch (ErrorSintactico e) {
+            erroresSintacticos.add(e.getInfo());
         }
         arbolDerivacion = raiz;
         return programa;
@@ -68,17 +67,13 @@ public class Parser {
                 pila.push(t.tipo);
             } else if (t.tipo == TipoToken.PAREN_DER) {
                 if (pila.isEmpty() || pila.peek() != TipoToken.PAREN_IZQ) {
-                    erroresSintacticos.add("Error sintáctico en línea " + t.linea
-                        + ": ')' de cierre sin '(' de apertura"
-                        + contextoEnLinea(t));
+                    erroresSintacticos.add(new ErrorInfo(TablaErrores.P001, t.linea, t.columna));
                     return;
                 }
                 pila.pop();
             } else if (t.tipo == TipoToken.LLAVE_DER) {
                 if (pila.isEmpty() || pila.peek() != TipoToken.LLAVE_IZQ) {
-                    erroresSintacticos.add("Error sintáctico en línea " + t.linea
-                        + ": '}' de cierre sin '{' de apertura"
-                        + contextoEnLinea(t));
+                    erroresSintacticos.add(new ErrorInfo(TablaErrores.P002, t.linea, t.columna));
                     return;
                 }
                 pila.pop();
@@ -91,9 +86,7 @@ public class Parser {
             String esperado = (falta == TipoToken.PAREN_IZQ) ? ")" : "}";
             Token ultimoToken = tokens.isEmpty() ? null : tokens.get(tokens.size() - 1);
             int lineaReporte = ultimoToken != null ? ultimoToken.linea : 1;
-            erroresSintacticos.add("Error sintáctico en línea " + lineaReporte
-                + ": Falta '" + esperado + "' de cierre (no balanceado)"
-                + (ultimoToken != null ? " después de '" + ultimoToken.lexema + "'" : ""));
+            erroresSintacticos.add(new ErrorInfo(TablaErrores.P003, lineaReporte, 0, esperado, ultimoToken != null ? ultimoToken.lexema : ""));
         }
     }
 
@@ -131,7 +124,7 @@ public class Parser {
                 if (actual < tokens.size()) {
                     tokens.get(actual).tieneError = true;
                 }
-                erroresSintacticos.add(sugerirErrorInesperado());
+                sugerirErrorInesperado();
                 avanzar();
                 sincronizar();
                 continue;
@@ -142,8 +135,8 @@ public class Parser {
             try {
                 sentencia(nSent);
                 nodo.agregarHijo(nSent);
-            } catch (RuntimeException e) {
-                erroresSintacticos.add(e.getMessage());
+            } catch (ErrorSintactico e) {
+                erroresSintacticos.add(e.getInfo());
                 sincronizar();
                 continue;
             }
@@ -200,8 +193,11 @@ public class Parser {
     // =============================================================
     private String sugerirErrorInesperado() {
         Token actual_ = ver();
-        String msg = "Error sintáctico en línea " + actual_.linea + ", columna " + actual_.columna
-            + ": Token inesperado '" + actual_.lexema + "'";
+        // No duplicar error si el lexer ya detectó una palabra mal escrita (L006)
+        if (!actual_.tieneSugerencia) {
+            erroresSintacticos.add(new ErrorInfo(TablaErrores.P006, actual_.linea, actual_.columna, actual_.lexema));
+        }
+        String msg = "";
 
         // Sugerencias contextuales para errores comunes
         if (ultimoConsumido != null) {
@@ -233,6 +229,10 @@ public class Parser {
         return msg;
     }
 
+    private void agregarError(TablaErrores codigo, int linea, int columna, Object... args) {
+        erroresSintacticos.add(new ErrorInfo(codigo, linea, columna, args));
+    }
+
 
 
     // =============================================================
@@ -244,8 +244,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba SENSOR, UMBRAL, RANGO, SI, CALCULAR o FIN"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P007, ver().lexema);
         }
 
         switch (prod) {
@@ -365,8 +364,7 @@ public class Parser {
                 if (actual < tokens.size()) {
                     tokens.get(actual).tieneError = true;
                 }
-                throw error("Se esperaba 'electrico' o 'termico'"
-                    + contexto() + " pero se encontró '" + ver().lexema + "'");
+                throw error(TablaErrores.P008, ver().lexema);
             }
             avanzar();
             nodo.agregarHijo(t(t1));
@@ -382,8 +380,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba '(' o una función de análisis (promedio, maximo, fluctuacion)"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P017, ver().lexema);
         }
         if (prod == Gramatica.P_AUX_CALCULAR_OLD) {
             Token t1 = consumir(TipoToken.PAREN_IZQ, "Se esperaba '('");
@@ -436,8 +433,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba 'promedio', 'maximo' o 'fluctuacion'"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P018, ver().lexema);
         }
         Token t = avanzar();
         nodo.agregarHijo(t(t));
@@ -468,8 +464,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba '{' o una acción (estado = ... o alerta = ...)"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P015, ver().lexema);
         }
         if (prod == Gramatica.P_CONSEC_ACCION) {
             NodoDerivacion nAccion = new NodoDerivacion("ACCION");
@@ -508,8 +503,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba 'estado = ...' o 'alerta = ...'"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P016, ver().lexema);
         }
         if (prod == Gramatica.P_ACCION_ESTADO) {
             Token t1 = consumir(TipoToken.ESTADO, "Se esperaba la palabra reservada 'estado'");
@@ -576,8 +570,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba un número o '-' para valor numérico"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P021, ver().lexema);
         }
 
         switch (prod) {
@@ -660,8 +653,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba 'y' u 'o' (operador lógico)"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P019, ver().lexema);
         }
         Token t = avanzar();
         nodo.agregarHijo(t(t));
@@ -678,8 +670,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba un operador relacional (>, <, ==, >=, <=, !=)"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P020, ver().lexema);
         }
 
         Token op;
@@ -829,8 +820,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba un número, identificador, 'abs()' o '-'"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P022, ver().lexema);
         }
 
         switch (prod) {
@@ -883,8 +873,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba 'seno', 'coseno', 'cuadrada', 'promedio', 'maximo' o 'suma'"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P023, ver().lexema);
         }
 
         Token t;
@@ -930,8 +919,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba 'amplitud', 'frecuencia', 'ventana' o 'con'"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P024, ver().lexema);
         }
 
         switch (prod) {
@@ -976,8 +964,7 @@ public class Parser {
             if (actual < tokens.size()) {
                 tokens.get(actual).tieneError = true;
             }
-            throw error("Se esperaba 'amplitud', 'frecuencia', 'ventana' o 'con'"
-                + contexto() + " pero se encontró '" + ver().lexema + "'");
+            throw error(TablaErrores.P024, ver().lexema);
         }
 
         switch (prod) {
@@ -1034,10 +1021,7 @@ public class Parser {
             // Último token antes de EOF
             if (i + 1 >= tokens.size()) {
                 if (actual.tipo == TipoToken.ESTADO_SISTEMA || actual.tipo == TipoToken.CADENA) {
-                    erroresSintacticos.add("Error sintáctico en línea " + actual.linea
-                        + ", columna " + actual.columna
-                        + ": Falta ';' después de '" + actual.lexema + "'"
-                        + " (fin del programa inesperado)");
+                    agregarError(TablaErrores.P029, actual.linea, actual.columna, actual.lexema);
                 }
                 continue;
             }
@@ -1046,26 +1030,12 @@ public class Parser {
 
             // DESPUÉS de ESTADO_SISTEMA siempre debe venir ';'
             if (actual.tipo == TipoToken.ESTADO_SISTEMA && siguiente.tipo != TipoToken.PUNTO_COMA) {
-                String detalle = (siguiente.tipo == TipoToken.LLAVE_DER)
-                    ? " antes de cerrar el bloque '}'"
-                    : (siguiente.tipo == TipoToken.EOF)
-                    ? " (fin del programa inesperado)"
-                    : " pero se encontró '" + siguiente.lexema + "'";
-                erroresSintacticos.add("Error sintáctico en línea " + actual.linea
-                    + ", columna " + actual.columna
-                    + ": Falta ';' después de '" + actual.lexema + "'" + detalle);
+                agregarError(TablaErrores.P004, actual.linea, actual.columna, actual.lexema);
             }
 
             // DESPUÉS de CADENA (literal de texto) siempre debe venir ';'
             if (actual.tipo == TipoToken.CADENA && siguiente.tipo != TipoToken.PUNTO_COMA) {
-                String detalle = (siguiente.tipo == TipoToken.LLAVE_DER)
-                    ? " antes de cerrar el bloque '}'"
-                    : (siguiente.tipo == TipoToken.EOF)
-                    ? " (fin del programa inesperado)"
-                    : " pero se encontró '" + siguiente.lexema + "'";
-                erroresSintacticos.add("Error sintáctico en línea " + actual.linea
-                    + ", columna " + actual.columna
-                    + ": Falta ';' después de la cadena de texto" + detalle);
+                agregarError(TablaErrores.P005, actual.linea, actual.columna);
             }
         }
     }
@@ -1114,9 +1084,15 @@ public class Parser {
         return sb.toString();
     }
 
+    private RuntimeException error(TablaErrores codigo, Object... args) {
+        Token tok = ver();
+        return new ErrorSintactico(new ErrorInfo(codigo, tok.linea, tok.columna, args));
+    }
+
     private RuntimeException error(String mensaje) {
         Token tok = ver();
-        return new RuntimeException("Error sintáctico en línea " + tok.linea
-            + ", columna " + tok.columna + ": " + mensaje);
+        return new ErrorSintactico(new ErrorInfo(
+            TablaErrores.P006.getCodigo(), "Sintáctico", "Error de sintaxis", mensaje,
+            tok.linea, tok.columna));
     }
 }

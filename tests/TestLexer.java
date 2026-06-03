@@ -224,9 +224,12 @@ public class TestLexer {
             } else if (!tok.lexema.equals(lexemaEsperado)) {
                 fallidos++;
                 System.out.println("  ✗ " + nombre + " — lexema esperado: '" + lexemaEsperado + "', obtuvo: '" + tok.lexema + "'");
-            } else if (!lexer.getErroresLexicos().isEmpty()) {
-                fallidos++;
-                System.out.println("  ✗ " + nombre + " — errores inesperados: " + lexer.getErroresLexicos());
+            } else                if (!lexer.getErroresLexicos().isEmpty()) {
+                    fallidos++;
+                    System.out.println("  ✗ " + nombre + " — errores inesperados:");
+                    for (ErrorInfo ei : lexer.getErroresLexicos()) {
+                        System.out.println("    " + ei.toPlainText());
+                    }
             } else {
                 pasados++;
                 System.out.println("  ✓ " + nombre + " → " + tok.tipo + " '" + tok.lexema + "'");
@@ -240,35 +243,35 @@ public class TestLexer {
     /** Verifica que las líneas de los tokens sean las correctas para código multi-línea. */
     static void testLineas(String codigo, int[] lineasEsperadas) {
         try {
-            Lexer lexer = new Lexer(codigo);
-            List<Token> tokens = lexer.escanear();
-            List<Token> sinEof = new ArrayList<>();
-            for (Token t : tokens) {
-                if (t.tipo != TipoToken.EOF) sinEof.add(t);
+            Lexer lexer2 = new Lexer(codigo);
+            List<Token> tokens2 = lexer2.escanear();
+            List<Token> sinEof2 = new ArrayList<>();
+            for (Token t : tokens2) {
+                if (t.tipo != TipoToken.EOF) sinEof2.add(t);
             }
 
             boolean ok = true;
-            if (sinEof.size() != lineasEsperadas.length) {
+            if (sinEof2.size() != lineasEsperadas.length) {
                 fallidos++;
                 System.out.println("  ✗ Líneas — cantidad de tokens: esperaba " + lineasEsperadas.length
-                    + ", obtuvo " + sinEof.size());
-                for (Token t : sinEof) {
+                    + ", obtuvo " + sinEof2.size());
+                for (Token t : sinEof2) {
                     System.out.println("    → " + t.tipo + " '" + t.lexema + "' L" + t.linea);
                 }
                 return;
             }
 
-            for (int i = 0; i < sinEof.size(); i++) {
-                if (sinEof.get(i).linea != lineasEsperadas[i]) {
+            for (int i = 0; i < sinEof2.size(); i++) {
+                if (sinEof2.get(i).linea != lineasEsperadas[i]) {
                     ok = false;
-                    System.out.println("  ✗ Líneas — token " + i + " ('" + sinEof.get(i).lexema
-                        + "'): esperaba L" + lineasEsperadas[i] + ", obtuvo L" + sinEof.get(i).linea);
+                    System.out.println("  ✗ Líneas — token " + i + " ('" + sinEof2.get(i).lexema
+                        + "'): esperaba L" + lineasEsperadas[i] + ", obtuvo L" + sinEof2.get(i).linea);
                 }
             }
 
             if (ok) {
                 pasados++;
-                System.out.println("  ✓ Líneas — todas las líneas correctas para " + sinEof.size() + " tokens");
+                System.out.println("  ✓ Líneas — todas las líneas correctas para " + sinEof2.size() + " tokens");
             } else {
                 fallidos++;
             }
@@ -295,10 +298,10 @@ public class TestLexer {
                 for (Token t : sinEof) {
                     System.out.println("    → " + t.tipo + " '" + t.lexema + "' L" + t.linea);
                 }
-                if (!lexer.getErroresLexicos().isEmpty()) {
-                    for (String e : lexer.getErroresLexicos()) {
-                        System.out.println("    [ERROR] " + e);
-                    }
+            if (!lexer.getErroresLexicos().isEmpty()) {
+                for (ErrorInfo ei : lexer.getErroresLexicos()) {
+                    System.out.println("    [ERROR] " + ei.toPlainText());
+                }
                 }
                 return;
             }
@@ -336,7 +339,7 @@ public class TestLexer {
         try {
             Lexer lexer = new Lexer(codigo);
             List<Token> tokens = lexer.escanear();
-            List<String> errores = lexer.getErroresLexicos();
+            List<ErrorInfo> errores = lexer.getErroresLexicos();
 
             if (errores.isEmpty()) {
                 fallidos++;
@@ -347,7 +350,7 @@ public class TestLexer {
                 }
             } else {
                 pasados++;
-                System.out.println("  ✓ Error léxico (" + descripcion + ") — " + errores.get(0));
+                System.out.println("  ✓ Error léxico (" + descripcion + ") — " + errores.get(0).toPlainText());
             }
         } catch (Exception e) {
             // Una excepción también cuenta como error detectado

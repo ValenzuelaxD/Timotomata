@@ -20,7 +20,6 @@ import javafx.scene.text.Font;
 import javafx.stage.Stage;
 import javafx.stage.FileChooser;
 import javafx.util.Duration;
-
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.model.StyleSpans;
@@ -80,7 +79,8 @@ public class AppController {
     private BorderPane root;
     private CodeArea editor;
     private Label statusLabel;
-    private ListView<String> errorList;
+    private TableView<ErrorInfo> errorTable;
+    private ObservableList<ErrorInfo> errorData = FXCollections.observableArrayList();
     private TitledPane erroresPane;
     private TableView<TokenInfo> tokenTable;
     private ObservableList<TokenInfo> tokenData = FXCollections.observableArrayList();
@@ -210,14 +210,50 @@ public class AppController {
         VBox panel = new VBox(6);
         panel.setStyle("-fx-background-color: #11111b; -fx-padding: 6;");
 
-        // Panel de Errores
-        errorList = new ListView<>();
-        errorList.setPrefHeight(140);
-        errorList.setStyle("-fx-control-inner-background: #1e1e2e;"
+        // Panel de Errores — TableView con columnas: Código, Tipo, Mensaje, Línea
+        errorTable = new TableView<>(errorData);
+        errorTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        errorTable.setPrefHeight(140);
+        errorTable.setStyle("-fx-control-inner-background: #1e1e2e;"
+            + " -fx-table-cell-border-color: #313244;"
             + " -fx-text-fill: #cdd6f4;"
             + " -fx-font-family: 'Consolas', monospace;"
             + " -fx-font-size: 11px;");
-        erroresPane = new TitledPane("ERRORES", errorList);
+
+        TableColumn<ErrorInfo, String> colErrCodigo = new TableColumn<>("Código");
+        colErrCodigo.setCellValueFactory(new PropertyValueFactory<>("codigo"));
+        colErrCodigo.setPrefWidth(50);
+        colErrCodigo.setStyle("-fx-alignment: CENTER;");
+
+        TableColumn<ErrorInfo, String> colErrTipo = new TableColumn<>("Tipo");
+        colErrTipo.setCellValueFactory(new PropertyValueFactory<>("tipo"));
+        colErrTipo.setPrefWidth(75);
+        colErrTipo.setCellFactory(col -> new TableCell<>() {
+            @Override protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(item);
+                if (item != null) {
+                    setStyle("-fx-text-fill: " + ("Léxico".equals(item) ? "#fab387" : "#89b4fa") + ";");
+                }
+            }
+        });
+
+        TableColumn<ErrorInfo, String> colErrMensaje = new TableColumn<>("Mensaje");
+        colErrMensaje.setCellValueFactory(new PropertyValueFactory<>("mensaje"));
+        colErrMensaje.setPrefWidth(280);
+
+        TableColumn<ErrorInfo, Number> colErrLinea = new TableColumn<>("Línea");
+        colErrLinea.setCellValueFactory(new PropertyValueFactory<>("linea"));
+        colErrLinea.setPrefWidth(45);
+        colErrLinea.setStyle("-fx-alignment: CENTER-RIGHT;");
+
+        TableColumn<ErrorInfo, Number> colErrColumna = new TableColumn<>("Col");
+        colErrColumna.setCellValueFactory(new PropertyValueFactory<>("columna"));
+        colErrColumna.setPrefWidth(35);
+        colErrColumna.setStyle("-fx-alignment: CENTER-RIGHT;");
+
+        errorTable.getColumns().addAll(colErrCodigo, colErrTipo, colErrMensaje, colErrLinea, colErrColumna);
+        erroresPane = new TitledPane("ERRORES", errorTable);
         erroresPane.getStyleClass().add("titled-pane-custom");
         erroresPane.setCollapsible(false);
 
@@ -376,12 +412,12 @@ public class AppController {
             return;
         }
 
-        List<String> erroresLex = lexer.getErroresLexicos();
+        List<ErrorInfo> erroresLex = lexer.getErroresLexicos();
 
         // ─── Fase 2: Análisis Sintáctico (con recuperación de errores) ───
         Parser parser = new Parser(tokens);
         Programa programa = parser.parsear();
-        List<String> erroresSint = parser.getErroresSintacticos();
+        List<ErrorInfo> erroresSint = parser.getErroresSintacticos();
 
         ultimoPrograma = programa;
         ultimoParser = parser;
@@ -405,34 +441,19 @@ public class AppController {
     // =============================================================
 
     // ─── Errores ───
-    private void actualizarErrores(List<String> erroresLex, List<String> erroresSint) {
-        ObservableList<String> items = errorList.getItems();
-        items.clear();
+    private void actualizarErrores(List<ErrorInfo> erroresLex, List<ErrorInfo> erroresSint) {
+        errorData.clear();
 
-        // Recopilar todos los errores con su prefijo y línea para ordenarlos
-        List<String[]> erroresConLinea = new ArrayList<>();
+        // Combinar errores léxicos y sintácticos, ordenar por línea
+        List<ErrorInfo> todos = new ArrayList<>();
+        todos.addAll(erroresLex);
+        todos.addAll(erroresSint);
+        todos.sort(Comparator.comparingInt(ErrorInfo::getLinea)
+            .thenComparingInt(ErrorInfo::getColumna));
 
-        for (String err : erroresLex) {
-            erroresConLinea.add(new String[]{"[LEXICO]", err, String.valueOf(extraerLinea(err))});
-        }
-        for (String err : erroresSint) {
-            erroresConLinea.add(new String[]{"[SINTACTICO]", err, String.valueOf(extraerLinea(err))});
-        }
+        errorData.addAll(todos);
 
-        // Ordenar por número de línea
-        erroresConLinea.sort((a, b) -> Integer.compare(
-            Integer.parseInt(a[2]), Integer.parseInt(b[2])));
-
-        // Agregar ordenados a la lista
-        for (String[] error : erroresConLinea) {
-            items.add(error[0] + " " + error[1]);
-        }
-
-        if (erroresConLinea.isEmpty()) {
-            items.add("Sin errores.");
-        }
-
-        int totalErrores = erroresConLinea.size();
+        int totalErrores = todos.size();
         if (totalErrores > 0) {
             erroresPane.setText("ERRORES (" + totalErrores + ")");
             erroresPane.setStyle("-fx-text-fill: #f38ba8;");
@@ -440,18 +461,6 @@ public class AppController {
             erroresPane.setText("OK (0)");
             erroresPane.setStyle("-fx-text-fill: #a6e3a1;");
         }
-    }
-
-    // Extraer número de línea de un mensaje de error
-    private int extraerLinea(String mensaje) {
-        // Buscar patrón "línea X" o "linea X" (con o sin tilde)
-        java.util.regex.Matcher m = java.util.regex.Pattern
-            .compile("(?i)(?:l[ií]nea\\s+)(\\d+)")
-            .matcher(mensaje);
-        if (m.find()) {
-            return Integer.parseInt(m.group(1));
-        }
-        return Integer.MAX_VALUE; // Si no se encuentra línea, va al final
     }
 
     // ─── Tokens ───

@@ -132,7 +132,7 @@ public class Lexer {
     // ---- 5. ATRIBUTOS DEL LEXER ----
     String fuente;
     List<Token> tokens = new ArrayList<>();
-    List<String> erroresLexicos = new ArrayList<>();
+    List<ErrorInfo> erroresLexicos = new ArrayList<>();
     int actual = 0;
     int linea = 1;
     int columna = 1;
@@ -141,7 +141,7 @@ public class Lexer {
         this.fuente = fuente;
     }
 
-    public List<String> getErroresLexicos() {
+    public List<ErrorInfo> getErroresLexicos() {
         return erroresLexicos;
     }
 
@@ -269,8 +269,7 @@ public class Lexer {
                 if (TABLA_TRANS[Q0][claseActual] == SIN_TRANS) {
                     String lexema = String.valueOf(cActual);
                     agregar(TipoToken.DESCONOCIDO, lexema, inicioLinea, inicioColumna);
-                    erroresLexicos.add("Error lexico en linea " + inicioLinea
-                        + ": Caracter '" + cActual + "' no pertenece al alfabeto del lenguaje");
+                    erroresLexicos.add(new ErrorInfo(TablaErrores.L001, inicioLinea, inicioColumna, cActual));
                     columna = inicioColumna + 1;
                     actual++;
                 }
@@ -291,22 +290,19 @@ public class Lexer {
             } else if (estado == Q_COM_BLOQ || estado == Q_COM_BLOQ_FIN) {
                 String lexema = fuente.substring(inicio, actual);
                 agregar(TipoToken.DESCONOCIDO, lexema, inicioLinea, inicioColumna);
-                erroresLexicos.add("Error lexico en linea " + inicioLinea
-                    + ": Comentario de bloque iniciado en linea " + inicioLinea + " no fue cerrado, se esperaba '*/'");
+                erroresLexicos.add(new ErrorInfo(TablaErrores.L002, inicioLinea, inicioColumna, inicioLinea));
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
             } else if (estado == Q_CADENA) {
                 String lexema = fuente.substring(inicio, actual);
                 agregar(TipoToken.DESCONOCIDO, lexema, inicioLinea, inicioColumna);
-                erroresLexicos.add("Error lexico en linea " + inicioLinea
-                    + ": Cadena iniciada en linea " + inicioLinea + " no fue cerrada, se esperaba '\"'");
+                erroresLexicos.add(new ErrorInfo(TablaErrores.L003, inicioLinea, inicioColumna, inicioLinea));
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
             } else if (actual > inicio) {
                 String lexema = fuente.substring(inicio, actual);
                 agregar(TipoToken.DESCONOCIDO, lexema, inicioLinea, inicioColumna);
-                erroresLexicos.add("Error lexico en linea " + inicioLinea
-                    + ": Secuencia no reconocida en el lenguaje: \"" + lexema + "\"");
+                erroresLexicos.add(new ErrorInfo(TablaErrores.L004, inicioLinea, inicioColumna, lexema));
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
             }
@@ -353,7 +349,10 @@ public class Lexer {
                 case "alerta"     -> agregar(TipoToken.ALERTA, lexema, linea, columna);
                 case "fluctuacion"-> agregar(TipoToken.FLUCTUACION, lexema, linea, columna);
 
-                default -> agregar(TipoToken.ID, lexema, linea, columna);
+                default -> {
+                    agregar(TipoToken.ID, lexema, linea, columna);
+                    detectarPalabraMalEscrita(lexema, linea, columna);
+                }
             }
         } else if (estado == Q_NUM || estado == Q_NUM_DEC) {
             agregar(TipoToken.NUMERO, lexema, linea, columna);
@@ -400,8 +399,7 @@ public class Lexer {
             case Q_DIV -> agregar(TipoToken.DIV, lexema, linea, columna);
             case Q_NOT -> {
                 agregar(TipoToken.DESCONOCIDO, lexema, linea, columna);
-                erroresLexicos.add("Error lexico en linea " + linea
-                    + ": Se esperaba '=' despues de '!' para formar el operador '!='");
+                erroresLexicos.add(new ErrorInfo(TablaErrores.L005, linea, columna));
             }
         }
     }
@@ -421,5 +419,105 @@ public class Lexer {
 
     void agregar(TipoToken tipo, String lexema, int linea, int columna) {
         tokens.add(new Token(tipo, lexema, linea, columna));
+    }
+
+    // ---- 10. DETECCIÓN DE PALABRAS RESERVADAS MAL ESCRITAS ----
+    // Lista de todas las palabras reservadas del lenguaje
+    private static final String[] PALABRAS_RESERVADAS = {
+        "sensor", "umbral", "rango", "si", "entonces",
+        "calcular", "fin", "tipo", "minimo", "maximo",
+        "estado", "alerta", "electrico", "termico",
+        "abs", "seno", "coseno", "cuadrada", "promedio",
+        "suma", "fluctuacion", "amplitud", "frecuencia",
+        "ventana", "con", "y", "o",
+        "normal", "pico", "caida", "inestable"
+    };
+
+    /**
+     * Detección de palabras reservadas mal escritas con 3 estrategias:
+     * 1. PREFIJO: ID es inicio de una palabra reservada (palabra incompleta)
+     *    Ej: 'calcu' → 'calcular', 'umbr' → 'umbral', 'sen' → 'sensor'
+     * 2. LEVENSHTEIN: typo con distancia <= 2, primera letra coincide
+     *    Ej: 'snesor' → 'sensor', 'clacular' → 'calcular'
+     * 3. TRANSPOSICIÓN: swap exacto de 2 caracteres para palabras de 2 chars
+     *    Ej: 'is' → 'si'
+     */
+    private void detectarPalabraMalEscrita(String lexema, int linea, int columna) {
+        String lower = lexema.toLowerCase();
+        if (lower.length() > 15 || lower.length() < 2) return;
+
+        String mejorSugerencia = null;
+        int mejorPrioridad = Integer.MAX_VALUE;
+
+        for (String reserva : PALABRAS_RESERVADAS) {
+
+            // ── Estrategia 1: Prefijo (palabra incompleta) ──
+            // 'calcu' es prefijo de 'calcular' → sugiere completar
+            if (lower.length() >= 3 && reserva.startsWith(lower)) {
+                int sobra = reserva.length() - lower.length();
+                if (sobra >= 1 && sobra <= 5) {
+                    // Menos caracteres que faltan = mejor prioridad
+                    if (sobra < mejorPrioridad) {
+                        mejorPrioridad = sobra;
+                        mejorSugerencia = reserva;
+                    }
+                }
+            }
+
+            // ── Estrategia 2: Levenshtein (typo) ──
+            // 'snesor' → 'sensor' (distancia 2, misma longitud, misma 1ra letra)
+            int dist = levenshtein(lower, reserva);
+            if (dist >= 1 && dist <= 2 && lower.length() >= 3) {
+                int diffLen = Math.abs(lower.length() - reserva.length());
+                boolean primeraOk = lower.charAt(0) == reserva.charAt(0);
+                boolean noEsExtension = !lower.startsWith(reserva) && !reserva.startsWith(lower);
+                if (diffLen <= 1 && primeraOk && noEsExtension) {
+                    int prioridad = 100 + dist;
+                    if (prioridad < mejorPrioridad) {
+                        mejorPrioridad = prioridad;
+                        mejorSugerencia = reserva;
+                    }
+                }
+            }
+
+            // ── Estrategia 3: Transposición exacta (2 chars) ──
+            // 'is' → 'si' (swap de dos caracteres adyacentes)
+            if (lower.length() == 2 && reserva.length() == 2) {
+                if (lower.charAt(0) == reserva.charAt(1)
+                        && lower.charAt(1) == reserva.charAt(0)) {
+                    if (200 < mejorPrioridad) {
+                        mejorPrioridad = 200;
+                        mejorSugerencia = reserva;
+                    }
+                }
+            }
+        }
+
+        if (mejorSugerencia != null) {
+            erroresLexicos.add(new ErrorInfo(
+                TablaErrores.L006, linea, columna,
+                mejorSugerencia, lexema));
+            // Marcar el token para que el parser no duplique el error
+            if (!tokens.isEmpty()) {
+                tokens.get(tokens.size() - 1).tieneSugerencia = true;
+            }
+        }
+    }
+
+    /** Distancia de Levenshtein (edición mínima) entre dos strings. */
+    private static int levenshtein(String a, String b) {
+        int m = a.length(), n = b.length();
+        int[][] dp = new int[m + 1][n + 1];
+        for (int i = 0; i <= m; i++) dp[i][0] = i;
+        for (int j = 0; j <= n; j++) dp[0][j] = j;
+        for (int i = 1; i <= m; i++) {
+            for (int j = 1; j <= n; j++) {
+                int costo = (a.charAt(i - 1) == b.charAt(j - 1)) ? 0 : 1;
+                dp[i][j] = Math.min(
+                    Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1),
+                    dp[i - 1][j - 1] + costo);
+            }
+        }
+        return dp[m][n];
     }
 }

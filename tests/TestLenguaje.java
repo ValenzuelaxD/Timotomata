@@ -132,10 +132,10 @@ public class TestLenguaje {
             // Fase 1: Lexer
             Lexer lexer = new Lexer(codigo);
             List<Token> tokens = lexer.escanear();
-            List<String> erroresLex = lexer.getErroresLexicos();
+            List<ErrorInfo> erroresLex = lexer.getErroresLexicos();
 
             // Fase 2: Parser (solo si no hay errores léxicos fatales)
-            List<String> erroresSint = new ArrayList<>();
+            List<ErrorInfo> erroresSint = new ArrayList<>();
             if (erroresLex.isEmpty()) {
                 Parser parser = new Parser(tokens);
                 parser.parsear();
@@ -152,8 +152,8 @@ public class TestLenguaje {
                 System.out.println("  ✗ " + nombre + " — FALLO");
                 if (debeSerValido) {
                     System.out.println("    Se esperaba válido, pero tiene errores:");
-                    for (String e : erroresLex) System.out.println("      [LEX] " + e);
-                    for (String e : erroresSint) System.out.println("      [SIN] " + e);
+                    for (ErrorInfo e : erroresLex) System.out.println("      [LEX] " + e.toPlainText());
+                    for (ErrorInfo e : erroresSint) System.out.println("      [SIN] " + e.toPlainText());
                 } else {
                     System.out.println("    Se esperaba inválido, pero pasó sin errores");
                 }

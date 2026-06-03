@@ -6,6 +6,7 @@ public class Token {
     public int linea;
     public int columna;
     public boolean tieneError = false;
+    public boolean tieneSugerencia = false;
 
     public Token(TipoToken tipo, String lexema, int linea) {
         this(tipo, lexema, linea, 1);
@@ -16,9 +17,5 @@ public class Token {
         this.lexema = lexema;
         this.linea = linea;
         this.columna = columna;
-    }
-
-    public String toString() {
-        return tipo + " -> '" + lexema + "' [L:" + linea + ", C:" + columna + "]";
     }
 }
