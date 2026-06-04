@@ -242,6 +242,28 @@
     -fx-opacity: 0.7;
 }
 
+/* ─── Botón árbol de derivación ─── */
+.btn-arbol {
+    -fx-background-color: #89b4fa;
+    -fx-text-fill: #11111b;
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+    -fx-background-radius: 6;
+    -fx-padding: 4 14;
+    -fx-cursor: hand;
+}
+
+.btn-arbol:hover:disabled {
+    -fx-opacity: 1.0;
+}
+
+.btn-arbol:disabled {
+    -fx-background-color: #45475a;
+    -fx-text-fill: #6c7086;
+    -fx-opacity: 1.0;
+    -fx-cursor: default;
+}
+
 /* ─── SplitPane ─── */
 .split-pane {
     -fx-background-color: #11111b;

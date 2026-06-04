@@ -51,7 +51,9 @@ public class Parser {
         try {
             programa(raiz);  // PROGRAMA → SENTENCIA PROGRAMA | ε
         } catch (ErrorSintactico e) {
-            erroresSintacticos.add(e.getInfo());
+            if (!e.isSkip()) {
+                erroresSintacticos.add(e.getInfo());
+            }
         }
         arbolDerivacion = raiz;
         return programa;
@@ -135,10 +137,12 @@ public class Parser {
             try {
                 sentencia(nSent);
                 nodo.agregarHijo(nSent);
-            } catch (ErrorSintactico e) {
+        } catch (ErrorSintactico e) {
+            if (!e.isSkip()) {
                 erroresSintacticos.add(e.getInfo());
-                sincronizar();
-                continue;
+            }
+            sincronizar();
+            continue;
             }
             NodoDerivacion nProg = new NodoDerivacion("PROGRAMA");
             programa(nProg);
@@ -1051,8 +1055,10 @@ public class Parser {
         // Usar código específico si el token esperado es ';'
         if (tipo == TipoToken.PUNTO_COMA) {
             String previo = (ultimoConsumido != null) ? ultimoConsumido.lexema : "";
+            boolean tieneSugerencia = actualToken != null && actualToken.tieneSugerencia;
             throw new ErrorSintactico(new ErrorInfo(
-                TablaErrores.P031, actualToken.linea, actualToken.columna, previo, encontrado));
+                TablaErrores.P031, actualToken.linea, actualToken.columna, previo, encontrado),
+                tieneSugerencia);
         }
         throw error(mensaje + " pero se encontró " + encontrado);
     }
@@ -1086,13 +1092,18 @@ public class Parser {
 
     private RuntimeException error(TablaErrores codigo, Object... args) {
         Token tok = ver();
-        return new ErrorSintactico(new ErrorInfo(codigo, tok.linea, tok.columna, args));
+        boolean tieneSugerencia = tok != null && tok.tieneSugerencia;
+        return new ErrorSintactico(
+            new ErrorInfo(codigo, tok.linea, tok.columna, args),
+            tieneSugerencia);
     }
 
     private RuntimeException error(String mensaje) {
         Token tok = ver();
+        boolean tieneSugerencia = tok != null && tok.tieneSugerencia;
         return new ErrorSintactico(new ErrorInfo(
             TablaErrores.P006.getCodigo(), "Sintáctico", "Error de sintaxis", mensaje,
-            tok.linea, tok.columna));
+            tok.linea, tok.columna),
+            tieneSugerencia);
     }
 }

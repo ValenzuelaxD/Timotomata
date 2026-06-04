@@ -7,13 +7,25 @@ package timotomata.lexer;
  */
 public class ErrorSintactico extends RuntimeException {
     private final ErrorInfo info;
+    private final boolean skip;
 
     public ErrorSintactico(ErrorInfo info) {
         super(info.getMensaje());
         this.info = info;
+        this.skip = false;
+    }
+
+    public ErrorSintactico(ErrorInfo info, boolean skip) {
+        super(info.getMensaje());
+        this.info = info;
+        this.skip = skip;
     }
 
     public ErrorInfo getInfo() {
         return info;
+    }
+
+    public boolean isSkip() {
+        return skip;
     }
 }

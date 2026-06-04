@@ -19,9 +19,11 @@ public enum TablaErrores {
     L005("L005", "Léxico", "Operador incompleto",
         "Se esperaba '=' después de '!' para formar el operador '!='"),
 
-    // ─── ERRORES LÉXICOS — Sugerencias de palabras (L006) ───
+    // ─── ERRORES LÉXICOS — Sugerencias de palabras (L006-L007) ───
     L006("L006", "Léxico", "Posible palabra reservada mal escrita",
         "¿Quiso decir '%s'? (se encontró '%s')"),
+    L007("L007", "Léxico", "Palabra no reconocida",
+        "Palabra '%s' no reconocida en el lenguaje"),
 
     // ─── ERRORES SINTÁCTICOS — Pre-validación (P001-P003) ───
     P001("P001", "Sintáctico", "Paréntesis sin abrir",

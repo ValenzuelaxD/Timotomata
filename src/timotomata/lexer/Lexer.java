@@ -434,74 +434,98 @@ public class Lexer {
     };
 
     /**
-     * Detección de palabras reservadas mal escritas con 3 estrategias:
-     * 1. PREFIJO: ID es inicio de una palabra reservada (palabra incompleta)
-     *    Ej: 'calcu' → 'calcular', 'umbr' → 'umbral', 'sen' → 'sensor'
-     * 2. LEVENSHTEIN: typo con distancia <= 2, primera letra coincide
-     *    Ej: 'snesor' → 'sensor', 'clacular' → 'calcular'
-     * 3. TRANSPOSICIÓN: swap exacto de 2 caracteres para palabras de 2 chars
-     *    Ej: 'is' → 'si'
+     * Detección de palabras no reconocidas que se parecen a palabras reservadas.
+     *
+     * Estrategias:
+     * 1. LEVENSHTEIN: Calcula la distancia de edición a TODAS las palabras reservadas
+     *    y encuentra la más cercana. Usa un umbral dinámico según la longitud:
+     *    - Palabras cortas (2-4 chars): distancia ≤ 1
+     *    - Palabras medianas (5-7 chars): distancia ≤ 2
+     *    - Palabras largas (8+ chars): distancia ≤ 3
+     *    Si hay match → L006 con sugerencia "¿Quiso decir 'X'?"
+     * 2. PREFIJO: Si el ID es inicio de una palabra reservada (incompleta)
+     *    Ej: 'calcu' → 'calcular'
+     *
+     * Si no se encuentra ninguna coincidencia cercana, igual se reporta
+     * un error L007: "Palabra '%s' no reconocida en el lenguaje".
      */
     private void detectarPalabraMalEscrita(String lexema, int linea, int columna) {
         String lower = lexema.toLowerCase();
         if (lower.length() > 15 || lower.length() < 2) return;
 
         String mejorSugerencia = null;
-        int mejorPrioridad = Integer.MAX_VALUE;
+        int mejorDistancia = Integer.MAX_VALUE;
 
+        // ── Calcular Levenshtein a TODAS las palabras reservadas ──
         for (String reserva : PALABRAS_RESERVADAS) {
-
-            // ── Estrategia 1: Prefijo (palabra incompleta) ──
-            // 'calcu' es prefijo de 'calcular' → sugiere completar
-            if (lower.length() >= 3 && reserva.startsWith(lower)) {
-                int sobra = reserva.length() - lower.length();
-                if (sobra >= 1 && sobra <= 5) {
-                    // Menos caracteres que faltan = mejor prioridad
-                    if (sobra < mejorPrioridad) {
-                        mejorPrioridad = sobra;
-                        mejorSugerencia = reserva;
-                    }
-                }
-            }
-
-            // ── Estrategia 2: Levenshtein (typo) ──
-            // 'snesor' → 'sensor' (distancia 2, misma longitud, misma 1ra letra)
             int dist = levenshtein(lower, reserva);
-            if (dist >= 1 && dist <= 2 && lower.length() >= 3) {
-                int diffLen = Math.abs(lower.length() - reserva.length());
-                boolean primeraOk = lower.charAt(0) == reserva.charAt(0);
-                boolean noEsExtension = !lower.startsWith(reserva) && !reserva.startsWith(lower);
-                if (diffLen <= 1 && primeraOk && noEsExtension) {
-                    int prioridad = 100 + dist;
-                    if (prioridad < mejorPrioridad) {
-                        mejorPrioridad = prioridad;
-                        mejorSugerencia = reserva;
-                    }
-                }
+            if (dist < mejorDistancia) {
+                mejorDistancia = dist;
+                mejorSugerencia = reserva;
             }
+        }
 
-            // ── Estrategia 3: Transposición exacta (2 chars) ──
-            // 'is' → 'si' (swap de dos caracteres adyacentes)
-            if (lower.length() == 2 && reserva.length() == 2) {
-                if (lower.charAt(0) == reserva.charAt(1)
-                        && lower.charAt(1) == reserva.charAt(0)) {
-                    if (200 < mejorPrioridad) {
-                        mejorPrioridad = 200;
-                        mejorSugerencia = reserva;
+        // ── Verificar si es prefijo de alguna palabra (más prioritario) ──
+        String mejorPrefijo = null;
+        int mejorSobra = Integer.MAX_VALUE;
+        if (lower.length() >= 3) {
+            for (String reserva : PALABRAS_RESERVADAS) {
+                if (reserva.startsWith(lower)) {
+                    int sobra = reserva.length() - lower.length();
+                    if (sobra >= 1 && sobra <= 5 && sobra < mejorSobra) {
+                        mejorSobra = sobra;
+                        mejorPrefijo = reserva;
                     }
                 }
             }
         }
 
-        if (mejorSugerencia != null) {
+        // ── Determinar umbral dinámico según longitud ──
+        int umbral;
+        if (lower.length() == 2) {
+            umbral = 2;        // Palabras de 2 letras: permite transposición ('is' → 'si')
+        } else if (lower.length() <= 4) {
+            umbral = 1;        // Palabras muy cortas: solo 1 error
+        } else if (lower.length() <= 7) {
+            umbral = 2;        // Palabras medianas: hasta 2 errores
+        } else {
+            umbral = 3;        // Palabras largas: hasta 3 errores
+        }
+
+        // Si hay prefijo, tiene prioridad sobre Levenshtein
+        if (mejorPrefijo != null) {
             erroresLexicos.add(new ErrorInfo(
                 TablaErrores.L006, linea, columna,
-                mejorSugerencia, lexema));
-            // Marcar el token para que el parser no duplique el error
+                mejorPrefijo, lexema));
             if (!tokens.isEmpty()) {
                 tokens.get(tokens.size() - 1).tieneSugerencia = true;
             }
+            return;
         }
+
+        // Si Levenshtein encontró una coincidencia cercana → sugerencia
+        if (mejorDistancia >= 1 && mejorDistancia <= umbral) {
+            // Verificar coincidencia adicional: primera letra igual o distancia muy baja
+            boolean primeraLetraOk = lower.charAt(0) == mejorSugerencia.charAt(0);
+            boolean muyCercana = mejorDistancia <= 1;
+            boolean esTransposicion = mejorDistancia == 2 
+                && lower.length() == mejorSugerencia.length()
+                && lower.charAt(0) == mejorSugerencia.charAt(1)
+                && lower.charAt(1) == mejorSugerencia.charAt(0);
+
+            if (primeraLetraOk || muyCercana || esTransposicion) {
+                erroresLexicos.add(new ErrorInfo(
+                    TablaErrores.L006, linea, columna,
+                    mejorSugerencia, lexema));
+                if (!tokens.isEmpty()) {
+                    tokens.get(tokens.size() - 1).tieneSugerencia = true;
+                }
+                return;
+            }
+        }
+
+        // ── No se encontró coincidencia cercana: es un nombre de variable válido ──
+        // No se agrega error — los identificadores no reservados son nombres de variable válidos
     }
 
     /** Distancia de Levenshtein (edición mínima) entre dos strings. */

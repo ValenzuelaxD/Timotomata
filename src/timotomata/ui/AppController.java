@@ -99,6 +99,7 @@ public class AppController {
     private Programa ultimoPrograma;
     private Parser ultimoParser;
     private String archivoActual = null;
+    private boolean hayErrores = false;
 
     // =============================================================
     //  CONSTRUCTOR
@@ -391,18 +392,20 @@ public class AppController {
         Label lblTitulo = new Label("ARBOL DE DERIVACION");
         lblTitulo.setStyle("-fx-text-fill: #89b4fa; -fx-font-weight: bold; -fx-font-size: 12;");
 
-        btnAbrirArbol = new Button("Ver arbol de derivacion");
-        btnAbrirArbol.setStyle("-fx-background-color: #89b4fa; -fx-text-fill: #11111b;"
-            + " -fx-font-weight: bold; -fx-font-size: 12px;"
-            + " -fx-background-radius: 6; -fx-padding: 4 14;"
-            + " -fx-cursor: hand;");
-        btnAbrirArbol.setOnAction(e -> abrirArbolDerivacion());
+        btnAbrirArbol = crearBotonArbol();
         btnAbrirArbol.setDisable(true);
 
         header.getChildren().addAll(lblTitulo, btnAbrirArbol);
 
         derivacionPanel.getChildren().add(header);
         return derivacionPanel;
+    }
+
+    private Button crearBotonArbol() {
+        Button btn = new Button("Ver \u00E1rbol de derivaci\u00F3n");
+        btn.getStyleClass().add("btn-arbol");
+        btn.setOnAction(e -> abrirArbolDerivacion());
+        return btn;
     }
 
     // ─── Barra de estado inferior ───
@@ -461,6 +464,7 @@ public class AppController {
 
         ultimoPrograma = programa;
         ultimoParser = parser;
+        hayErrores = !erroresLex.isEmpty() || !erroresSint.isEmpty();
 
         // ─── Fase 3: Tabla de símbolos ───
         construirTablaSimbolos(programa, tokens);
@@ -615,26 +619,30 @@ public class AppController {
         Label lblTitulo = new Label("ARBOL DE DERIVACION");
         lblTitulo.setStyle("-fx-text-fill: #89b4fa; -fx-font-weight: bold; -fx-font-size: 12;");
 
-        btnAbrirArbol = new Button("Ver arbol de derivacion");
-        btnAbrirArbol.setStyle("-fx-background-color: #89b4fa; -fx-text-fill: #11111b;"
-            + " -fx-font-weight: bold; -fx-font-size: 12px;"
-            + " -fx-background-radius: 6; -fx-padding: 4 14;"
-            + " -fx-cursor: hand;");
-        btnAbrirArbol.setOnAction(e -> abrirArbolDerivacion());
+        btnAbrirArbol = crearBotonArbol();
 
         header.getChildren().addAll(lblTitulo, btnAbrirArbol);
         derivacionPanel.getChildren().add(header);
 
-        if (programa == null || parser == null || parser.arbolDerivacion == null) {
+        if (programa == null || parser == null || parser.arbolDerivacion == null || hayErrores) {
             btnAbrirArbol.setDisable(true);
-            Label info = new Label("Analiza el c\u00F3digo para generar el \u00E1rbol de derivaci\u00F3n.");
-            info.setStyle("-fx-text-fill: #a6adc8; -fx-font-family: 'Consolas', monospace;"
+            String mensaje;
+            if (hayErrores) {
+                mensaje = "Corrige los errores para generar el \u00E1rbol de derivaci\u00F3n.";
+                btnAbrirArbol.setTooltip(new Tooltip("Hay errores en el c\u00F3digo. Corr\u00EDgelos para habilitar."));
+            } else {
+                mensaje = "Analiza el c\u00F3digo para generar el \u00E1rbol de derivaci\u00F3n.";
+                btnAbrirArbol.setTooltip(new Tooltip("Escribe o abre un archivo y presiona F5 para analizar."));
+            }
+            Label info = new Label(mensaje);
+            info.setStyle("-fx-text-fill: #f38ba8; -fx-font-family: 'Consolas', monospace;"
                 + " -fx-font-size: 12px; -fx-padding: 8 0;");
             derivacionPanel.getChildren().add(info);
             return;
         }
 
         btnAbrirArbol.setDisable(false);
+        btnAbrirArbol.setTooltip(null);
 
         // Vista previa del árbol en texto
         String arbolTexto = arbolPreviewCompleto(parser.arbolDerivacion);
@@ -673,6 +681,13 @@ public class AppController {
     }
 
     private void abrirArbolDerivacion() {
+        // Re-analizar para asegurar estado fresco antes de mostrar
+        analizarCodigo();
+        
+        if (hayErrores) {
+            mostrarError("No se puede mostrar el \u00E1rbol de derivaci\u00F3n porque hay errores en el c\u00F3digo. Corrige los errores primero.");
+            return;
+        }
         if (ultimoParser == null || ultimoParser.arbolDerivacion == null) {
             mostrarError("No hay \u00E1rbol de derivaci\u00F3n disponible. Analiza el c\u00F3digo primero.");
             return;
@@ -810,7 +825,7 @@ public class AppController {
     }
 
     private String obtenerClaseEstiloToken(Token t) {
-        if (t.tieneError || t.tipo == TipoToken.DESCONOCIDO) {
+        if (t.tieneError || t.tipo == TipoToken.DESCONOCIDO || t.tieneSugerencia) {
             return "token-error";
         }
         
