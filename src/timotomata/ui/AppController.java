@@ -212,7 +212,7 @@ public class AppController {
 
         // Panel de Errores — TableView con columnas: Código, Tipo, Mensaje, Línea
         errorTable = new TableView<>(errorData);
-        errorTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        errorTable.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
         errorTable.setPrefHeight(140);
         errorTable.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-table-cell-border-color: #313244;"
@@ -222,12 +222,16 @@ public class AppController {
 
         TableColumn<ErrorInfo, String> colErrCodigo = new TableColumn<>("Código");
         colErrCodigo.setCellValueFactory(new PropertyValueFactory<>("codigo"));
-        colErrCodigo.setPrefWidth(50);
+        colErrCodigo.setPrefWidth(55);
+        colErrCodigo.setMinWidth(40);
+        colErrCodigo.setMaxWidth(80);
         colErrCodigo.setStyle("-fx-alignment: CENTER;");
 
         TableColumn<ErrorInfo, String> colErrTipo = new TableColumn<>("Tipo");
         colErrTipo.setCellValueFactory(new PropertyValueFactory<>("tipo"));
-        colErrTipo.setPrefWidth(75);
+        colErrTipo.setPrefWidth(80);
+        colErrTipo.setMinWidth(50);
+        colErrTipo.setMaxWidth(110);
         colErrTipo.setCellFactory(col -> new TableCell<>() {
             @Override protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
@@ -241,17 +245,53 @@ public class AppController {
         TableColumn<ErrorInfo, String> colErrMensaje = new TableColumn<>("Mensaje");
         colErrMensaje.setCellValueFactory(new PropertyValueFactory<>("mensaje"));
         colErrMensaje.setPrefWidth(280);
+        colErrMensaje.setMinWidth(120);
+        colErrMensaje.setMaxWidth(600);
+        colErrMensaje.setCellFactory(col -> new TableCell<>() {
+            private final Label label = new Label();
+            {
+                label.setWrapText(true);
+                label.setStyle("-fx-text-fill: #cdd6f4; -fx-padding: 2 4;");
+                label.setMaxWidth(Double.MAX_VALUE);
+                label.widthProperty().addListener((obs, o, n) -> getTableRow().requestLayout());
+                setGraphic(label);
+                setPrefHeight(USE_COMPUTED_SIZE);
+            }
+            @Override protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                } else {
+                    label.setText(item);
+                    setGraphic(label);
+                }
+            }
+        });
+        colErrMensaje.setSortable(false);
 
         TableColumn<ErrorInfo, Number> colErrLinea = new TableColumn<>("Línea");
         colErrLinea.setCellValueFactory(new PropertyValueFactory<>("linea"));
-        colErrLinea.setPrefWidth(45);
+        colErrLinea.setPrefWidth(50);
+        colErrLinea.setMinWidth(35);
+        colErrLinea.setMaxWidth(70);
         colErrLinea.setStyle("-fx-alignment: CENTER-RIGHT;");
 
         TableColumn<ErrorInfo, Number> colErrColumna = new TableColumn<>("Col");
         colErrColumna.setCellValueFactory(new PropertyValueFactory<>("columna"));
-        colErrColumna.setPrefWidth(35);
+        colErrColumna.setPrefWidth(40);
+        colErrColumna.setMinWidth(30);
+        colErrColumna.setMaxWidth(60);
         colErrColumna.setStyle("-fx-alignment: CENTER-RIGHT;");
 
+        errorTable.setRowFactory(tv -> new TableRow<>() {
+            @Override protected void updateItem(ErrorInfo item, boolean empty) {
+                super.updateItem(item, empty);
+                setMinHeight(USE_COMPUTED_SIZE);
+                setMaxHeight(USE_COMPUTED_SIZE);
+                setPrefHeight(USE_COMPUTED_SIZE);
+            }
+        });
         errorTable.getColumns().addAll(colErrCodigo, colErrTipo, colErrMensaje, colErrLinea, colErrColumna);
         erroresPane = new TitledPane("ERRORES", errorTable);
         erroresPane.getStyleClass().add("titled-pane-custom");

@@ -1028,11 +1028,6 @@ public class Parser {
 
             Token siguiente = tokens.get(i + 1);
 
-            // DESPUÉS de ESTADO_SISTEMA siempre debe venir ';'
-            if (actual.tipo == TipoToken.ESTADO_SISTEMA && siguiente.tipo != TipoToken.PUNTO_COMA) {
-                agregarError(TablaErrores.P004, actual.linea, actual.columna, actual.lexema);
-            }
-
             // DESPUÉS de CADENA (literal de texto) siempre debe venir ';'
             if (actual.tipo == TipoToken.CADENA && siguiente.tipo != TipoToken.PUNTO_COMA) {
                 agregarError(TablaErrores.P005, actual.linea, actual.columna);
@@ -1053,8 +1048,13 @@ public class Parser {
         String encontrado = (actualToken.tipo == TipoToken.EOF)
             ? "fin del programa"
             : "'" + actualToken.lexema + "'";
-        throw error(mensaje + " pero se encontró " + encontrado
-            + " en línea " + actualToken.linea + ", columna " + actualToken.columna);
+        // Usar código específico si el token esperado es ';'
+        if (tipo == TipoToken.PUNTO_COMA) {
+            String previo = (ultimoConsumido != null) ? ultimoConsumido.lexema : "";
+            throw new ErrorSintactico(new ErrorInfo(
+                TablaErrores.P031, actualToken.linea, actualToken.columna, previo, encontrado));
+        }
+        throw error(mensaje + " pero se encontró " + encontrado);
     }
 
     private boolean verificar(TipoToken tipo) {
