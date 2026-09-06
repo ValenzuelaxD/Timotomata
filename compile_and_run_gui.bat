@@ -3,10 +3,16 @@ setlocal enabledelayedexpansion
 
 set PROYECTO=Compilador Timotomata — GUI
 set JAVAFX_VER=23.0.2
-set JAVAFX_ZIP=javafx-sdk-%JAVAFX_VER%.zip
-set JAVAFX_DIR=%~dp0javafx-sdk-%JAVAFX_VER%
+if not defined LOCALAPPDATA set "LOCALAPPDATA=%TEMP%"
+set "CACHE_DIR=%LOCALAPPDATA%\Timotomata"
+set "JAVAFX_ZIP=%CACHE_DIR%\javafx-sdk-%JAVAFX_VER%.zip"
+set "JAVAFX_DIR=%CACHE_DIR%\javafx-sdk-%JAVAFX_VER%"
+set "RICH_DIR=%CACHE_DIR%\richtextfx"
+set "RICH_CP=%RICH_DIR%\*"
 set SRC_DIR=%~dp0src
-set OUT_DIR=%~dp0out
+set "OUT_DIR=%CACHE_DIR%\out"
+
+if not exist "%CACHE_DIR%\" mkdir "%CACHE_DIR%"
 
 echo ===== %PROYECTO% =====
 echo.
@@ -44,6 +50,15 @@ for /f "tokens=*" %%i in ('dir /b /ad "C:\Program Files\Java\jdk*" 2^>nul') do (
     )
 )
 
+REM Opcion D: Eclipse Temurin instalado con winget
+for /f "tokens=*" %%i in ('dir /b /ad "C:\Program Files\Eclipse Adoptium\jdk*" 2^>nul') do (
+    if exist "C:\Program Files\Eclipse Adoptium\%%i\bin\javac.exe" (
+        set JAVAC_CMD="C:\Program Files\Eclipse Adoptium\%%i\bin\javac"
+        set JAVA_CMD="C:\Program Files\Eclipse Adoptium\%%i\bin\java"
+        goto :jdk_found
+    )
+)
+
 echo [ERROR] No se encontró JDK 17+ instalado.
 echo.
 echo Para instalar JDK:
@@ -58,53 +73,75 @@ pause
 exit /b 1
 
 :jdk_found
-set JAVA_VER=
-for /f "tokens=3" %%v in ('"%JAVA_CMD%" -version 2^>^&1 ^| findstr /r "[0-9]\.[0-9]"') do set JAVA_VER=%%v
 echo [1/4] JDK detectado: %JAVAC_CMD%
-for /f "tokens=1" %%v in ('"%JAVA_CMD%" -version 2^>^&1 ^| findstr "version"') do echo       %%v
-if not defined JAVA_VER echo       (version detectada)
+echo       Java y javac disponibles.
 echo.
 
 REM ═══════════════════════════════════════════════════════════════
 REM  2. VERIFICAR / DESCARGAR JAVAFX
 REM ═══════════════════════════════════════════════════════════════
 
-if exist "%JAVAFX_DIR%\lib\javafx.controls.jar" (
-    echo [2/4] JavaFX SDK %JAVAFX_VER% encontrado.
-) else (
-    echo [2/4] Descargando JavaFX SDK %JAVAFX_VER%...
-    echo      (Esto solo ocurre la primera vez)
-    echo.
+if exist "%JAVAFX_DIR%\lib\javafx.controls.jar" goto javafx_ready
 
-    set DOWNLOAD_URL=https://download2.gluonhq.com/openjfx/%JAVAFX_VER%/openjfx-%JAVAFX_VER%_windows-x64_bin-sdk.zip
+echo [2/4] Descargando JavaFX SDK %JAVAFX_VER%...
+echo      (Esto solo ocurre la primera vez)
+echo.
 
-    REM Intentar con PowerShell
-    powershell -Command "& { param($u,$z) Write-Host 'Descargando...'; try { Invoke-WebRequest -Uri $u -OutFile $z -UseBasicParsing -ErrorAction Stop; Write-Host 'OK' } catch { Write-Host 'ERROR:' $_.Exception.Message; exit 1 } }" -u "!DOWNLOAD_URL!" -z "%~dp0%JAVAFX_ZIP%"
+set DOWNLOAD_URL=https://download2.gluonhq.com/openjfx/%JAVAFX_VER%/openjfx-%JAVAFX_VER%_windows-x64_bin-sdk.zip
 
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] No se pudo descargar JavaFX automaticamente.
-        echo.
-        echo Descargalo manualmente desde:
-        echo   https://gluonhq.com/products/javafx/
-        echo.
-        echo Guarda el archivo en: %~dp0
-        echo con nombre: %JAVAFX_ZIP%
-        echo y vuelve a ejecutar este script.
-        pause
-        exit /b 1
-    )
+REM Descargar usando variables de entorno para soportar rutas con espacios
+set "TIMOTOMATA_FX_URL=!DOWNLOAD_URL!"
+set "TIMOTOMATA_FX_ZIP=!JAVAFX_ZIP!"
+set "TIMOTOMATA_CACHE=!CACHE_DIR!"
+powershell -NoProfile -Command "$ErrorActionPreference = 'Stop'; Invoke-WebRequest -Uri $env:TIMOTOMATA_FX_URL -OutFile $env:TIMOTOMATA_FX_ZIP -UseBasicParsing"
 
-    echo      Extrayendo...
-    powershell -Command "Expand-Archive -Path '%~dp0%JAVAFX_ZIP%' -DestinationPath '%~dp0' -Force 2>&1 | Out-Null"
-    if exist "%~dp0javafx-sdk-%JAVAFX_VER%" (
-        echo [OK] JavaFX SDK listo.
-    ) else (
-        echo [ERROR] No se pudo extraer JavaFX.
-        pause
-        exit /b 1
-    )
-)
+if errorlevel 1 goto javafx_download_error
+
+echo      Extrayendo...
+powershell -NoProfile -Command "$ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath $env:TIMOTOMATA_FX_ZIP -DestinationPath $env:TIMOTOMATA_CACHE -Force"
+if not exist "%JAVAFX_DIR%\lib\javafx.controls.jar" goto javafx_extract_error
+echo [OK] JavaFX SDK listo.
+
+:javafx_ready
+echo [2/4] JavaFX SDK %JAVAFX_VER% encontrado.
+echo.
+goto compile
+
+:javafx_download_error
+echo.
+echo [ERROR] No se pudo descargar JavaFX automaticamente.
+echo.
+echo Descargalo manualmente desde:
+echo   https://gluonhq.com/products/javafx/
+echo.
+echo Guarda el archivo en: %CACHE_DIR%
+echo con nombre: %JAVAFX_ZIP%
+echo y vuelve a ejecutar este script.
+pause
+exit /b 1
+
+:javafx_extract_error
+echo [ERROR] No se pudo extraer JavaFX.
+pause
+exit /b 1
+
+:compile
+
+REM ═══════════════════════════════════════════════════════════════
+REM  2B. VERIFICAR / DESCARGAR RICHTEXTFX
+REM ═══════════════════════════════════════════════════════════════
+
+if exist "%RICH_DIR%\richtextfx.jar" if exist "%RICH_DIR%\reactfx.jar" if exist "%RICH_DIR%\undofx.jar" if exist "%RICH_DIR%\flowless.jar" if exist "%RICH_DIR%\wellbehavedfx.jar" goto richtext_ready
+
+echo [2B/4] Descargando RichTextFX...
+if not exist "%RICH_DIR%\" mkdir "%RICH_DIR%"
+set "TIMOTOMATA_RICH_DIR=!RICH_DIR!"
+set "TIMOTOMATA_RICH_BASE=https://repo.maven.apache.org/maven2"
+powershell -NoProfile -Command "$ErrorActionPreference = 'Stop'; $base=$env:TIMOTOMATA_RICH_BASE; $dir=$env:TIMOTOMATA_RICH_DIR; $items=@{'richtextfx'='org/fxmisc/richtext/richtextfx/0.11.2/richtextfx-0.11.2.jar'; 'reactfx'='org/reactfx/reactfx/2.0-M5/reactfx-2.0-M5.jar'; 'undofx'='org/fxmisc/undo/undofx/2.1.1/undofx-2.1.1.jar'; 'flowless'='org/fxmisc/flowless/flowless/0.7.2/flowless-0.7.2.jar'; 'wellbehavedfx'='org/fxmisc/wellbehaved/wellbehavedfx/0.3.3/wellbehavedfx-0.3.3.jar'}; foreach($name in $items.Keys) { Invoke-WebRequest -Uri ($base + '/' + $items[$name]) -OutFile (Join-Path $dir ($name + '.jar')) -UseBasicParsing -ErrorAction Stop }"
+if errorlevel 1 goto richtext_error
+
+:richtext_ready
+echo [2B/4] RichTextFX disponible.
 echo.
 
 REM ═══════════════════════════════════════════════════════════════
@@ -119,11 +156,17 @@ copy /Y "%SRC_DIR%\timotomata\ui\estilos.css" "%OUT_DIR%\timotomata\ui\estilos.c
 
 set MODULES=--module-path "%JAVAFX_DIR%/lib" --add-modules javafx.controls,javafx.graphics
 
-%JAVAC_CMD% %MODULES% -d "%OUT_DIR%" ^
-    "%SRC_DIR%\timotomata\lexer\*.java" ^
-    "%SRC_DIR%\timotomata\parser\*.java" ^
-    "%SRC_DIR%\timotomata\parser\ast\*.java" ^
-    "%SRC_DIR%\timotomata\ui\*.java" 2>&1
+REM Construir la lista real de fuentes; javac no expande comodines entre comillas
+set "SOURCE_FILES="
+for /r "%SRC_DIR%" %%f in (*.java) do set "SOURCE_FILES=!SOURCE_FILES! "%%f""
+
+if not defined SOURCE_FILES (
+    echo [ERROR] No se encontraron archivos fuente Java.
+    pause
+    exit /b 1
+)
+
+%JAVAC_CMD% %MODULES% -cp "%RICH_CP%" -d "%OUT_DIR%" !SOURCE_FILES! 2>&1
 
 if errorlevel 1 (
     echo.
@@ -141,10 +184,18 @@ REM ═════════════════════════�
 
 echo [4/4] Iniciando interfaz grafica...
 echo.
-%JAVA_CMD% %MODULES% -cp "%OUT_DIR%" timotomata.ui.MainApp
+%JAVA_CMD% %MODULES% -cp "%OUT_DIR%;%RICH_CP%" timotomata.ui.MainApp
 
 if errorlevel 1 (
     echo.
     pause
     exit /b 1
 )
+
+exit /b 0
+
+:richtext_error
+echo [ERROR] No se pudo descargar RichTextFX.
+echo Revisa la conexión a internet y vuelve a ejecutar este script.
+pause
+exit /b 1

@@ -266,11 +266,13 @@ public class Lexer {
                 emitirTokenUnario(estado, lexema, inicioLinea, inicioColumna);
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
+            } else if (estado == Q_COM_LINEA) {
+                // Un comentario de línea también es válido si termina en EOF.
             } else if (estado == Q_COM_BLOQ || estado == Q_COM_BLOQ_FIN) {
                 erroresLexicos.add("Error lexico en linea " + inicioLinea
                     + ": Comentario de bloque iniciado en linea " + inicioLinea + " no fue cerrado, se esperaba '*/'");
-                columna = inicioColumna + 1;
-                actual = inicio + 1;
+                // Consumir el resto evita volver a tokenizar el contenido del comentario.
+                actual = fuente.length();
             } else if (actual > inicio) {
                 erroresLexicos.add("Error lexico en linea " + inicioLinea
                     + ": Secuencia no reconocida en el lenguaje: \"" + fuente.substring(inicio, actual) + "\"");

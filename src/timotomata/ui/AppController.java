@@ -7,18 +7,25 @@ import java.util.stream.*;
 import javafx.animation.PauseTransition;
 import javafx.beans.property.*;
 import javafx.collections.*;
+import javafx.css.PseudoClass;
 import javafx.geometry.*;
 import javafx.scene.Scene;
+import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
-import javafx.scene.text.Font;
 import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+
+import java.util.function.IntFunction;
+
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.LineNumberFactory;
+import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import timotomata.lexer.*;
 import timotomata.parser.*;
@@ -71,8 +78,7 @@ public class AppController {
 
     // ─── Componentes de la UI ───
     private BorderPane root;
-    private TextArea editor;
-    private LineNumberColumn lineNumbers;
+    private CodeArea editor;
     private Label statusLabel;
     private ListView<String> errorList;
     private TitledPane erroresPane;
@@ -101,7 +107,6 @@ public class AppController {
     private Programa ultimoPrograma;
     private Parser ultimoParser;
     private String archivoActual = null;
-    private Set<String> idsConSugerencia = new HashSet<>();
 
     // =============================================================
     //  CONSTRUCTOR
@@ -157,47 +162,58 @@ public class AppController {
         VBox panel = new VBox(0);
         panel.setStyle("-fx-background-color: #1e1e2e;");
 
-        // ─── HBox: números de línea a la izquierda, editor a la derecha ───
-        HBox editorRow = new HBox(0);
-        editorRow.setStyle("-fx-background-color: #1e1e2e;");
-
-        editor = new TextArea();
-        editor.setStyle("-fx-control-inner-background: #1e1e2e;"
-            + " -fx-text-fill: #cdd6f4;"
-            + " -fx-highlight-fill: #45475a;"
+        editor = new CodeArea();
+        editor.getStyleClass().add("syntax-editor");
+        editor.setStyle("-fx-background-color: #1e1e2e;"
+            + " -fx-highlight-fill: rgba(137, 180, 250, 0.22);"
             + " -fx-highlight-text-fill: #cdd6f4;"
             + " -fx-font-family: 'Consolas', 'Courier New', monospace;"
             + " -fx-font-size: 14px;"
             + " -fx-line-spacing: 2px;"
             + " -fx-border-color: transparent;"
-            + " -fx-padding: 0 0 0 0;"
+            + " -fx-padding: 4px 8px 4px 0;"
             + " -fx-background-insets: 0;");
-        editor.setPromptText("Escribe tu código Timotomata aquí...");
-        editor.setPadding(new Insets(4, 8, 4, 0));
+        editor.setWrapText(false);
+        editor.useInitialStyleForInsertionProperty().set(false);
+        editor.setTextInsertionStyle(Collections.singleton("tm-plain"));
+        configurarNumerosDeLinea();
 
-        // Números de línea — se colocan a la izquierda del editor
-        lineNumbers = new LineNumberColumn(editor);
-
-        editorRow.getChildren().addAll(lineNumbers, editor);
-        HBox.setHgrow(editor, Priority.ALWAYS);
-
-        // Teclado: F5/F6 los maneja root, el resto dispara debounce
-        editor.setOnKeyReleased(e -> {
-            if (e.getCode() == KeyCode.F5 || e.getCode() == KeyCode.F6) {
-                // Los maneja root.setOnKeyReleased
-            } else {
-                debounce.playFromStart();
-            }
+        // Solo los cambios de texto programan el análisis; mover el cursor o
+        // seleccionar no reconstruye tokens ni estilos.
+        editor.textProperty().addListener((obs, oldText, newText) -> {
+            if (debounce != null) debounce.playFromStart();
         });
+        editor.caretPositionProperty().addListener((obs, oldPos, newPos) ->
+            actualizarStatusCursor());
 
-        // Actualizar cursor en barra de estado
-        editor.caretPositionProperty().addListener((obs, oldPos, newPos) -> {
-            actualizarStatusCursor();
-        });
-
-        panel.getChildren().add(editorRow);
-        VBox.setVgrow(editorRow, Priority.ALWAYS);
+        panel.getChildren().add(editor);
+        VBox.setVgrow(editor, Priority.ALWAYS);
         return panel;
+    }
+
+    /** Reutiliza LineNumberFactory y sincroniza el color con el párrafo activo. */
+    private void configurarNumerosDeLinea() {
+        IntFunction<Node> numerosBase = LineNumberFactory.get(editor);
+        PseudoClass lineaActual = PseudoClass.getPseudoClass("current-line");
+        var parrafoActual = editor.getCaretSelectionBind().paragraphIndexProperty();
+
+        editor.setParagraphGraphicFactory(indice -> {
+            Node nodo = numerosBase.apply(indice);
+            if (nodo instanceof Label numero) {
+                numero.getStyleClass().add("tm-line-number");
+                Runnable actualizar = () -> {
+                    boolean activo = parrafoActual.getValue() == indice;
+                    numero.pseudoClassStateChanged(lineaActual, activo);
+                    numero.setBackground(new Background(new BackgroundFill(
+                        Color.web(activo ? "rgba(137, 180, 250, 0.22)" : "#181825"),
+                        CornerRadii.EMPTY, Insets.EMPTY)));
+                    numero.setTextFill(Color.web(activo ? "#cdd6f4" : "#6c7086"));
+                };
+                parrafoActual.addListener((obs, anterior, nuevo) -> actualizar.run());
+                actualizar.run();
+            }
+            return nodo;
+        });
     }
 
     // ─── Panel derecho con pestañas ───
@@ -228,10 +244,31 @@ public class AppController {
         TableColumn<TokenInfo, String> colTipo = new TableColumn<>("Tipo");
         colTipo.setCellValueFactory(new PropertyValueFactory<>("tipo"));
         colTipo.setPrefWidth(130);
+        colTipo.setCellFactory(col -> new TableCell<TokenInfo, String>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty ? null : item);
+                setTextFill(empty ? Color.TRANSPARENT : Color.web(colorParaToken(item)));
+            }
+        });
 
         TableColumn<TokenInfo, String> colLexema = new TableColumn<>("Lexema");
         colLexema.setCellValueFactory(new PropertyValueFactory<>("lexema"));
         colLexema.setPrefWidth(130);
+        colLexema.setCellFactory(col -> new TableCell<TokenInfo, String>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty ? null : item);
+                if (empty || getIndex() < 0 || getIndex() >= getTableView().getItems().size()) {
+                    setTextFill(Color.TRANSPARENT);
+                } else {
+                    String tipo = getTableView().getItems().get(getIndex()).tipoProperty().get();
+                    setTextFill(Color.web(colorParaToken(tipo)));
+                }
+            }
+        });
 
         TableColumn<TokenInfo, Number> colLinea = new TableColumn<>("Linea");
         colLinea.setCellValueFactory(new PropertyValueFactory<>("linea"));
@@ -239,6 +276,7 @@ public class AppController {
         colLinea.setStyle("-fx-alignment: CENTER-RIGHT;");
 
         tokenTable.getColumns().addAll(colTipo, colLexema, colLinea);
+        tokenTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
 
         tokensPane = new TitledPane("TOKENS", tokenTable);
         tokensPane.getStyleClass().add("titled-pane-custom");
@@ -275,6 +313,7 @@ public class AppController {
         colSimbTipoNum.setPrefWidth(80);
 
         tablaSimbolos.getColumns().addAll(colSimbNombre, colSimbTipo, colSimbLinea, colSimbValor, colSimbTipoNum);
+        tablaSimbolos.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
 
         tablaPane = new TitledPane("TABLA SIMBOLOS", tablaSimbolos);
         tablaPane.getStyleClass().add("titled-pane-custom");
@@ -370,6 +409,8 @@ public class AppController {
             return;
         }
 
+        actualizarEstilosEditor(codigo, tokens);
+
         List<String> erroresLex = lexer.getErroresLexicos();
 
         // ─── Fase 2: Análisis Sintáctico (con recuperación de errores) ───
@@ -382,33 +423,17 @@ public class AppController {
 
         // ─── Fase 3: Tabla de símbolos y detección de IDs no declarados ───
         construirTablaSimbolos(programa, tokens);
-        List<String> erroresNoDecl = detectarNoDeclarados(programa);
+        List<String> erroresNoDecl = detectarNoDeclarados(programa, tokens);
 
         // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
-        List<String> sugerenciasReservadas = sugerirIDsMalEscritos(tokens, programa);
-
-        // ─── Filtrar errores sintácticos que duplican sugerencias ───
-        List<String> erroresSintFiltrados = new ArrayList<>();
-        for (String err : erroresSint) {
-            boolean duplicado = false;
-            String errLower = err.toLowerCase();
-            for (String id : idsConSugerencia) {
-                if (errLower.contains("'" + id + "'")) {
-                    duplicado = true;
-                    break;
-                }
-            }
-            if (!duplicado) {
-                erroresSintFiltrados.add(err);
-            }
-        }
+        List<String> sugerenciasReservadas = sugerirIDsMalEscritos(tokens, programa, erroresSint);
 
         // ─── Actualizar UI ───
-        actualizarErrores(erroresLex, erroresSintFiltrados, erroresNoDecl, sugerenciasReservadas);
+        actualizarErrores(erroresLex, erroresSint, erroresNoDecl, sugerenciasReservadas);
         actualizarTokens(tokens);
         actualizarAST(programa);
         actualizarDerivacion(programa, parser);
-        actualizarStatus(tokens.size(), erroresLex.size(), erroresSintFiltrados.size(),
+        actualizarStatus(tokens.size(), erroresLex.size(), erroresSint.size(),
             erroresNoDecl.size() + sugerenciasReservadas.size());
     }
 
@@ -425,22 +450,22 @@ public class AppController {
         int totalErrores = 0;
 
         for (String err : erroresLex) {
-            items.add("[LEXICO] " + err);
+            items.add("[ERROR LEXICO] " + err);
             totalErrores++;
         }
 
         for (String err : sugerencias) {
-            items.add("[LEXICO] " + err);
+            items.add("[SUGERENCIA] " + err);
             totalErrores++;
         }
 
         for (String err : erroresSint) {
-            items.add("[SINTACTICO] " + err);
+            items.add("[ERROR SINTACTICO] " + err);
             totalErrores++;
         }
 
         for (String err : erroresNoDecl) {
-            items.add("[ERROR] " + err);
+            items.add("[ERROR SEMANTICO] " + err);
             totalErrores++;
         }
 
@@ -469,6 +494,137 @@ public class AppController {
             ));
         }
         tokensPane.setText("\u25C6 TOKENS (" + tokenData.size() + ")");
+    }
+
+    /** Aplica estilos por rango al mismo CodeArea que recibe la edición. */
+    private void actualizarEstilosEditor(String codigo, List<Token> tokens) {
+        StyleSpansBuilder<Collection<String>> estilos = new StyleSpansBuilder<>();
+        int cursor = 0;
+
+        for (Token token : tokens) {
+            if (token.tipo == TipoToken.EOF || token.lexema.isEmpty()) continue;
+
+            int inicio = buscarInicioToken(codigo, token, cursor);
+            if (inicio < cursor) inicio = codigo.indexOf(token.lexema, cursor);
+            if (inicio < 0) continue;
+
+            agregarEstilosDeTexto(codigo.substring(cursor, inicio), estilos);
+            estilos.add(Collections.singleton(claseParaToken(token.tipo.name())), token.lexema.length());
+            cursor = inicio + token.lexema.length();
+        }
+        agregarEstilosDeTexto(codigo.substring(Math.min(cursor, codigo.length())), estilos);
+        editor.setStyleSpans(0, estilos.create());
+    }
+
+    /** Conserva comentarios como una categoría visual aunque el lexer los descarte. */
+    private void agregarEstilosDeTexto(String texto,
+                                      StyleSpansBuilder<Collection<String>> estilos) {
+        int cursor = 0;
+        while (cursor < texto.length()) {
+            int linea = texto.indexOf("//", cursor);
+            int bloque = texto.indexOf("/*", cursor);
+            int inicioComentario;
+            boolean esLinea;
+
+            if (linea < 0) {
+                inicioComentario = bloque;
+                esLinea = false;
+            } else if (bloque < 0 || linea < bloque) {
+                inicioComentario = linea;
+                esLinea = true;
+            } else {
+                inicioComentario = bloque;
+                esLinea = false;
+            }
+
+            if (inicioComentario < 0) {
+                estilos.add(Collections.emptyList(), texto.length() - cursor);
+                return;
+            }
+            if (inicioComentario > cursor) {
+                estilos.add(Collections.emptyList(), inicioComentario - cursor);
+            }
+
+            int fin;
+            if (esLinea) {
+                fin = texto.indexOf('\n', inicioComentario);
+                if (fin < 0) fin = texto.length();
+            } else {
+                fin = texto.indexOf("*/", inicioComentario + 2);
+                fin = fin < 0 ? texto.length() : fin + 2;
+            }
+            estilos.add(Collections.singleton("tm-comment"), fin - inicioComentario);
+            cursor = fin;
+        }
+    }
+
+    /** Busca el token por su línea/columna y verifica el lexema antes de usarlo. */
+    private int buscarInicioToken(String codigo, Token token, int desde) {
+        int linea = 1;
+        int inicioLinea = 0;
+        for (int i = 0; i < codigo.length() && linea < token.linea; i++) {
+            if (codigo.charAt(i) == '\n') {
+                linea++;
+                inicioLinea = i + 1;
+            }
+        }
+
+        int candidato = inicioLinea + Math.max(0, token.columna - 1);
+        if (candidato >= desde
+                && candidato + token.lexema.length() <= codigo.length()
+                && codigo.startsWith(token.lexema, candidato)) {
+            return candidato;
+        }
+        return codigo.indexOf(token.lexema, desde);
+    }
+
+    /**
+     * Clasificación visual basada exclusivamente en TipoToken.
+     * El lexer y el parser no dependen de estos colores.
+     */
+    private String colorParaToken(String tipo) {
+        if (tipo == null) return "#cdd6f4";
+        if (tipo.equals("ID")) return "#89dceb";
+        if (tipo.equals("NUMERO")) return "#fab387";
+        if (tipo.equals("ESTADO_SISTEMA")) return "#f38ba8";
+        if (tipo.equals("SI") || tipo.equals("ENTONCES") || tipo.equals("ESTADO")) {
+            return "#f38ba8";
+        }
+        if (tipo.equals("MAYOR") || tipo.equals("MENOR")
+                || tipo.equals("IGUAL_IGUAL") || tipo.equals("MAYOR_IGUAL")
+                || tipo.equals("MENOR_IGUAL") || tipo.equals("DIFERENTE")
+                || tipo.equals("MAS") || tipo.equals("MENOS")
+                || tipo.equals("POR") || tipo.equals("DIV")
+                || tipo.equals("ASIGNACION")) {
+            return "#f9e2af";
+        }
+        if (tipo.equals("PUNTO_COMA") || tipo.equals("COMA")
+                || tipo.equals("PAREN_IZQ") || tipo.equals("PAREN_DER")) {
+            return "#a6e3a1";
+        }
+        return "#cba6f7";
+    }
+
+    private String claseParaToken(String tipo) {
+        if ("ID".equals(tipo)) return "tm-identifier";
+        if ("NUMERO".equals(tipo)) return "tm-number";
+        if ("ESTADO_SISTEMA".equals(tipo)) return "tm-state";
+        if (tipo.equals("SI") || tipo.equals("ENTONCES") || tipo.equals("ESTADO")) {
+            return "tm-control";
+        }
+        if (tipo.equals("MAYOR") || tipo.equals("MENOR")
+                || tipo.equals("IGUAL_IGUAL") || tipo.equals("MAYOR_IGUAL")
+                || tipo.equals("MENOR_IGUAL") || tipo.equals("DIFERENTE")
+                || tipo.equals("MAS") || tipo.equals("MENOS")
+                || tipo.equals("POR") || tipo.equals("DIV")
+                || tipo.equals("ASIGNACION")) {
+            return "tm-operator";
+        }
+        if (tipo.equals("PUNTO_COMA") || tipo.equals("COMA")
+                || tipo.equals("PAREN_IZQ") || tipo.equals("PAREN_DER")) {
+            return "tm-delimiter";
+        }
+        return "tm-keyword";
     }
 
     // ─── AST ───
@@ -772,7 +928,7 @@ public class AppController {
      * Detecta identificadores usados pero no declarados y genera errores
      * con sugerencias ortográficas usando distancia de Levenshtein.
      */
-    private List<String> detectarNoDeclarados(Programa programa) {
+    private List<String> detectarNoDeclarados(Programa programa, List<Token> tokens) {
         List<String> errores = new ArrayList<>();
         if (programa == null) return errores;
 
@@ -783,15 +939,14 @@ public class AppController {
         Set<String> referenciadas = extraerVariablesReferenciadas(programa);
         for (String ref : referenciadas) {
             if (!declaradas.contains(ref)) {
+                int linea = buscarLineaPrimerUso(ref, tokens);
                 StringBuilder sb = new StringBuilder();
-                sb.append("El identificador '").append(ref).append("' no ha sido declarado.");
+                sb.append("Error semantico en linea ").append(linea)
+                    .append(": El identificador '").append(ref)
+                    .append("' no ha sido declarado.");
 
                 // Sugerencia 1: comparar con sensores/umbrales declarados
                 String sugerencia = buscarSugerencia(ref, declaradas.toArray(new String[0]));
-                if (sugerencia == null) {
-                    // Sugerencia 2: comparar con palabras reservadas
-                    sugerencia = buscarSugerencia(ref, PALABRAS_RESERVADAS);
-                }
 
                 if (sugerencia != null) {
                     sb.append(" [SUGERENCIA: \u00BFQuisiste decir '").append(sugerencia).append("'?]");
@@ -805,15 +960,12 @@ public class AppController {
     /**
      * Escanea TODOS los tokens ID del código y los compara con las
      * palabras reservadas del lenguaje usando distancia de Levenshtein.
-     * Esto funciona incluso cuando el parseo falla (AST vacío).
-     *
-     * Ejemplo: si escribes "sensorr" se sugerirá "sensor".
-     * Si escribes "sí" se sugerirá "si".
-     * Si no se parece a nada, no se agrega sugerencia.
+     * Solo sugiere un ID cuando el parser también lo mencionó en un error.
+     * Así no se confunden identificadores válidos con palabras reservadas.
      */
-    private List<String> sugerirIDsMalEscritos(List<Token> tokens, Programa programa) {
+    private List<String> sugerirIDsMalEscritos(List<Token> tokens, Programa programa,
+                                               List<String> erroresSintacticos) {
         List<String> sugerencias = new ArrayList<>();
-        idsConSugerencia.clear();
         Set<String> yaSugeridos = new HashSet<>(); // evita duplicados
 
         // Identificadores declarados (sensores, umbrales) — no sugerir sobre ellos
@@ -832,26 +984,55 @@ public class AppController {
             String idLower = lexema.toLowerCase();
 
             // Si ya está declarado o ya sugerimos para este ID, ignorar
-            if (declaradas.contains(idLower)) continue;
+            if (declaradas.contains(lexema)) continue;
             if (yaSugeridos.contains(idLower)) continue;
+
+            Set<String> candidatos = new LinkedHashSet<>();
+            for (String error : erroresSintacticos) {
+                if (error.contains("'" + lexema + "'")) {
+                    candidatos.addAll(candidatosEsperados(error));
+                }
+            }
+            if (candidatos.isEmpty()) continue;
+
             boolean esReservadaExacta = false;
             for (String r : PALABRAS_RESERVADAS) {
                 if (idLower.equals(r)) { esReservadaExacta = true; break; }
             }
             if (esReservadaExacta) continue;
 
-            // Buscar palabra reservada similar (distancia Levenshtein ≤ 2)
-            String sugerencia = buscarSugerencia(idLower, PALABRAS_RESERVADAS);
+            // Comparar solo con palabras que el parser esperaba en ese punto.
+            String sugerencia = buscarSugerencia(idLower, candidatos.toArray(new String[0]));
             if (sugerencia != null) {
                 yaSugeridos.add(idLower);
-                idsConSugerencia.add(idLower);
-                sugerencias.add("Error lexico en linea " + t.linea
-                    + ": La palabra '" + lexema + "' no es una palabra reservada del lenguaje."
+                sugerencias.add("Linea " + t.linea + ": '" + lexema
+                    + "' se parece a la palabra reservada '" + sugerencia + "'."
                     + " \u00BFQuisiste decir '" + sugerencia + "'?");
             }
         }
 
         return sugerencias;
+    }
+
+    /** Extrae solo las palabras que el parser esperaba en ese punto. */
+    private Set<String> candidatosEsperados(String error) {
+        String esperado = error.toLowerCase();
+        int inicio = esperado.indexOf("se esperaba");
+        if (inicio < 0) return Collections.emptySet();
+
+        esperado = esperado.substring(inicio + "se esperaba".length());
+        int fin = esperado.indexOf(" despues");
+        if (fin < 0) fin = esperado.indexOf(" pero se");
+        if (fin >= 0) esperado = esperado.substring(0, fin);
+        esperado = " " + esperado.replaceAll("[^a-z0-9áéíóúñ]+", " ") + " ";
+
+        Set<String> candidatos = new LinkedHashSet<>();
+        for (String reservada : PALABRAS_RESERVADAS) {
+            if (esperado.contains(" " + reservada + " ")) {
+                candidatos.add(reservada);
+            }
+        }
+        return candidatos;
     }
 
     /**
@@ -897,9 +1078,8 @@ public class AppController {
     // =============================================================
 
     private void nuevoArchivo() {
-        editor.clear();
+        editor.replaceText(0, editor.getLength(), "");
         archivoActual = null;
-        analizarCodigo();
     }
 
     private void abrirArchivo() {
@@ -911,9 +1091,8 @@ public class AppController {
         File file = fc.showOpenDialog(root.getScene().getWindow());
         if (file != null) {
             try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-                editor.setText(br.lines().collect(Collectors.joining("\n")));
+                editor.replaceText(0, editor.getLength(), br.lines().collect(Collectors.joining("\n")));
                 archivoActual = file.getAbsolutePath();
-                analizarCodigo();
             } catch (IOException ex) {
                 mostrarError("No se pudo abrir el archivo: " + ex.getMessage());
             }
@@ -950,7 +1129,7 @@ public class AppController {
     }
 
     private void cargarEjemploPorDefecto() {
-        editor.setText(
+        editor.replaceText(0, editor.getLength(),
             "sensor voltaje;\n"
             + "sensor temperatura;\n"
             + "umbral maxValor = 220;\n"

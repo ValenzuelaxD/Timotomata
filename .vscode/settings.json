@@ -1,8 +1,9 @@
 {
     "java.project.sourcePaths": ["src"],
-    "java.project.outputPath": "out",
+    "java.project.outputPath": "${env:LOCALAPPDATA}/Timotomata/out",
     "java.project.referencedLibraries": [
-        "javafx-sdk-23.0.2/lib/**/*.jar"
+        "${env:LOCALAPPDATA}/Timotomata/javafx-sdk-23.0.2/lib/**/*.jar",
+        "${env:LOCALAPPDATA}/Timotomata/richtextfx/*.jar"
     ],
     "java.inlayHints.parameterNames.enabled": "none",
     "java.configuration.updateBuildConfiguration": "automatic"

@@ -81,6 +81,77 @@
     -fx-padding: 0;
 }
 
+/* CodeArea es el unico renderizador y receptor de interacción del editor. */
+.syntax-editor,
+.syntax-editor .virtual-flow,
+.syntax-editor .virtual-flow .clipped-container,
+.syntax-editor .virtual-flow .sheet {
+    -fx-background-color: #1e1e2e;
+    -fx-border-color: transparent;
+}
+
+.syntax-editor .paragraph-box .paragraph-text {
+    -fx-fill: #cdd6f4;
+    -fx-font-family: 'Consolas', 'Courier New', monospace;
+    -fx-font-size: 14px;
+}
+
+.syntax-editor .caret {
+    -fx-stroke: #f5c2e7;
+    -fx-stroke-width: 1.5;
+}
+
+.syntax-editor .selection {
+    -fx-fill: rgba(137, 180, 250, 0.22);
+}
+
+.syntax-editor .tm-keyword {
+    -fx-fill: #cba6f7;
+}
+
+.syntax-editor .tm-plain {
+    -fx-fill: #cdd6f4;
+}
+
+.syntax-editor .tm-control {
+    -fx-fill: #f38ba8;
+}
+
+.syntax-editor .tm-state {
+    -fx-fill: #f38ba8;
+}
+
+.syntax-editor .tm-identifier {
+    -fx-fill: #89dceb;
+}
+
+.syntax-editor .tm-number {
+    -fx-fill: #fab387;
+}
+
+.syntax-editor .tm-operator {
+    -fx-fill: #f9e2af;
+}
+
+.syntax-editor .tm-delimiter {
+    -fx-fill: #a6e3a1;
+}
+
+.syntax-editor .tm-comment {
+    -fx-fill: #6c7086;
+}
+
+.syntax-editor .tm-line-number {
+    -fx-font-family: 'Consolas', 'Courier New', monospace;
+    -fx-font-size: 13px;
+    -fx-padding: 0 5px 0 5px;
+    -fx-alignment: TOP_RIGHT;
+}
+
+.syntax-editor .tm-line-number:current-line {
+    -fx-font-weight: bold;
+}
+
 .text-area .scroll-bar:vertical {
     -fx-background-color: #181825;
     -fx-pref-width: 10;
@@ -143,6 +214,11 @@
 .table-view .column-header-background {
     -fx-background-color: #181825;
     -fx-padding: 2 0;
+}
+
+.table-view .column-header-background .filler,
+.table-view .filler {
+    -fx-background-color: #181825;
 }
 
 .table-view .column-header {
