@@ -454,21 +454,13 @@ public class AppController {
 
         // Si un identificador no declarado es CASI idéntico a uno declarado
         // con sensor/umbral (distancia Levenshtein ≤ 2, ej. 'voltaje' vs
-        // 'voltajer'), se reporta como ERROR LÉXICO (palabra mal escrita)
-        // en lugar de semántico, y se quita el semántico duplicado.
-        // Un identificador totalmente distinto sigue siendo semántico.
-        Map<String, String> erroresIdentMalEscritos =
+        // 'voltajer'), se reporta como ERROR LÉXICO (uno por ocurrencia:
+        // línea 6, 7, 10...) en lugar de semántico.
+        // Un identificador totalmente distinto sigue siendo semántico
+        // (detectarNoDeclarados ya omite los que tienen parecido).
+        List<String> erroresIdentMalEscritos =
             detectarIdentificadoresMalEscritos(programa, tokens);
-        if (!erroresIdentMalEscritos.isEmpty()) {
-            erroresLex.addAll(erroresIdentMalEscritos.values());
-            erroresNoDecl.removeIf(err -> {
-                String low = err.toLowerCase();
-                for (String k : erroresIdentMalEscritos.keySet()) {
-                    if (low.contains("'" + k + "'")) return true;
-                }
-                return false;
-            });
-        }
+        erroresLex.addAll(erroresIdentMalEscritos);
 
         // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
         List<String> sugerenciasReservadas = Collections.emptyList();
@@ -977,8 +969,10 @@ public class AppController {
     }
 
     /**
-     * Detecta identificadores usados pero no declarados y genera errores
-     * con sugerencias ortográficas usando distancia de Levenshtein.
+     * Detecta identificadores usados pero no declarados y genera UN error
+     * por cada ocurrencia (por cada token), no solo el primero.
+     * Los que son CASI idénticos a lo declarado se omiten aquí porque
+     * ya se reportan como léxicos en detectarIdentificadoresMalEscritos.
      */
     private List<String> detectarNoDeclarados(Programa programa, List<Token> tokens) {
         List<String> errores = new ArrayList<>();
@@ -989,22 +983,25 @@ public class AppController {
         declaradas.addAll(programa.umbrales.keySet());
 
         Set<String> referenciadas = extraerVariablesReferenciadas(programa);
+
+        // Distinguir: sin parecido → semántico aquí; con parecido → léxico allá.
+        Set<String> sinParecido = new HashSet<>();
         for (String ref : referenciadas) {
-            if (!declaradas.contains(ref)) {
-                int linea = buscarLineaPrimerUso(ref, tokens);
-                StringBuilder sb = new StringBuilder();
-                sb.append("Error semantico en linea ").append(linea)
-                    .append(": El identificador '").append(ref)
-                    .append("' no ha sido declarado.");
-
-                // Sugerencia 1: comparar con sensores/umbrales declarados
-                String sugerencia = buscarSugerencia(ref, declaradas.toArray(new String[0]));
-
-                if (sugerencia != null) {
-                    sb.append(" [SUGERENCIA: \u00BFQuisiste decir '").append(sugerencia).append("'?]");
-                }
-                errores.add(sb.toString());
+            if (declaradas.contains(ref)) continue;
+            String sugerencia = buscarSugerencia(ref, declaradas.toArray(new String[0]));
+            if (sugerencia == null) {
+                sinParecido.add(ref);
             }
+        }
+        if (sinParecido.isEmpty()) return errores;
+
+        // Un error por cada token que use un identificador no declarado.
+        for (Token t : tokens) {
+            if (t.tipo != TipoToken.ID) continue;
+            if (!sinParecido.contains(t.lexema)) continue;
+            errores.add("Error semantico en linea " + t.linea
+                    + ": El identificador '" + t.lexema
+                    + "' no ha sido declarado.");
         }
         return errores;
     }
@@ -1014,12 +1011,13 @@ public class AppController {
      * con sensor/umbral (distancia Levenshtein ≤ 2).
      * Ej. se declaró 'voltajer' y se usó 'voltaje' → error LÉXICO
      * "parece un identificador mal escrito, ¿quisiste decir 'voltajer'?".
-     * Un identificador sin parecido a lo declarado no entra aquí y se queda
-     * como error semántico en detectarNoDeclarados.
+     * Genera UN error por cada ocurrencia (línea 6, línea 7, línea 10...),
+     * no solo el primero. Un identificador sin parecido a lo declarado no
+     * entra aquí y se queda como error semántico en detectarNoDeclarados.
      */
-    private Map<String, String> detectarIdentificadoresMalEscritos(Programa programa,
-                                                                   List<Token> tokens) {
-        Map<String, String> errores = new LinkedHashMap<>();
+    private List<String> detectarIdentificadoresMalEscritos(Programa programa,
+                                                            List<Token> tokens) {
+        List<String> errores = new ArrayList<>();
         if (programa == null) return errores;
 
         Set<String> declaradas = new HashSet<>();
@@ -1028,20 +1026,30 @@ public class AppController {
         if (declaradas.isEmpty()) return errores;
 
         Set<String> referenciadas = extraerVariablesReferenciadas(programa);
+
+        // Sugerencia por cada identificador distinto no declarado.
+        Map<String, String> sugerenciaPorRef = new HashMap<>();
+        Map<String, String> tipoPorSugerencia = new HashMap<>();
         for (String ref : referenciadas) {
             if (declaradas.contains(ref)) continue;
-            String key = ref.toLowerCase();
-            if (errores.containsKey(key)) continue;
             String sugerencia = buscarSugerencia(ref, declaradas.toArray(new String[0]));
             if (sugerencia != null && !sugerencia.equals(ref)) {
-                int linea = buscarLineaPrimerUso(ref, tokens);
-                String tipoDecl = programa.sensores.contains(sugerencia) ? "sensor" : "umbral";
-                errores.put(key,
-                    "Error lexico en linea " + linea + ": La palabra '"
-                    + ref + "' parece un identificador mal escrito."
-                    + " \u00BFQuisiste decir '" + sugerencia
-                    + "' (declarado con " + tipoDecl + ")?");
+                sugerenciaPorRef.put(ref, sugerencia);
+                tipoPorSugerencia.put(ref,
+                    programa.sensores.contains(sugerencia) ? "sensor" : "umbral");
             }
+        }
+        if (sugerenciaPorRef.isEmpty()) return errores;
+
+        // Un error léxico por cada token que use uno de esos identificadores.
+        for (Token t : tokens) {
+            if (t.tipo != TipoToken.ID) continue;
+            String sugerencia = sugerenciaPorRef.get(t.lexema);
+            if (sugerencia == null) continue;
+            errores.add("Error lexico en linea " + t.linea + ": La palabra '"
+                    + t.lexema + "' parece un identificador mal escrito."
+                    + " \u00BFQuisiste decir '" + sugerencia
+                    + "' (declarado con " + tipoPorSugerencia.get(t.lexema) + ")?");
         }
         return errores;
     }
