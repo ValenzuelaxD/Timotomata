@@ -452,6 +452,24 @@ public class AppController {
         construirTablaSimbolos(programa, tokens);
         List<String> erroresNoDecl = detectarNoDeclarados(programa, tokens);
 
+        // Si un identificador no declarado es CASI idéntico a uno declarado
+        // con sensor/umbral (distancia Levenshtein ≤ 2, ej. 'voltaje' vs
+        // 'voltajer'), se reporta como ERROR LÉXICO (palabra mal escrita)
+        // en lugar de semántico, y se quita el semántico duplicado.
+        // Un identificador totalmente distinto sigue siendo semántico.
+        Map<String, String> erroresIdentMalEscritos =
+            detectarIdentificadoresMalEscritos(programa, tokens);
+        if (!erroresIdentMalEscritos.isEmpty()) {
+            erroresLex.addAll(erroresIdentMalEscritos.values());
+            erroresNoDecl.removeIf(err -> {
+                String low = err.toLowerCase();
+                for (String k : erroresIdentMalEscritos.keySet()) {
+                    if (low.contains("'" + k + "'")) return true;
+                }
+                return false;
+            });
+        }
+
         // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
         List<String> sugerenciasReservadas = Collections.emptyList();
 
@@ -986,6 +1004,43 @@ public class AppController {
                     sb.append(" [SUGERENCIA: \u00BFQuisiste decir '").append(sugerencia).append("'?]");
                 }
                 errores.add(sb.toString());
+            }
+        }
+        return errores;
+    }
+
+    /**
+     * Detecta identificadores usados que son CASI idénticos a uno declarado
+     * con sensor/umbral (distancia Levenshtein ≤ 2).
+     * Ej. se declaró 'voltajer' y se usó 'voltaje' → error LÉXICO
+     * "parece un identificador mal escrito, ¿quisiste decir 'voltajer'?".
+     * Un identificador sin parecido a lo declarado no entra aquí y se queda
+     * como error semántico en detectarNoDeclarados.
+     */
+    private Map<String, String> detectarIdentificadoresMalEscritos(Programa programa,
+                                                                   List<Token> tokens) {
+        Map<String, String> errores = new LinkedHashMap<>();
+        if (programa == null) return errores;
+
+        Set<String> declaradas = new HashSet<>();
+        declaradas.addAll(programa.sensores);
+        declaradas.addAll(programa.umbrales.keySet());
+        if (declaradas.isEmpty()) return errores;
+
+        Set<String> referenciadas = extraerVariablesReferenciadas(programa);
+        for (String ref : referenciadas) {
+            if (declaradas.contains(ref)) continue;
+            String key = ref.toLowerCase();
+            if (errores.containsKey(key)) continue;
+            String sugerencia = buscarSugerencia(ref, declaradas.toArray(new String[0]));
+            if (sugerencia != null && !sugerencia.equals(ref)) {
+                int linea = buscarLineaPrimerUso(ref, tokens);
+                String tipoDecl = programa.sensores.contains(sugerencia) ? "sensor" : "umbral";
+                errores.put(key,
+                    "Error lexico en linea " + linea + ": La palabra '"
+                    + ref + "' parece un identificador mal escrito."
+                    + " \u00BFQuisiste decir '" + sugerencia
+                    + "' (declarado con " + tipoDecl + ")?");
             }
         }
         return errores;
