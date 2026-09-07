@@ -141,6 +141,17 @@
     -fx-fill: #6c7086;
 }
 
+/* Subrayado rojo de errores (léxicos y sintácticos) en el código.
+   -fx-underline funciona en cualquier versión; las -rtfx-* ondulan
+   la línea en RichTextFX moderno y se ignoran si no existen. */
+.syntax-editor .tm-error {
+    -fx-underline: true;
+    -rtfx-underline-color: #f38ba8;
+    -rtfx-underline-dash-array: 2 2;
+    -rtfx-underline-width: 1.5;
+    -rtfx-background-color: rgba(243, 139, 168, 0.15);
+}
+
 .syntax-editor .tm-line-number {
     -fx-font-family: 'Consolas', 'Courier New', monospace;
     -fx-font-size: 13px;

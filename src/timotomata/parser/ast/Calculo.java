@@ -6,6 +6,7 @@ public class Calculo {
     public String sensor;       // nombre del sensor
     public String operacion;    // seno, coseno, cuadrada, promedio, maximo, suma
     public List<Parametro> parametros = new ArrayList<>();
+    public int linea = 0;       // línea del 'calcular' para errores semánticos
 
     public Calculo(String sensor, String operacion) {
         this.sensor = sensor;

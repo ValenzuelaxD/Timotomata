@@ -109,6 +109,10 @@ public class AppController {
     private Parser ultimoParser;
     private String archivoActual = null;
 
+    // ─── Marcas de error en el editor ───
+    private final Set<Integer> lineasConError = new HashSet<>();
+    private final Map<Integer, String> mensajeErrorPorLinea = new HashMap<>();
+
     // =============================================================
     //  CONSTRUCTOR
     // =============================================================
@@ -192,7 +196,10 @@ public class AppController {
         return panel;
     }
 
-    /** Reutiliza LineNumberFactory y sincroniza el color con el párrafo activo. */
+    /** Reutiliza LineNumberFactory y sincroniza el color con el párrafo activo.
+     * Además marca con icono rojo las líneas que tienen errores (ver
+     * actualizarIconosLinea): el número sale en rojo con fondo tenue y tooltip
+     * con el primer mensaje de error de esa línea. */
     private void configurarNumerosDeLinea() {
         IntFunction<Node> numerosBase = LineNumberFactory.get(editor);
         PseudoClass lineaActual = PseudoClass.getPseudoClass("current-line");
@@ -202,19 +209,78 @@ public class AppController {
             Node nodo = numerosBase.apply(indice);
             if (nodo instanceof Label numero) {
                 numero.getStyleClass().add("tm-line-number");
+                Label punto = new Label("●");
+                punto.setTextFill(Color.web("#f38ba8"));
+                punto.setStyle("-fx-font-size: 9px;");
                 Runnable actualizar = () -> {
                     boolean activo = parrafoActual.getValue() == indice;
+                    int linea = indice + 1;
+                    boolean conError = lineasConError.contains(linea);
                     numero.pseudoClassStateChanged(lineaActual, activo);
-                    numero.setBackground(new Background(new BackgroundFill(
-                        Color.web(activo ? "rgba(137, 180, 250, 0.22)" : "#181825"),
-                        CornerRadii.EMPTY, Insets.EMPTY)));
-                    numero.setTextFill(Color.web(activo ? "#cdd6f4" : "#6c7086"));
+                    if (conError && !activo) {
+                        numero.setBackground(new Background(new BackgroundFill(
+                            Color.web("rgba(243, 139, 168, 0.16)"),
+                            CornerRadii.EMPTY, Insets.EMPTY)));
+                    } else {
+                        numero.setBackground(new Background(new BackgroundFill(
+                            Color.web(activo ? "rgba(137, 180, 250, 0.22)" : "#181825"),
+                            CornerRadii.EMPTY, Insets.EMPTY)));
+                    }
+                    numero.setTextFill(Color.web(conError ? "#f38ba8"
+                        : (activo ? "#cdd6f4" : "#6c7086")));
+                    numero.setStyle(conError ? "-fx-font-weight: bold;" : "");
+                    numero.setGraphic(conError ? punto : null);
+                    String detalle = mensajeErrorPorLinea.get(linea);
+                    numero.setTooltip(conError && detalle != null
+                        ? new Tooltip("⚠ " + detalle) : null);
                 };
                 parrafoActual.addListener((obs, anterior, nuevo) -> actualizar.run());
                 actualizar.run();
             }
             return nodo;
         });
+    }
+
+    /**
+     * Recalcula qué líneas tienen errores (para los iconos del gutter) a partir
+     * de los mensajes "en linea N". Solo re-crea los gráficos si el conjunto
+     * cambió, para no acumular listeners en cada análisis.
+     */
+    private void actualizarIconosLinea(List<String> erroresLex, List<String> erroresSint) {
+        Set<Integer> nuevas = new HashSet<>();
+        Map<Integer, String> mensajes = new HashMap<>();
+        List<String> todos = new ArrayList<>();
+        if (erroresLex != null) todos.addAll(erroresLex);
+        if (erroresSint != null) todos.addAll(erroresSint);
+        for (String err : todos) {
+            String lower = err.toLowerCase();
+            int idx = lower.indexOf("en linea ");
+            if (idx < 0) continue;
+            int ini = idx + "en linea ".length();
+            int fin = ini;
+            while (fin < err.length() && Character.isDigit(err.charAt(fin))) fin++;
+            if (fin == ini) continue;
+            int linea;
+            try {
+                linea = Integer.parseInt(err.substring(ini, fin));
+            } catch (NumberFormatException ex) {
+                continue;
+            }
+            nuevas.add(linea);
+            mensajes.putIfAbsent(linea, err);
+        }
+        if (nuevas.equals(lineasConError)) {
+            mensajeErrorPorLinea.clear();
+            mensajeErrorPorLinea.putAll(mensajes);
+            return;
+        }
+        lineasConError.clear();
+        lineasConError.addAll(nuevas);
+        mensajeErrorPorLinea.clear();
+        mensajeErrorPorLinea.putAll(mensajes);
+        var fabrica = editor.getParagraphGraphicFactory();
+        editor.setParagraphGraphicFactory(null);
+        editor.setParagraphGraphicFactory(fabrica);
     }
 
     // ─── Panel derecho con pestañas ───
@@ -410,8 +476,6 @@ public class AppController {
             return;
         }
 
-        actualizarEstilosEditor(codigo, tokens);
-
         List<String> erroresLex = new ArrayList<>(lexer.getErroresLexicos());
 
         // El lexer clasifica una palabra desconocida como ID. Esta segunda
@@ -438,34 +502,53 @@ public class AppController {
             }
         }
 
-        // Mostrar TODOS los errores: léxicos + sintácticos + semánticos.
-        // Solo se oculta el sintáctico que es duplicado exacto de un typo
-        // ya reportado como léxico (mismo lexema), para no contar dos veces
-        // el mismo problema. El parser ya usa recuperación panic-mode y
-        // recorre todo el código, así que erroresSint trae todos los del archivo.
-        List<String> erroresSintParaUI = filtrarSintacticosDuplicados(erroresSint, erroresReservadas);
+        // Reservada incluida o invertida dentro de un ID largo
+        // (ej. 'seno1356515asdasdasad' contiene 'seno',
+        // 'asdasdones6465465' contiene 'ones' = 'seno' al revés).
+        // Un error léxico por cada ocurrencia.
+        Map<String, List<String>> erroresIncluidos =
+            detectarReservadaIncluida(tokens, erroresReservadas.keySet());
+        for (List<String> lista : erroresIncluidos.values()) {
+            erroresLex.addAll(lista);
+        }
+
+        // Mostrar TODOS los errores sin duplicar lo redundante.
+        // - Caso redundante (solo LÉXICO): la gramática no se completa SOLO por
+        //   el typo, ej. 'estdao' donde se esperaba ESTADO. Al corregir la palabra
+        //   todo parsea bien, así que el sintáctico sobra y se oculta.
+        // - Caso parámetros (AMBOS): ej. SENO(AMPLTU) tiene léxico (palabra mal
+        //   escrita) Y sintáctico (faltan los 2 parámetros bien definidos, pues
+        //   aun corregida la palabra la estructura sigue incompleta).
+        // El parser ya usa recuperación panic-mode y recorre todo el código.
+        Set<String> lexemasLexicos = new HashSet<>(erroresReservadas.keySet());
+        lexemasLexicos.addAll(erroresIncluidos.keySet());
+        List<String> erroresSintParaUI = filtrarSintacticosDuplicados(erroresSint, lexemasLexicos, tokens);
 
         ultimoPrograma = programa;
         ultimoParser = parser;
 
-        // ─── Fase 3: Tabla de símbolos y detección de IDs no declarados ───
+        // ─── Fase 3: Semántica DESACTIVADA por pedido ───
+        // No se maneja análisis semántico de momento: ni identificadores no
+        // declarados ni parámetros de calcular se reportan. Si algo vacío o
+        // incompleto cae además en léxico/sintáctico, eso sí se marca arriba;
+        // pero si SOLO sería semántico, se ignora. La validación de parámetros
+        // (validarParametrosCalculo) se conserva abajo para reactivarla después.
         construirTablaSimbolos(programa, tokens);
-        List<String> erroresNoDecl = detectarNoDeclarados(programa, tokens);
-
-        // Si un identificador no declarado es CASI idéntico a uno declarado
-        // con sensor/umbral (distancia Levenshtein ≤ 2, ej. 'voltaje' vs
-        // 'voltajer'), se reporta como ERROR LÉXICO (uno por ocurrencia:
-        // línea 6, 7, 10...) en lugar de semántico.
-        // Un identificador totalmente distinto sigue siendo semántico
-        // (detectarNoDeclarados ya omite los que tienen parecido).
-        List<String> erroresIdentMalEscritos =
-            detectarIdentificadoresMalEscritos(programa, tokens);
-        erroresLex.addAll(erroresIdentMalEscritos);
+        List<String> erroresNoDecl = Collections.emptyList();
 
         // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
         List<String> sugerenciasReservadas = Collections.emptyList();
 
         // ─── Actualizar UI ───
+        // Marcas en el código: subrayado rojo en tokens con error + iconos
+        // en los números de línea. Se pinta al final porque necesita todos
+        // los errores ya calculados (léxico + sintáctico).
+        Set<String> lexemasConErrorLex = new HashSet<>(erroresReservadas.keySet());
+        lexemasConErrorLex.addAll(erroresIncluidos.keySet());
+        Set<String> clavesSintacticas = extraerClavesSintacticas(erroresSint);
+        boolean[] charsConErrorLex = marcarCharsErrorLexico(codigo, lexer.getRangosErrorLexico());
+        actualizarEstilosEditor(codigo, tokens, lexemasConErrorLex, clavesSintacticas, charsConErrorLex);
+        actualizarIconosLinea(erroresLex, erroresSintParaUI);
         actualizarErrores(erroresLex, erroresSintParaUI, erroresNoDecl, sugerenciasReservadas);
         actualizarTokens(tokens);
         boolean codigoValido = erroresLex.isEmpty()
@@ -537,8 +620,16 @@ public class AppController {
         tokensPane.setText("\u25C6 TOKENS (" + tokenData.size() + ")");
     }
 
-    /** Aplica estilos por rango al mismo CodeArea que recibe la edición. */
-    private void actualizarEstilosEditor(String codigo, List<Token> tokens) {
+    /**
+     * Aplica estilos por rango al mismo CodeArea que recibe la edición.
+     * Además del color por tipo de token, suma la clase "tm-error" (subrayado
+     * rojo) a los tokens con error léxico (typos) o sintáctico, y a los
+     * caracteres con error léxico nativo (ej. '@', '!' suelto).
+     */
+    private void actualizarEstilosEditor(String codigo, List<Token> tokens,
+                                         Set<String> lexemasConErrorLex,
+                                         Set<String> clavesSintacticas,
+                                         boolean[] charsConErrorLex) {
         StyleSpansBuilder<Collection<String>> estilos = new StyleSpansBuilder<>();
         int cursor = 0;
 
@@ -549,54 +640,148 @@ public class AppController {
             if (inicio < cursor) inicio = codigo.indexOf(token.lexema, cursor);
             if (inicio < 0) continue;
 
-            agregarEstilosDeTexto(codigo.substring(cursor, inicio), estilos);
-            estilos.add(Collections.singleton(claseParaToken(token.tipo.name())), token.lexema.length());
+            agregarEstilosDeTexto(codigo.substring(cursor, inicio), estilos,
+                cursor, charsConErrorLex);
+            String base = claseParaToken(token.tipo.name());
+            boolean conError = (token.tipo == TipoToken.ID
+                    && lexemasConErrorLex.contains(token.lexema.toLowerCase()))
+                || clavesSintacticas.contains(token.linea + "\0" + token.lexema);
+            if (conError) {
+                estilos.add(new HashSet<>(Arrays.asList(base, "tm-error")), token.lexema.length());
+            } else {
+                estilos.add(Collections.singleton(base), token.lexema.length());
+            }
             cursor = inicio + token.lexema.length();
         }
-        agregarEstilosDeTexto(codigo.substring(Math.min(cursor, codigo.length())), estilos);
+        agregarEstilosDeTexto(codigo.substring(Math.min(cursor, codigo.length())), estilos,
+            Math.min(cursor, codigo.length()), charsConErrorLex);
         editor.setStyleSpans(0, estilos.create());
     }
 
-    /** Conserva comentarios como una categoría visual aunque el lexer los descarte. */
+    /** Marca los rangos de error léxico nativo como arreglo por carácter. */
+    private boolean[] marcarCharsErrorLexico(String codigo, List<int[]> rangos) {
+        boolean[] marcado = new boolean[codigo.length()];
+        if (rangos == null) return marcado;
+        for (int[] r : rangos) {
+            if (r == null || r.length < 2) continue;
+            int desde = Math.max(0, r[0]);
+            int hasta = Math.min(codigo.length(), r[1]);
+            for (int i = desde; i < hasta; i++) marcado[i] = true;
+        }
+        return marcado;
+    }
+
+    /**
+     * Extrae claves "linea + lexema encontrado" de cada error sintáctico.
+     * Solo se usa el lexema después de "pero se encontró" (el token real con
+     * problema), no el del contexto ("después de 'X'").
+     */
+    private Set<String> extraerClavesSintacticas(List<String> erroresSint) {
+        Set<String> claves = new HashSet<>();
+        if (erroresSint == null) return claves;
+        for (String err : erroresSint) {
+            String lower = err.toLowerCase();
+            if (!lower.contains("pero se encontr")) continue;
+            int iniLinea = lower.indexOf("en linea ");
+            if (iniLinea < 0) continue;
+            int iniNum = iniLinea + "en linea ".length();
+            int finNum = iniNum;
+            while (finNum < err.length() && Character.isDigit(err.charAt(finNum))) finNum++;
+            if (finNum == iniNum) continue;
+            int linea;
+            try {
+                linea = Integer.parseInt(err.substring(iniNum, finNum));
+            } catch (NumberFormatException ex) {
+                continue;
+            }
+            int ultComilla = err.lastIndexOf('\'');
+            int penComilla = ultComilla > 0 ? err.lastIndexOf('\'', ultComilla - 1) : -1;
+            if (penComilla < 0 || ultComilla <= penComilla) continue;
+            String lexema = err.substring(penComilla + 1, ultComilla);
+            if (!lexema.isEmpty()) claves.add(linea + "\0" + lexema);
+        }
+        return claves;
+    }
+
+    /** Emite un tramo de texto plano/comentario partido por error léxico. */
     private void agregarEstilosDeTexto(String texto,
-                                      StyleSpansBuilder<Collection<String>> estilos) {
-        int cursor = 0;
-        while (cursor < texto.length()) {
+                                       StyleSpansBuilder<Collection<String>> estilos,
+                                       int offsetBase, boolean[] charsConErrorLex) {
+        if (texto.isEmpty()) {
+            estilos.add(Collections.emptyList(), 0);
+            return;
+        }
+        agregarRegionConErrores(texto, 0, texto.length(), Collections.emptyList(),
+            estilos, offsetBase, charsConErrorLex);
+    }
+
+    /** Emite el tramo [desde, hasta) partido por comentario y por error léxico. */
+    private void agregarRegionConErrores(String texto, int desde, int hasta,
+                                         Collection<String> base,
+                                         StyleSpansBuilder<Collection<String>> estilos,
+                                         int offsetBase, boolean[] charsConErrorLex) {
+        int cursor = desde;
+        while (cursor < hasta) {
             int linea = texto.indexOf("//", cursor);
             int bloque = texto.indexOf("/*", cursor);
+            if ((linea < 0 || linea >= hasta) && (bloque < 0 || bloque >= hasta)) {
+                emitirTramo(texto, cursor, hasta, base, estilos, offsetBase, charsConErrorLex);
+                return;
+            }
             int inicioComentario;
             boolean esLinea;
-
-            if (linea < 0) {
+            if (linea < 0 || linea >= hasta) {
                 inicioComentario = bloque;
                 esLinea = false;
-            } else if (bloque < 0 || linea < bloque) {
+            } else if (bloque < 0 || bloque >= hasta || linea < bloque) {
                 inicioComentario = linea;
                 esLinea = true;
             } else {
                 inicioComentario = bloque;
                 esLinea = false;
             }
-
-            if (inicioComentario < 0) {
-                estilos.add(Collections.emptyList(), texto.length() - cursor);
-                return;
-            }
             if (inicioComentario > cursor) {
-                estilos.add(Collections.emptyList(), inicioComentario - cursor);
+                emitirTramo(texto, cursor, inicioComentario, base, estilos, offsetBase, charsConErrorLex);
             }
-
             int fin;
             if (esLinea) {
                 fin = texto.indexOf('\n', inicioComentario);
-                if (fin < 0) fin = texto.length();
+                if (fin < 0 || fin > hasta) fin = hasta;
             } else {
                 fin = texto.indexOf("*/", inicioComentario + 2);
-                fin = fin < 0 ? texto.length() : fin + 2;
+                fin = (fin < 0 || fin + 2 > hasta) ? hasta : fin + 2;
             }
-            estilos.add(Collections.singleton("tm-comment"), fin - inicioComentario);
+            emitirTramo(texto, inicioComentario, fin, Collections.singleton("tm-comment"),
+                estilos, offsetBase, charsConErrorLex);
             cursor = fin;
         }
+    }
+
+    /** Emite el tramo partido solo por error léxico (subrayado rojo). */
+    private void emitirTramo(String texto, int desde, int hasta, Collection<String> base,
+                             StyleSpansBuilder<Collection<String>> estilos,
+                             int offsetBase, boolean[] charsConErrorLex) {
+        int i = desde;
+        while (i < hasta) {
+            boolean conError = tieneErrorLex(offsetBase + i, charsConErrorLex);
+            int j = i + 1;
+            while (j < hasta && tieneErrorLex(offsetBase + j, charsConErrorLex) == conError) j++;
+            if (conError) {
+                HashSet<String> clases = new HashSet<>(base);
+                clases.add("tm-error");
+                estilos.add(clases, j - i);
+            } else if (base.isEmpty()) {
+                estilos.add(Collections.emptyList(), j - i);
+            } else {
+                estilos.add(base, j - i);
+            }
+            i = j;
+        }
+    }
+
+    private boolean tieneErrorLex(int offset, boolean[] charsConErrorLex) {
+        return charsConErrorLex != null && offset >= 0
+            && offset < charsConErrorLex.length && charsConErrorLex[offset];
     }
 
     /** Busca el token por su línea/columna y verifica el lexema antes de usarlo. */
@@ -867,9 +1052,8 @@ public class AppController {
 
     /**
      * Construye la tabla de símbolos a partir del AST y los tokens.
-     * Sin análisis semántico: solo recopila información ya disponible
-     * del parser (sensores declarados, umbrales) y detecta referencias
-     * a variables no declaradas.
+     * Análisis semántico DESACTIVADO: solo muestra lo declarado
+     * (sensores y umbrales). No se agregan filas "NO DECLARADO".
      */
     private void construirTablaSimbolos(Programa programa, List<Token> tokens) {
         simbolosData.clear();
@@ -892,15 +1076,6 @@ public class AppController {
             String tipoNum = esEntero(e.getValue()) ? "ENTERO" : "DECIMAL";
             simbolosData.add(new InfoSimbolo(e.getKey(), "UMBRAL", linea, valorStr, tipoNum));
             declaradas.add(e.getKey());
-        }
-
-        // 3. Referencias a identificadores en expresiones
-        Set<String> referenciadas = extraerVariablesReferenciadas(programa);
-        for (String ref : referenciadas) {
-            if (!declaradas.contains(ref)) {
-                int linea = buscarLineaPrimerUso(ref, tokens);
-                simbolosData.add(new InfoSimbolo(ref, "NO DECLARADO", linea, "\u2014", "\u2014"));
-            }
         }
 
         tablaPane.setText("\u25C6 TABLA SIMBOLOS (" + simbolosData.size() + ")");
@@ -969,89 +1144,234 @@ public class AppController {
     }
 
     /**
-     * Detecta identificadores usados pero no declarados y genera UN error
-     * por cada ocurrencia (por cada token), no solo el primero.
-     * Los que son CASI idénticos a lo declarado se omiten aquí porque
-     * ya se reportan como léxicos en detectarIdentificadoresMalEscritos.
+     * Análisis SEMÁNTICO DESACTIVADO (por pedido, se redefinirá después).
+     * Se conserva el método para no romper la estructura, pero siempre
+     * retorna lista vacía: los identificadores no declarados NO se reportan
+     * ni se reasignan a léxico/sintáctico.
      */
     private List<String> detectarNoDeclarados(Programa programa, List<Token> tokens) {
+        return new ArrayList<>();
+    }
+
+    /**
+     * Valida que cada calcular() use los parámetros con sentido según su operación.
+     * DESACTIVADO por pedido (no se llama de momento; se reactivará después).
+     * Es error SEMÁNTICO (la forma ya pasó el parser): un error por cada calcular.
+     * SENO/COSENO/CUADRADA: exactamente AMPLITUD y FRECUENCIA (1 vez c/u).
+     * PROMEDIO: exactamente VENTANA (1 vez). MAXIMO: vacío. SUMA: 2+ CON.
+     */
+    private List<String> validarParametrosCalculo(Programa programa) {
         List<String> errores = new ArrayList<>();
         if (programa == null) return errores;
 
-        Set<String> declaradas = new HashSet<>();
-        declaradas.addAll(programa.sensores);
-        declaradas.addAll(programa.umbrales.keySet());
-
-        Set<String> referenciadas = extraerVariablesReferenciadas(programa);
-
-        // Distinguir: sin parecido → semántico aquí; con parecido → léxico allá.
-        Set<String> sinParecido = new HashSet<>();
-        for (String ref : referenciadas) {
-            if (declaradas.contains(ref)) continue;
-            String sugerencia = buscarSugerencia(ref, declaradas.toArray(new String[0]));
-            if (sugerencia == null) {
-                sinParecido.add(ref);
+        for (Calculo c : programa.calculos) {
+            String op = c.operacion == null ? "" : c.operacion.toLowerCase();
+            Map<String, Integer> conteo = new HashMap<>();
+            for (Parametro p : c.parametros) {
+                String n = p.nombre == null ? "" : p.nombre.toLowerCase();
+                conteo.put(n, conteo.getOrDefault(n, 0) + 1);
             }
-        }
-        if (sinParecido.isEmpty()) return errores;
+            int linea = c.linea;
 
-        // Un error por cada token que use un identificador no declarado.
-        for (Token t : tokens) {
-            if (t.tipo != TipoToken.ID) continue;
-            if (!sinParecido.contains(t.lexema)) continue;
-            errores.add("Error semantico en linea " + t.linea
-                    + ": El identificador '" + t.lexema
-                    + "' no ha sido declarado.");
+            if (op.equals("seno") || op.equals("coseno") || op.equals("cuadrada")) {
+                String opMay = op.toUpperCase();
+                boolean ok = c.parametros.size() == 2
+                    && conteo.getOrDefault("amplitud", 0) == 1
+                    && conteo.getOrDefault("frecuencia", 0) == 1;
+                if (!ok) {
+                    errores.add("Error semantico en linea " + linea + ": " + opMay
+                        + " requiere AMPLITUD y FRECUENCIA (2 parametros)."
+                        + " Se encontró: " + describirParams(c) + ".");
+                }
+            } else if (op.equals("promedio")) {
+                boolean ok = c.parametros.size() == 1
+                    && conteo.getOrDefault("ventana", 0) == 1;
+                if (!ok) {
+                    errores.add("Error semantico en linea " + linea + ": PROMEDIO"
+                        + " requiere VENTANA (1 parametro)."
+                        + " Se encontró: " + describirParams(c) + ".");
+                }
+            } else if (op.equals("maximo")) {
+                if (!c.parametros.isEmpty()) {
+                    errores.add("Error semantico en linea " + linea + ": MAXIMO"
+                        + " no lleva parametros ()."
+                        + " Se encontró: " + describirParams(c) + ".");
+                }
+            } else if (op.equals("suma")) {
+                boolean soloCon = conteo.keySet().stream().allMatch(k -> k.equals("con"));
+                int nCon = conteo.getOrDefault("con", 0);
+                if (!soloCon || nCon < 2) {
+                    errores.add("Error semantico en linea " + linea + ": SUMA"
+                        + " requiere 2 o más CON (ej. SUMA(CON=a, CON=b))."
+                        + " Se encontró: " + describirParams(c) + ".");
+                }
+            }
         }
         return errores;
     }
 
+    /** Describe los parámetros para el mensaje semántico (vacío → "vacío"). */
+    private String describirParams(Calculo c) {
+        if (c.parametros.isEmpty()) return "vacío";
+        List<String> partes = new ArrayList<>();
+        for (Parametro p : c.parametros) {
+            partes.add(p.nombre.toUpperCase() + "=" + p.valor);
+        }
+        return String.join(", ", partes);
+    }
+
     /**
-     * Detecta identificadores usados que son CASI idénticos a uno declarado
-     * con sensor/umbral (distancia Levenshtein ≤ 2).
-     * Ej. se declaró 'voltajer' y se usó 'voltaje' → error LÉXICO
-     * "parece un identificador mal escrito, ¿quisiste decir 'voltajer'?".
-     * Genera UN error por cada ocurrencia (línea 6, línea 7, línea 10...),
-     * no solo el primero. Un identificador sin parecido a lo declarado no
-     * entra aquí y se queda como error semántico en detectarNoDeclarados.
+     * Detecta palabras reservadas incluidas dentro de un ID largo, en orden
+     * normal o al revés, aunque tengan caracteres en medio.
+     * Un error léxico por cada ocurrencia.
+     * Ej. 'seno1356515asdasdasad' contiene 'seno' → sugiere 'seno'.
+     * Ej. 'asdasdones6465465' contiene 'ones' ('seno' al revés) → sugiere 'seno'.
+     * Ej. 'estado123' / 'miestadox' contienen 'estado' → sugieren 'estado'.
+     * Ej. 'CAL165151651CULAR' son solo letras 'calcular' con dígitos en medio
+     * → sugiere 'calcular'.
+     * Solo se consideran reservadas de 4+ letras para no marcar 'si', 'con',
+     * 'fin', 'abs' dentro de cualquier palabra. Los lexemas ya reportados
+     * como typo (Levenshtein) se omiten para no duplicar.
+     * Retorna mapa lexema-minúsculas → lista de errores por ocurrencia.
      */
-    private List<String> detectarIdentificadoresMalEscritos(Programa programa,
-                                                            List<Token> tokens) {
-        List<String> errores = new ArrayList<>();
-        if (programa == null) return errores;
+    private Map<String, List<String>> detectarReservadaIncluida(List<Token> tokens,
+                                                                Set<String> lexemasYaReportados) {
+        Map<String, List<String>> errores = new LinkedHashMap<>();
+        for (Token token : tokens) {
+            if (token.tipo != TipoToken.ID) continue;
+            String lower = token.lexema.toLowerCase();
+            if (lexemasYaReportados != null && lexemasYaReportados.contains(lower)) continue;
 
-        Set<String> declaradas = new HashSet<>();
-        declaradas.addAll(programa.sensores);
-        declaradas.addAll(programa.umbrales.keySet());
-        if (declaradas.isEmpty()) return errores;
+            String mejorReservada = null;
+            String fragmentoHallado = null;
+            boolean esReves = false;
+            boolean conRelleno = false;
+            boolean esIncompleta = false;
 
-        Set<String> referenciadas = extraerVariablesReferenciadas(programa);
+            // Solo-letras: quita dígitos y '_' para ver si la reservada está
+            // partida por caracteres en medio (ej. CAL165CULAR → CALCULAR).
+            String soloLetras = lower.replaceAll("[^a-z]", "");
 
-        // Sugerencia por cada identificador distinto no declarado.
-        Map<String, String> sugerenciaPorRef = new HashMap<>();
-        Map<String, String> tipoPorSugerencia = new HashMap<>();
-        for (String ref : referenciadas) {
-            if (declaradas.contains(ref)) continue;
-            String sugerencia = buscarSugerencia(ref, declaradas.toArray(new String[0]));
-            if (sugerencia != null && !sugerencia.equals(ref)) {
-                sugerenciaPorRef.put(ref, sugerencia);
-                tipoPorSugerencia.put(ref,
-                    programa.sensores.contains(sugerencia) ? "sensor" : "umbral");
+            for (String reservada : PALABRAS_RESERVADAS) {
+                String r = reservada.toLowerCase();
+                if (r.length() < 4) continue;
+                if (lower.contains(r)) {
+                    if (mejorReservada == null || r.length() > mejorReservada.length()) {
+                        mejorReservada = reservada;
+                        fragmentoHallado = r;
+                        esReves = false;
+                        conRelleno = false;
+                        esIncompleta = false;
+                    }
+                }
+                String rev = new StringBuilder(r).reverse().toString();
+                if (lower.contains(rev)) {
+                    if (mejorReservada == null || r.length() > mejorReservada.length()) {
+                        mejorReservada = reservada;
+                        fragmentoHallado = rev;
+                        esReves = true;
+                        conRelleno = false;
+                        esIncompleta = false;
+                    }
+                }
+                // Con caracteres en medio: la reservada aparece en soloLetras
+                // pero NO contigua en el texto original.
+                if (!soloLetras.equals(lower)) {
+                    if (soloLetras.contains(r)) {
+                        if (mejorReservada == null || r.length() > mejorReservada.length()) {
+                            mejorReservada = reservada;
+                            fragmentoHallado = r;
+                            esReves = false;
+                            conRelleno = true;
+                        }
+                    }
+                    if (soloLetras.contains(rev)) {
+                        if (mejorReservada == null || r.length() > mejorReservada.length()) {
+                            mejorReservada = reservada;
+                            fragmentoHallado = rev;
+                            esReves = true;
+                            conRelleno = true;
+                        }
+                    }
+                }
+
+                // Fragmento incompleto dentro de una combinación de caracteres:
+                // SADASDFRECUEN646... contiene el inicio de FRECUENCIA.
+                // Se exige un fragmento de al menos 4 letras para no marcar
+                // coincidencias accidentales demasiado cortas.
+                if (mejorReservada == null || r.length() >= mejorReservada.length()) {
+                    String prefijo = mayorPrefijoReservadaContenido(soloLetras, r);
+                    String prefijoReves = mayorPrefijoReservadaContenido(soloLetras, rev);
+                    if (prefijo != null && prefijo.length() < r.length()
+                            && (fragmentoHallado == null || prefijo.length() > fragmentoHallado.length())) {
+                        mejorReservada = reservada;
+                        fragmentoHallado = prefijo;
+                        esReves = false;
+                        conRelleno = true;
+                        esIncompleta = true;
+                    }
+                    if (prefijoReves != null && prefijoReves.length() < r.length()
+                            && (fragmentoHallado == null || prefijoReves.length() > fragmentoHallado.length())) {
+                        mejorReservada = reservada;
+                        fragmentoHallado = prefijoReves;
+                        esReves = true;
+                        conRelleno = true;
+                        esIncompleta = true;
+                    }
+                }
+            }
+
+            if (mejorReservada != null) {
+                String mensaje;
+                if (esIncompleta && esReves) {
+                    mensaje = "Error lexico en linea " + token.linea + ": La palabra '"
+                        + token.lexema + "' contiene el fragmento '" + fragmentoHallado
+                        + "' de la palabra reservada '" + mejorReservada + "' al revés."
+                        + " \u00BFQuisiste decir '" + mejorReservada + "'?";
+                } else if (esIncompleta) {
+                    mensaje = "Error lexico en linea " + token.linea + ": La palabra '"
+                        + token.lexema + "' contiene el fragmento '" + fragmentoHallado
+                        + "' de la palabra reservada '" + mejorReservada + "'."
+                        + " \u00BFQuisiste decir '" + mejorReservada + "'?";
+                } else if (conRelleno && esReves) {
+                    mensaje = "Error lexico en linea " + token.linea + ": La palabra '"
+                        + token.lexema + "' contiene '" + fragmentoHallado
+                        + "' (la palabra '" + mejorReservada + "' al rev\u00E9s)"
+                        + " con caracteres en medio."
+                        + " \u00BFQuisiste decir '" + mejorReservada + "'?";
+                } else if (conRelleno) {
+                    mensaje = "Error lexico en linea " + token.linea + ": La palabra '"
+                        + token.lexema + "' contiene la palabra reservada '"
+                        + fragmentoHallado + "' con caracteres en medio."
+                        + " \u00BFQuisiste decir '" + mejorReservada + "'?";
+                } else if (esReves) {
+                    mensaje = "Error lexico en linea " + token.linea + ": La palabra '"
+                        + token.lexema + "' contiene '" + fragmentoHallado
+                        + "' (la palabra '" + mejorReservada + "' al rev\u00E9s)."
+                        + " \u00BFQuisiste decir '" + mejorReservada + "'?";
+                } else {
+                    mensaje = "Error lexico en linea " + token.linea + ": La palabra '"
+                        + token.lexema + "' contiene la palabra reservada '"
+                        + fragmentoHallado + "'."
+                        + " \u00BFQuisiste decir '" + mejorReservada + "'?";
+                }
+                errores.computeIfAbsent(lower, k -> new ArrayList<>()).add(mensaje);
             }
         }
-        if (sugerenciaPorRef.isEmpty()) return errores;
-
-        // Un error léxico por cada token que use uno de esos identificadores.
-        for (Token t : tokens) {
-            if (t.tipo != TipoToken.ID) continue;
-            String sugerencia = sugerenciaPorRef.get(t.lexema);
-            if (sugerencia == null) continue;
-            errores.add("Error lexico en linea " + t.linea + ": La palabra '"
-                    + t.lexema + "' parece un identificador mal escrito."
-                    + " \u00BFQuisiste decir '" + sugerencia
-                    + "' (declarado con " + tipoPorSugerencia.get(t.lexema) + ")?");
-        }
         return errores;
+    }
+
+    /** Retorna el prefijo más largo (mínimo 4 letras) contenido en un ID. */
+    private String mayorPrefijoReservadaContenido(String texto, String reservada) {
+        if (texto == null || reservada == null) return null;
+        String lowerTexto = texto.toLowerCase();
+        String lowerReservada = reservada.toLowerCase();
+        int maximo = lowerReservada.length() - 1;
+        for (int longitud = maximo; longitud >= 4; longitud--) {
+            String prefijo = lowerReservada.substring(0, longitud);
+            if (lowerTexto.contains(prefijo)) return prefijo;
+        }
+        return null;
     }
 
     /** Detecta typos de palabras reservadas antes de entregar el flujo al parser. */
@@ -1066,6 +1386,15 @@ public class AppController {
             if (candidatos.length == 0) continue;
 
             String sugerencia = buscarSugerenciaReservada(token.lexema.toLowerCase(), candidatos);
+            if (sugerencia == null) {
+                // Palabra reservada sin terminar (ej. 'FRECU' de 'FRECUENCIA').
+                sugerencia = buscarReservadaIncompleta(token.lexema, candidatos);
+            }
+            if (sugerencia == null) {
+                // También reconoce una reservada dentro de una combinación,
+                // incluidas las cortas: siSOLO -> si, sensor123 -> sensor.
+                sugerencia = buscarReservadaEnCombinacion(token.lexema, candidatos);
+            }
             if (sugerencia != null && !sugerencia.equalsIgnoreCase(token.lexema)) {
                 errores.putIfAbsent(token.lexema.toLowerCase(),
                     "Error lexico en linea " + token.linea + ": La palabra '"
@@ -1074,6 +1403,29 @@ public class AppController {
             }
         }
         return errores;
+    }
+
+    /**
+     * Detecta una reservada incompleta: el lexema es prefijo de la candidata
+     * (ej. 'FRECU' → 'FRECUENCIA', 'AMPLI' → 'AMPLITUD'). Mínimo 3 letras para
+     * no confundir variables cortas. Si varias candidatas encajan, sugiere la
+     * más cercana (menos letras faltantes).
+     */
+    private String buscarReservadaIncompleta(String lexema, String[] candidatos) {
+        if (lexema == null || lexema.length() < 3) return null;
+        String lower = lexema.toLowerCase();
+        String mejor = null;
+        int menosFaltantes = Integer.MAX_VALUE;
+        for (String c : candidatos) {
+            if (c.toLowerCase().startsWith(lower)) {
+                int faltantes = c.length() - lexema.length();
+                if (faltantes > 0 && faltantes < menosFaltantes) {
+                    menosFaltantes = faltantes;
+                    mejor = c;
+                }
+            }
+        }
+        return mejor;
     }
 
     /** Recupera un typo reservado cuando el contexto esperado solo apareció en el error del parser. */
@@ -1088,6 +1440,10 @@ public class AppController {
                 Set<String> candidatos = candidatosEsperados(error);
                 String sugerencia = buscarSugerenciaReservada(token.lexema.toLowerCase(),
                     candidatos.toArray(new String[0]));
+                if (sugerencia == null) {
+                    sugerencia = buscarReservadaIncompleta(token.lexema,
+                        candidatos.toArray(new String[0]));
+                }
                 if (sugerencia != null && !sugerencia.equalsIgnoreCase(token.lexema)) {
                     errores.putIfAbsent(token.lexema.toLowerCase(),
                         "Error lexico en linea " + token.linea + ": La palabra '"
@@ -1100,32 +1456,230 @@ public class AppController {
     }
 
     /**
-     * Filtra solo los errores sintácticos duplicados de un typo léxico.
-     * Si un error sintáctico menciona entre comillas un lexema que ya fue
-     * reportado como palabra reservada mal escrita (clave en minúsculas),
-     * se oculta ese sintáctico para no duplicar. Todos los demás
-     * sintácticos se conservan: el análisis recorre todo el código.
+     * Filtra solo el sintáctico REDUNDANTE: el que existe únicamente porque una
+     * palabra está mal escrita. Dos formas:
+     * 1) El parser esperaba UNA sola palabra reservada y encontró su typo
+     *    (ej. esperaba ESTADO y vino 'estdao'): al corregir la palabra todo
+     *    parsea, así que se queda solo el léxico.
+     * 2) "Token inesperado" por un typo al inicio de sentencia (ej. 'sensro'
+     *    donde va SENSOR): si la sugerencia es válida justo en esa posición,
+     *    corregirla resuelve todo y también queda solo el léxico.
+     * En cambio NO se filtra cuando lo esperado son varias opciones (ej. en
+     * parámetros se esperaba AMPLITUD, FRECUENCIA... y vino 'AMPLTU'): ahí hay
+     * dos problemas reales —palabra mal escrita y estructura incompleta— y salen
+     * ambos errores. Tampoco se tocan los sintácticos de lexemas sin typo léxico.
      */
     private List<String> filtrarSintacticosDuplicados(List<String> erroresSint,
-                                                      Map<String, String> typosLexicos) {
-        if (erroresSint.isEmpty() || typosLexicos.isEmpty()) {
+                                                      Set<String> lexemasLexicos,
+                                                      List<Token> tokens) {
+        if (erroresSint.isEmpty() || lexemasLexicos.isEmpty()) {
             return new ArrayList<>(erroresSint);
         }
         List<String> filtrados = new ArrayList<>();
         for (String error : erroresSint) {
-            String errorLower = error.toLowerCase();
-            boolean esDuplicado = false;
-            for (String lexemaTypo : typosLexicos.keySet()) {
-                if (errorLower.contains("'" + lexemaTypo.toLowerCase() + "'")) {
-                    esDuplicado = true;
-                    break;
-                }
-            }
-            if (!esDuplicado) {
+            if (!esSintacticoRedundante(error, lexemasLexicos, tokens)) {
                 filtrados.add(error);
             }
         }
         return filtrados;
+    }
+
+    /** Dice si el sintáctico sobra porque es puro efecto del typo léxico. */
+    private boolean esSintacticoRedundante(String error, Set<String> lexemasLexicos,
+                                           List<Token> tokens) {
+        String lower = error.toLowerCase();
+        if (!lower.contains("pero se encontr")) return false;
+        int ultComilla = error.lastIndexOf('\'');
+        int penComilla = ultComilla > 0 ? error.lastIndexOf('\'', ultComilla - 1) : -1;
+        if (penComilla < 0 || ultComilla <= penComilla) return false;
+        String lexema = error.substring(penComilla + 1, ultComilla);
+        if (lexema.isEmpty() || !lexemasLexicos.contains(lexema.toLowerCase())) return false;
+        int lineaError = extraerLinea(error);
+
+        Set<String> esperados = candidatosEsperados(error);
+        if (esperados.size() == 1) {
+            // Caso 1: una sola palabra esperada y el lexema es su typo.
+            String esperado = esperados.iterator().next();
+            if (lexema.equalsIgnoreCase(esperado)) return false;
+        String l = lexema.toLowerCase();
+        String s = esperado.toLowerCase();
+        if (levenshtein(l, s) <= 2) return true;
+        if (tienenLasMismasLetras(l, s)) return true;
+        String revS = new StringBuilder(s).reverse().toString();
+        String soloLetras = l.replaceAll("[^a-z]", "");
+        // Incluida al derecho o al revés, y reservada sin terminar (prefijo).
+        return l.contains(s) || soloLetras.contains(s) || s.contains(l)
+            || l.contains(revS) || soloLetras.contains(revS);
+        }
+        if (!esperados.isEmpty()) {
+            // Si la palabra reservada está mal escrita pero el resto de la
+            // producción ya está completo, el sintáctico es redundante.
+            // Ejemplos: OCIP; -> PICO; y FRECUENC=0.1 -> FRECUENCIA=0.1.
+            // Si además falta la estructura (AMPLTU sin '=valor'), se dejan
+            // los dos errores porque son problemas diferentes.
+            return esEstructuraCompletaConTypo(lexema, lineaError, tokens, esperados);
+        }
+
+        // Caso 2: "Token inesperado" sin lista de esperados. Solo sobra si la
+        // sugerencia del typo es válida justo en la posición del token (al
+        // corregirla, la sentencia completa parsea bien).
+        int linea = extraerLinea(error);
+        int indice = -1;
+        for (int i = 0; i < tokens.size(); i++) {
+            Token t = tokens.get(i);
+            if (t.lexema.equals(lexema) && t.linea == linea) { indice = i; break; }
+        }
+        if (indice < 0) {
+            for (int i = 0; i < tokens.size(); i++) {
+                if (tokens.get(i).lexema.equals(lexema)) { indice = i; break; }
+            }
+        }
+        if (indice < 0) return false;
+        String[] candidatos = candidatosReservadosEnContexto(tokens, indice);
+        if (candidatos.length == 0) return false;
+        String sugerencia = buscarSugerenciaReservada(lexema.toLowerCase(), candidatos);
+        if (sugerencia == null) {
+            sugerencia = buscarReservadaEnCombinacion(lexema, candidatos);
+        }
+        return sugerencia != null && !sugerencia.equalsIgnoreCase(lexema);
+    }
+
+    /**
+     * Comprueba si un parámetro mal escrito conserva la estructura
+     * PARAM -> NOMBRE ASIGNACION VALOR. Solo en ese caso el error sintáctico
+     * procede exclusivamente del nombre reservado incompleto.
+     */
+    private boolean esParametroCompletoConTypo(String lexema, int linea,
+                                               List<Token> tokens,
+                                               Set<String> esperados) {
+        int indice = -1;
+        for (int i = 0; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (token.linea == linea && token.lexema.equals(lexema)) {
+                indice = i;
+                break;
+            }
+        }
+        if (indice < 0 || indice + 2 >= tokens.size()) return false;
+
+        Token asignacion = tokens.get(indice + 1);
+        Token valor = tokens.get(indice + 2);
+        if (asignacion.tipo != TipoToken.ASIGNACION) return false;
+
+        String sugerencia = buscarSugerenciaReservada(lexema.toLowerCase(),
+            esperados.toArray(new String[0]));
+        if (sugerencia == null) {
+            sugerencia = buscarReservadaIncompleta(lexema,
+                esperados.toArray(new String[0]));
+        }
+        if (sugerencia == null) {
+            sugerencia = buscarReservadaEnCombinacion(lexema,
+                esperados.toArray(new String[0]));
+        }
+        if (sugerencia == null) return false;
+
+        // AMPLITUD/FRECUENCIA/VENTANA reciben números; CON recibe un ID.
+        if (sugerencia.equalsIgnoreCase("con")) {
+            return valor.tipo == TipoToken.ID;
+        }
+        return valor.tipo == TipoToken.NUMERO;
+    }
+
+    /**
+     * Determina si el resto de la producción ya está completo después del
+     * lexema reservado mal escrito. Incluye parámetros, valores de estado y
+     * nombres de operación.
+     */
+    private boolean esEstructuraCompletaConTypo(String lexema, int linea,
+                                                List<Token> tokens,
+                                                Set<String> esperados) {
+        if (esParametroCompletoConTypo(lexema, linea, tokens, esperados)) {
+            return true;
+        }
+
+        int indice = -1;
+        for (int i = 0; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (token.linea == linea && token.lexema.equals(lexema)) {
+                indice = i;
+                break;
+            }
+        }
+        if (indice < 0) return false;
+
+        String[] candidatos = esperados.toArray(new String[0]);
+        String sugerencia = buscarSugerenciaReservada(lexema.toLowerCase(), candidatos);
+        if (sugerencia == null) {
+            sugerencia = buscarReservadaIncompleta(lexema, candidatos);
+        }
+        if (sugerencia == null) {
+            sugerencia = buscarReservadaEnCombinacion(lexema, candidatos);
+        }
+        if (sugerencia == null) return false;
+
+        Token anterior = indice > 0 ? tokens.get(indice - 1) : null;
+        Token siguiente = indice + 1 < tokens.size() ? tokens.get(indice + 1) : null;
+
+        // estado = PICO; / estado = CAIDA; / etc.
+        boolean esValorEstado = esperados.contains("normal")
+            || esperados.contains("pico")
+            || esperados.contains("caida")
+            || esperados.contains("inestable");
+        if (esValorEstado && anterior != null
+                && anterior.tipo == TipoToken.ASIGNACION
+                && siguiente != null && siguiente.tipo == TipoToken.PUNTO_COMA) {
+            return true;
+        }
+
+        // calcular(sensor, SENO(...)); / COSENO(...); etc.
+        boolean esOperacion = esperados.contains("seno")
+            || esperados.contains("coseno")
+            || esperados.contains("cuadrada")
+            || esperados.contains("promedio")
+            || esperados.contains("maximo")
+            || esperados.contains("suma");
+        return esOperacion && siguiente != null
+            && siguiente.tipo == TipoToken.PAREN_IZQ;
+    }
+
+    /** Busca una reservada completa, invertida o incompleta dentro de un ID. */
+    private String buscarReservadaEnCombinacion(String lexema, String[] candidatos) {
+        String lower = lexema.toLowerCase();
+        String soloLetras = lower.replaceAll("[^a-z]", "");
+        String mejor = null;
+        int mejorLongitud = 0;
+        for (String candidato : candidatos) {
+            String r = candidato.toLowerCase();
+            String rev = new StringBuilder(r).reverse().toString();
+            String fragmento = r.length() >= 4
+                ? mayorPrefijoReservadaContenido(soloLetras, r) : null;
+            String fragmentoReves = r.length() >= 4
+                ? mayorPrefijoReservadaContenido(soloLetras, rev) : null;
+            boolean coincide = lower.contains(r) || lower.contains(rev)
+                || soloLetras.contains(r) || soloLetras.contains(rev)
+                || fragmento != null || fragmentoReves != null;
+            if (coincide && r.length() > mejorLongitud) {
+                mejor = candidato;
+                mejorLongitud = r.length();
+            }
+        }
+        return mejor;
+    }
+
+    /** Extrae el número después de "en linea N" (-1 si no hay). */
+    private int extraerLinea(String error) {
+        String lower = error.toLowerCase();
+        int idx = lower.indexOf("en linea ");
+        if (idx < 0) return -1;
+        int ini = idx + "en linea ".length();
+        int fin = ini;
+        while (fin < error.length() && Character.isDigit(error.charAt(fin))) fin++;
+        if (fin == ini) return -1;
+        try {
+            return Integer.parseInt(error.substring(ini, fin));
+        } catch (NumberFormatException ex) {
+            return -1;
+        }
     }
 
     /** Obtiene candidatos solo para el lugar sintáctico que ocupa el ID. */

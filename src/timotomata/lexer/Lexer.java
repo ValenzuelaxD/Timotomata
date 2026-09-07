@@ -135,6 +135,10 @@ public class Lexer {
     String fuente;
     List<Token> tokens = new ArrayList<>();
     List<String> erroresLexicos = new ArrayList<>();
+    // Rangos [inicio, fin) en 'fuente' de cada error léxico nativo,
+    // para subrayarlos en el editor. Los typos de reservadas se
+    // ubican después por token (AppController).
+    List<int[]> rangosErrorLexico = new ArrayList<>();
     int actual = 0;
     int linea = 1;
     int columna = 1;
@@ -145,6 +149,10 @@ public class Lexer {
 
     public List<String> getErroresLexicos() {
         return erroresLexicos;
+    }
+
+    public List<int[]> getRangosErrorLexico() {
+        return rangosErrorLexico;
     }
 
     // ---- 6. CLASIFICADOR DE CARACTERES ----
@@ -253,6 +261,7 @@ public class Lexer {
                 if (TABLA_TRANS[Q0][claseActual] == SIN_TRANS) {
                     erroresLexicos.add("Error lexico en linea " + inicioLinea
                         + ": Caracter '" + cActual + "' no pertenece al alfabeto del lenguaje");
+                    rangosErrorLexico.add(new int[]{actual, actual + 1});
                     columna = inicioColumna + 1;
                     actual++;
                 }
@@ -264,6 +273,10 @@ public class Lexer {
                     || estado == Q_NOT || estado == Q_DIV) {
                 String lexema = fuente.substring(inicio, inicio + 1);
                 emitirTokenUnario(estado, lexema, inicioLinea, inicioColumna);
+                if (estado == Q_NOT) {
+                    // '!' sin '=' es error léxico: subrayar el '!'.
+                    rangosErrorLexico.add(new int[]{inicio, inicio + 1});
+                }
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
             } else if (estado == Q_COM_LINEA) {
@@ -271,11 +284,15 @@ public class Lexer {
             } else if (estado == Q_COM_BLOQ || estado == Q_COM_BLOQ_FIN) {
                 erroresLexicos.add("Error lexico en linea " + inicioLinea
                     + ": Comentario de bloque iniciado en linea " + inicioLinea + " no fue cerrado, se esperaba '*/'");
+                rangosErrorLexico.add(new int[]{inicio, fuente.length()});
                 // Consumir el resto evita volver a tokenizar el contenido del comentario.
                 actual = fuente.length();
             } else if (actual > inicio) {
                 erroresLexicos.add("Error lexico en linea " + inicioLinea
                     + ": Secuencia no reconocida en el lenguaje: \"" + fuente.substring(inicio, actual) + "\"");
+                if (inicio + 1 <= fuente.length()) {
+                    rangosErrorLexico.add(new int[]{inicio, inicio + 1});
+                }
                 columna = inicioColumna + 1;
                 actual = inicio + 1;
             }
