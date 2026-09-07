@@ -86,6 +86,7 @@ public class AppController {
     private ObservableList<TokenInfo> tokenData = FXCollections.observableArrayList();
     private TitledPane tokensPane;
     private TreeView<String> astTree;
+    private TitledPane astPane;
     private VBox derivacionPanel;
     private Button btnAbrirArbol;
     private PauseTransition debounce;
@@ -328,7 +329,7 @@ public class AppController {
             + " -fx-font-size: 11px;"
             + " -fx-accent: #45475a;");
         astTree.setShowRoot(false);
-        TitledPane astPane = new TitledPane("AST (Arbol Sintactico)", astTree);
+        astPane = new TitledPane("AST (Arbol Sintactico)", astTree);
         astPane.getStyleClass().add("titled-pane-custom");
         astPane.setCollapsible(false);
 
@@ -411,12 +412,38 @@ public class AppController {
 
         actualizarEstilosEditor(codigo, tokens);
 
-        List<String> erroresLex = lexer.getErroresLexicos();
+        List<String> erroresLex = new ArrayList<>(lexer.getErroresLexicos());
+
+        // El lexer clasifica una palabra desconocida como ID. Esta segunda
+        // comprobación léxica detecta únicamente typos en posiciones donde
+        // la gramática esperaba una palabra reservada.
+        Map<String, String> erroresReservadas = detectarReservadasMalEscritas(tokens);
+        erroresLex.addAll(erroresReservadas.values());
 
         // ─── Fase 2: Análisis Sintáctico (con recuperación de errores) ───
         Parser parser = new Parser(tokens);
         Programa programa = parser.parsear();
         List<String> erroresSint = parser.getErroresSintacticos();
+
+        // Algunos typos solo pueden confirmarse con el contexto que el
+        // parser esperaba. Se reclasifican como léxicos y se filtra solo
+        // el error sintáctico duplicado que menciona ese mismo lexema.
+        // Los demás errores sintácticos SIEMPRE se muestran (recorrido completo).
+        Map<String, String> erroresReservadasPost =
+            detectarReservadasDesdeErrores(tokens, erroresSint);
+        for (Map.Entry<String, String> entry : erroresReservadasPost.entrySet()) {
+            if (!erroresReservadas.containsKey(entry.getKey())) {
+                erroresReservadas.put(entry.getKey(), entry.getValue());
+                erroresLex.add(entry.getValue());
+            }
+        }
+
+        // Mostrar TODOS los errores: léxicos + sintácticos + semánticos.
+        // Solo se oculta el sintáctico que es duplicado exacto de un typo
+        // ya reportado como léxico (mismo lexema), para no contar dos veces
+        // el mismo problema. El parser ya usa recuperación panic-mode y
+        // recorre todo el código, así que erroresSint trae todos los del archivo.
+        List<String> erroresSintParaUI = filtrarSintacticosDuplicados(erroresSint, erroresReservadas);
 
         ultimoPrograma = programa;
         ultimoParser = parser;
@@ -426,14 +453,18 @@ public class AppController {
         List<String> erroresNoDecl = detectarNoDeclarados(programa, tokens);
 
         // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
-        List<String> sugerenciasReservadas = sugerirIDsMalEscritos(tokens, programa, erroresSint);
+        List<String> sugerenciasReservadas = Collections.emptyList();
 
         // ─── Actualizar UI ───
-        actualizarErrores(erroresLex, erroresSint, erroresNoDecl, sugerenciasReservadas);
+        actualizarErrores(erroresLex, erroresSintParaUI, erroresNoDecl, sugerenciasReservadas);
         actualizarTokens(tokens);
-        actualizarAST(programa);
-        actualizarDerivacion(programa, parser);
-        actualizarStatus(tokens.size(), erroresLex.size(), erroresSint.size(),
+        boolean codigoValido = erroresLex.isEmpty()
+            && erroresSintParaUI.isEmpty()
+            && erroresNoDecl.isEmpty();
+        actualizarAST(codigoValido ? programa : null);
+        actualizarDerivacion(codigoValido ? programa : null,
+            codigoValido ? parser : null);
+        actualizarStatus(tokens.size(), erroresLex.size(), erroresSintParaUI.size(),
             erroresNoDecl.size() + sugerenciasReservadas.size());
     }
 
@@ -631,8 +662,11 @@ public class AppController {
     private void actualizarAST(Programa programa) {
         if (programa == null) {
             astTree.setRoot(null);
+            astPane.setText("AST (bloqueado por errores)");
             return;
         }
+
+        astPane.setText("AST (Arbol Sintactico)");
 
         TreeItem<String> raiz = new TreeItem<>("Programa");
         raiz.setExpanded(true);
@@ -713,7 +747,7 @@ public class AppController {
 
         if (programa == null || parser == null || parser.arbolDerivacion == null) {
             btnAbrirArbol.setDisable(true);
-            Label info = new Label("Analiza el c\u00F3digo para generar el \u00E1rbol de derivaci\u00F3n.");
+            Label info = new Label("Arbol no disponible: corrige primero los errores del codigo.");
             info.setStyle("-fx-text-fill: #a6adc8; -fx-font-family: 'Consolas', monospace;"
                 + " -fx-font-size: 12px; -fx-padding: 8 0;");
             derivacionPanel.getChildren().add(info);
@@ -957,6 +991,144 @@ public class AppController {
         return errores;
     }
 
+    /** Detecta typos de palabras reservadas antes de entregar el flujo al parser. */
+    private Map<String, String> detectarReservadasMalEscritas(List<Token> tokens) {
+        Map<String, String> errores = new LinkedHashMap<>();
+
+        for (int i = 0; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (token.tipo != TipoToken.ID) continue;
+
+            String[] candidatos = candidatosReservadosEnContexto(tokens, i);
+            if (candidatos.length == 0) continue;
+
+            String sugerencia = buscarSugerenciaReservada(token.lexema.toLowerCase(), candidatos);
+            if (sugerencia != null && !sugerencia.equalsIgnoreCase(token.lexema)) {
+                errores.putIfAbsent(token.lexema.toLowerCase(),
+                    "Error lexico en linea " + token.linea + ": La palabra '"
+                    + token.lexema + "' parece una palabra reservada mal escrita."
+                    + " \u00BFQuisiste decir '" + sugerencia + "'?");
+            }
+        }
+        return errores;
+    }
+
+    /** Recupera un typo reservado cuando el contexto esperado solo apareció en el error del parser. */
+    private Map<String, String> detectarReservadasDesdeErrores(List<Token> tokens,
+                                                               List<String> erroresSintacticos) {
+        Map<String, String> errores = new LinkedHashMap<>();
+        for (Token token : tokens) {
+            if (token.tipo != TipoToken.ID) continue;
+
+            for (String error : erroresSintacticos) {
+                if (!error.contains("'" + token.lexema + "'")) continue;
+                Set<String> candidatos = candidatosEsperados(error);
+                String sugerencia = buscarSugerenciaReservada(token.lexema.toLowerCase(),
+                    candidatos.toArray(new String[0]));
+                if (sugerencia != null && !sugerencia.equalsIgnoreCase(token.lexema)) {
+                    errores.putIfAbsent(token.lexema.toLowerCase(),
+                        "Error lexico en linea " + token.linea + ": La palabra '"
+                        + token.lexema + "' parece una palabra reservada mal escrita."
+                        + " \u00BFQuisiste decir '" + sugerencia + "'?");
+                }
+            }
+        }
+        return errores;
+    }
+
+    /**
+     * Filtra solo los errores sintácticos duplicados de un typo léxico.
+     * Si un error sintáctico menciona entre comillas un lexema que ya fue
+     * reportado como palabra reservada mal escrita (clave en minúsculas),
+     * se oculta ese sintáctico para no duplicar. Todos los demás
+     * sintácticos se conservan: el análisis recorre todo el código.
+     */
+    private List<String> filtrarSintacticosDuplicados(List<String> erroresSint,
+                                                      Map<String, String> typosLexicos) {
+        if (erroresSint.isEmpty() || typosLexicos.isEmpty()) {
+            return new ArrayList<>(erroresSint);
+        }
+        List<String> filtrados = new ArrayList<>();
+        for (String error : erroresSint) {
+            String errorLower = error.toLowerCase();
+            boolean esDuplicado = false;
+            for (String lexemaTypo : typosLexicos.keySet()) {
+                if (errorLower.contains("'" + lexemaTypo.toLowerCase() + "'")) {
+                    esDuplicado = true;
+                    break;
+                }
+            }
+            if (!esDuplicado) {
+                filtrados.add(error);
+            }
+        }
+        return filtrados;
+    }
+
+    /** Obtiene candidatos solo para el lugar sintáctico que ocupa el ID. */
+    private String[] candidatosReservadosEnContexto(List<Token> tokens, int indice) {
+        Token anterior = indice > 0 ? tokens.get(indice - 1) : null;
+        Token siguiente = indice + 1 < tokens.size() ? tokens.get(indice + 1) : null;
+
+        if (anterior == null || anterior.tipo == TipoToken.PUNTO_COMA) {
+            return new String[] { "sensor", "umbral", "si", "calcular", "fin" };
+        }
+        if (anterior.tipo == TipoToken.ENTONCES) {
+            return new String[] { "estado" };
+        }
+        if (anterior.tipo == TipoToken.ASIGNACION
+                && indice > 1 && tokens.get(indice - 2).tipo == TipoToken.ESTADO) {
+            return new String[] { "normal", "pico", "caida", "inestable" };
+        }
+        if (siguiente != null && siguiente.tipo == TipoToken.ESTADO
+                && (anterior.tipo == TipoToken.ID || anterior.tipo == TipoToken.NUMERO
+                    || anterior.tipo == TipoToken.PAREN_DER)) {
+            return new String[] { "entonces" };
+        }
+
+        if (anterior != null && anterior.tipo == TipoToken.COMA) {
+            int antesDeComa = indice - 2;
+            if (antesDeComa >= 1
+                    && tokens.get(antesDeComa).tipo == TipoToken.ID
+                    && tokens.get(antesDeComa - 1).tipo == TipoToken.PAREN_IZQ) {
+                return new String[] { "seno", "coseno", "cuadrada", "promedio", "maximo", "suma" };
+            }
+            if (estaEnParametros(tokens, indice)) return parametrosReservados();
+        }
+
+        if (anterior != null && anterior.tipo == TipoToken.PAREN_IZQ
+                && indice > 1 && esOperacion(tokens.get(indice - 2).tipo)) {
+            return parametrosReservados();
+        }
+
+        if (siguiente != null && siguiente.tipo == TipoToken.ASIGNACION
+                && estaEnParametros(tokens, indice)) {
+            return parametrosReservados();
+        }
+        return new String[0];
+    }
+
+    private boolean estaEnParametros(List<Token> tokens, int indice) {
+        for (int i = indice - 1; i >= 0; i--) {
+            TipoToken tipo = tokens.get(i).tipo;
+            if (tipo == TipoToken.PUNTO_COMA) return false;
+            if (tipo == TipoToken.PAREN_IZQ) {
+                return i > 0 && esOperacion(tokens.get(i - 1).tipo);
+            }
+        }
+        return false;
+    }
+
+    private boolean esOperacion(TipoToken tipo) {
+        return tipo == TipoToken.SENO || tipo == TipoToken.COSENO
+            || tipo == TipoToken.CUADRADA || tipo == TipoToken.PROMEDIO
+            || tipo == TipoToken.MAXIMO || tipo == TipoToken.SUMA;
+    }
+
+    private String[] parametrosReservados() {
+        return new String[] { "amplitud", "frecuencia", "ventana", "con" };
+    }
+
     /**
      * Escanea TODOS los tokens ID del código y los compara con las
      * palabras reservadas del lenguaje usando distancia de Levenshtein.
@@ -1071,6 +1243,38 @@ public class AppController {
             }
         }
         return mejor;
+    }
+
+    /** Compara primero ediciones cercanas y después anagramas exactos. */
+    private String buscarSugerenciaReservada(String texto, String[] candidatos) {
+        String sugerencia = buscarSugerencia(texto, candidatos);
+        if (sugerencia != null) return sugerencia;
+
+        for (String candidato : candidatos) {
+            if (tienenLasMismasLetras(texto, candidato)) return candidato;
+        }
+        return null;
+    }
+
+    /** Determina si dos palabras tienen exactamente las mismas letras. */
+    private boolean tienenLasMismasLetras(String primera, String segunda) {
+        String a = primera.toLowerCase();
+        String b = segunda.toLowerCase();
+        if (a.length() != b.length()) return false;
+
+        Map<Character, Integer> frecuencias = new HashMap<>();
+        for (int i = 0; i < a.length(); i++) {
+            char caracter = a.charAt(i);
+            frecuencias.put(caracter, frecuencias.getOrDefault(caracter, 0) + 1);
+        }
+        for (int i = 0; i < b.length(); i++) {
+            char caracter = b.charAt(i);
+            Integer cantidad = frecuencias.get(caracter);
+            if (cantidad == null || cantidad == 0) return false;
+            if (cantidad == 1) frecuencias.remove(caracter);
+            else frecuencias.put(caracter, cantidad - 1);
+        }
+        return frecuencias.isEmpty();
     }
 
     // =============================================================
