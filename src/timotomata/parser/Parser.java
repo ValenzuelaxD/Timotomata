@@ -171,7 +171,7 @@ public class Parser {
                 nodo.agregarHijo(t(t5));
                 nodo.agregarHijo(t(t6));
                 nodo.agregarHijo(t(t7));
-                programa.reglas.add(new Regla(cond, t6.lexema));
+                programa.reglas.add(new Regla(cond, t6.lexema, t1.linea));
                 break;
             }
             case Gramatica.P_SENT_CALCULAR: {
@@ -519,52 +519,12 @@ public class Parser {
         Token pDer = consumir(TipoToken.PAREN_DER, "Se esperaba )");
         nodo.agregarHijo(t(pDer));
 
-        // Restricción por sentido (se reporta como SINTÁCTICO por pedido,
-        // sin reactivar la fase semántica): cada operación exige sus parámetros.
-        // SENO/COSENO/CUADRADA: AMPLITUD+FRECUENCIA. PROMEDIO: VENTANA.
-        // MAXIMO: vacío. SUMA: 2+ CON.
-        validarParamsCalculo(calculo);
-
+        // La firma de cada operación (cantidad/tipos de parámetros) se valida
+        // en la fase semántica (AnalizadorSemantico), como error de llamada.
         ultimoValorSemantico = opStr;
     }
 
-    /** Exige los parámetros con sentido por operación; lanza error sintáctico. */
-    private void validarParamsCalculo(Calculo calculo) {
-        String op = calculo.operacion == null ? "" : calculo.operacion.toLowerCase();
-        java.util.Map<String, Integer> conteo = new java.util.HashMap<>();
-        for (timotomata.parser.ast.Parametro p : calculo.parametros) {
-            String n = p.nombre == null ? "" : p.nombre.toLowerCase();
-            conteo.put(n, conteo.getOrDefault(n, 0) + 1);
-        }
 
-        if (op.equals("seno") || op.equals("coseno") || op.equals("cuadrada")) {
-            boolean ok = calculo.parametros.size() == 2
-                && conteo.getOrDefault("amplitud", 0) == 1
-                && conteo.getOrDefault("frecuencia", 0) == 1;
-            if (!ok) {
-                throw error(op.toUpperCase() + " requiere AMPLITUD y FRECUENCIA"
-                    + " (2 parametros)");
-            }
-        } else if (op.equals("promedio")) {
-            boolean ok = calculo.parametros.size() == 1
-                && conteo.getOrDefault("ventana", 0) == 1;
-            if (!ok) {
-                throw error("PROMEDIO requiere VENTANA (1 parametro)");
-            }
-        } else if (op.equals("maximo")) {
-            if (!calculo.parametros.isEmpty()) {
-                throw error("MAXIMO no lleva parametros ()");
-            }
-        } else if (op.equals("suma")) {
-            boolean soloCon = conteo.keySet().stream().allMatch(k -> k.equals("con"));
-            int nCon = conteo.getOrDefault("con", 0);
-            if (!soloCon || nCon < 2) {
-                throw error("SUMA requiere 2 o más CON (ej. SUMA(CON=a, CON=b))");
-            }
-        }
-    }
-
-    
     //  NO TERMINAL: LISTA_PARAMS
     //  LISTA_PARAMS → PARAM LISTA_PARAMS_SIG | ε
     

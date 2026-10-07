@@ -30,6 +30,7 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
 import timotomata.lexer.*;
 import timotomata.parser.*;
 import timotomata.parser.ast.*;
+import timotomata.semantic.AnalizadorSemantico;
 
 /**
  * Controlador principal de la interfaz gráfica.
@@ -246,12 +247,14 @@ public class AppController {
      * de los mensajes "en linea N". Solo re-crea los gráficos si el conjunto
      * cambió, para no acumular listeners en cada análisis.
      */
-    private void actualizarIconosLinea(List<String> erroresLex, List<String> erroresSint) {
+    private void actualizarIconosLinea(List<String> erroresLex, List<String> erroresSint,
+                                       List<String> erroresSemanticos) {
         Set<Integer> nuevas = new HashSet<>();
         Map<Integer, String> mensajes = new HashMap<>();
         List<String> todos = new ArrayList<>();
         if (erroresLex != null) todos.addAll(erroresLex);
         if (erroresSint != null) todos.addAll(erroresSint);
+        if (erroresSemanticos != null) todos.addAll(erroresSemanticos);
         for (String err : todos) {
             String lower = err.toLowerCase();
             int idx = lower.indexOf("en linea ");
@@ -527,14 +530,21 @@ public class AppController {
         ultimoPrograma = programa;
         ultimoParser = parser;
 
-        // ─── Fase 3: Semántica DESACTIVADA por pedido ───
-        // No se maneja análisis semántico de momento: ni identificadores no
-        // declarados ni parámetros de calcular se reportan. Si algo vacío o
-        // incompleto cae además en léxico/sintáctico, eso sí se marca arriba;
-        // pero si SOLO sería semántico, se ignora. La validación de parámetros
-        // (validarParametrosCalculo) se conserva abajo para reactivarla después.
+        // ─── Fase 3: Análisis Semántico ───
+        // Reglas del documento "Errores semánticos propios": colisiones de
+        // nombres, duplicados, sensor/umbral confundidos, rangos inválidos,
+        // estados incoherentes, reglas contradictorias, parámetros de
+        // simulación, magnitudes mezcladas y FIN mal cerrado. Los
+        // identificadores no declarados NO se reportan (no forman parte del
+        // spec) y la validación de forma de parámetros la hace el parser.
         construirTablaSimbolos(programa, tokens);
-        List<String> erroresNoDecl = Collections.emptyList();
+        List<String> erroresSemanticos;
+        try {
+            erroresSemanticos = new AnalizadorSemantico().analizar(programa, tokens);
+        } catch (Exception e) {
+            erroresSemanticos = new ArrayList<>();
+            mostrarError("Error en análisis semántico: " + e.getMessage());
+        }
 
         // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
         List<String> sugerenciasReservadas = Collections.emptyList();
@@ -542,23 +552,23 @@ public class AppController {
         // ─── Actualizar UI ───
         // Marcas en el código: subrayado rojo en tokens con error + iconos
         // en los números de línea. Se pinta al final porque necesita todos
-        // los errores ya calculados (léxico + sintáctico).
+        // los errores ya calculados (léxico + sintáctico + semántico).
         Set<String> lexemasConErrorLex = new HashSet<>(erroresReservadas.keySet());
         lexemasConErrorLex.addAll(erroresIncluidos.keySet());
         Set<String> clavesSintacticas = extraerClavesSintacticas(erroresSint);
         boolean[] charsConErrorLex = marcarCharsErrorLexico(codigo, lexer.getRangosErrorLexico());
         actualizarEstilosEditor(codigo, tokens, lexemasConErrorLex, clavesSintacticas, charsConErrorLex);
-        actualizarIconosLinea(erroresLex, erroresSintParaUI);
-        actualizarErrores(erroresLex, erroresSintParaUI, erroresNoDecl, sugerenciasReservadas);
+        actualizarIconosLinea(erroresLex, erroresSintParaUI, erroresSemanticos);
+        actualizarErrores(erroresLex, erroresSintParaUI, erroresSemanticos, sugerenciasReservadas);
         actualizarTokens(tokens);
         boolean codigoValido = erroresLex.isEmpty()
             && erroresSintParaUI.isEmpty()
-            && erroresNoDecl.isEmpty();
+            && erroresSemanticos.isEmpty();
         actualizarAST(codigoValido ? programa : null);
         actualizarDerivacion(codigoValido ? programa : null,
             codigoValido ? parser : null);
         actualizarStatus(tokens.size(), erroresLex.size(), erroresSintParaUI.size(),
-            erroresNoDecl.size() + sugerenciasReservadas.size());
+            erroresSemanticos.size() + sugerenciasReservadas.size());
     }
 
     // =============================================================
@@ -567,7 +577,7 @@ public class AppController {
 
     // ─── Errores ───
     private void actualizarErrores(List<String> erroresLex, List<String> erroresSint,
-                                    List<String> erroresNoDecl, List<String> sugerencias) {
+                                    List<String> erroresSemanticos, List<String> sugerencias) {
         ObservableList<String> items = errorList.getItems();
         items.clear();
 
@@ -588,7 +598,7 @@ public class AppController {
             totalErrores++;
         }
 
-        for (String err : erroresNoDecl) {
+        for (String err : erroresSemanticos) {
             items.add("[ERROR SEMANTICO] " + err);
             totalErrores++;
         }

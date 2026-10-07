@@ -1,0 +1,20 @@
+// PROGRAMA VÁLIDO: 0 errores de cualquier fase.
+sensor voltaje;
+sensor temperatura;
+umbral voltaje_min = 100;
+umbral voltaje_max = 220;
+umbral temp_min = 0;
+umbral temp_max = 80;
+
+// Estados coherentes con los operadores
+si voltaje > voltaje_max entonces estado = PICO;
+si voltaje < voltaje_min entonces estado = CAIDA;
+si temperatura > temp_max entonces estado = INESTABLE;
+si temperatura < temp_min entonces estado = CAIDA;
+
+// Cálculos con parámetros físicamente válidos
+calcular(voltaje, seno(amplitud=50, frecuencia=0.1));
+calcular(temperatura, promedio(ventana=5));
+calcular(voltaje, suma(con=voltaje, con=voltaje));
+
+fin;

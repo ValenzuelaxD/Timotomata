@@ -1,0 +1,77 @@
+// PROGRAMA CON TODOS LOS ERRORES SEMÁNTICOS (uno por regla)
+// Esperado: 24 errores semánticos, 0 léxicos, 0 sintácticos.
+
+// Regla 1: sensor y umbral con el mismo nombre (colisión)
+sensor colision;
+umbral colision = 220;
+
+// Regla 2: declaración duplicada de sensor y de umbral
+sensor dup;
+sensor dup;
+umbral umdup = 1;
+umbral umdup = 2;
+
+// Regla 3: sensor usado como umbral (límite derecho = sensor)
+sensor s3ref;
+sensor sensorlado;
+si s3ref > sensorlado entonces estado = NORMAL;
+
+// Regla 4: umbral usado como sensor (calcular y CON=)
+umbral umbralobj = 10;
+calcular(umbralobj, promedio(ventana=5));
+calcular(s3ref, suma(con=s3ref, con=umbralobj));
+
+// Regla 5: mínimo mayor o igual que el máximo
+sensor rango1;
+umbral rango1_min = 200;
+umbral rango1_max = 100;
+
+// Regla 6: diferencia insuficiente (5 < margen de seguridad 10)
+sensor rango2;
+umbral rango2_min = 100;
+umbral rango2_max = 105;
+
+// Regla 7: PICO asignado a una condición de caída
+sensor est1;
+umbral est1_max = 100;
+si est1 < est1_max entonces estado = PICO;
+
+// Regla 8: reglas contradictorias (en 55 se cumplen ambas, estados distintos)
+sensor contra;
+si contra > 50 entonces estado = PICO;
+si contra < 60 entonces estado = CAIDA;
+
+// Regla 10: parámetros físicamente inválidos
+sensor par1;
+umbral par1_min = 0;
+umbral par1_max = 100;
+calcular(par1, seno(amplitud=500, frecuencia=0));
+calcular(par1, promedio(ventana=0));
+calcular(par1, seno(amplitud=50, frecuencia=9));
+
+// Regla 11: combinación de magnitudes incompatibles
+sensor corriente;
+sensor temperatura;
+calcular(corriente, suma(con=corriente, con=temperatura));
+si abs(corriente - temperatura) > 10 entonces estado = PICO;
+
+// Regla 13: variable o identificador no declarado
+si indeclarada > 10 entonces estado = NORMAL;
+
+// Regla 14: incompatibilidad de tipos (operación con magnitudes distintas)
+sensor amperio;
+sensor templado;
+si amperio + templado > 10 entonces estado = PICO;
+
+// Regla 15: llamada con argumentos incorrectos (firma de la operación)
+calcular(amperio, seno(ventana=5));
+
+// Regla 16: división entre cero constante
+si amperio / 0 > 1 entonces estado = NORMAL;
+
+// Programa terminado de forma inválida (regla 12)
+fin;
+sensor despuesDeFin;
+sensor extra1;
+si extra1 > 1 entonces estado = NORMAL;
+fin;
