@@ -10,7 +10,7 @@ import timotomata.parser.ast.*;
  * ==========================================
  *
  * Se ejecuta después del parser, sobre el AST (solo sentencias completas)
- * y sobre la lista de tokens (para líneas de declaraciones y de FIN).
+ * y sobre la lista de tokens (para las líneas de declaraciones).
  *
  * Reglas del documento "Errores semánticos propios":
  *   1. Sensor y umbral con el mismo nombre (colisión de tipos)
@@ -23,7 +23,6 @@ import timotomata.parser.ast.*;
  *   8. Reglas contradictorias (se solapan y asignan estados distintos)
  *  10. Parámetros de simulación físicamente inválidos (frecuencia, ventana, amplitud)
  *  11. Combinación de magnitudes incompatibles en SUMA(CON=...)
- *  12. Programa terminado de forma inválida (sentencias o FIN después de FIN)
  *
  * Reglas genéricas añadidas:
  *  13. Variable o identificador no declarado (usar x sin definirla)
@@ -35,7 +34,9 @@ import timotomata.parser.ast.*;
  *  16. División entre cero constante (denominador evaluable a 0 en tiempo
  *      de compilación).
  *
- * La regla 9 ("operación sin historial/muestras") queda omitida por pedido.
+ * Las reglas 9 ("operación sin historial/muestras") y 12 ("programa
+ * terminado de forma inválida") quedan omitidas: la 9 por pedido, y la 12
+ * porque el lenguaje ya no tiene sentencia FIN.
  */
 public class AnalizadorSemantico {
 
@@ -65,7 +66,6 @@ public class AnalizadorSemantico {
         regla8ReglasContradictorias(programa, errores);
         regla10ParametrosInvalidos(programa, errores);
         regla11Magnitudes(programa, sensores, errores);
-        regla12FinInvalido(tokens, errores);
         regla13NoDeclarados(programa, errores);
         regla14TiposIncompatibles(programa, errores);
         regla15LlamadasIncorrectas(programa, errores);
@@ -621,38 +621,6 @@ public class AnalizadorSemantico {
         err(errores, linea, contexto + " combina sensores de magnitudes"
             + " incompatibles: '" + a.getValue() + "' (" + a.getKey()
             + ") y '" + b.getValue() + "' (" + b.getKey() + ").");
-    }
-
-    // =============================================================
-    //  REGLA 12 — Programa terminado de forma inválida
-    // =============================================================
-
-    private void regla12FinInvalido(List<Token> tokens, List<String> errores) {
-        if (tokens == null) return;
-        int primeraFin = -1;
-        int totalFins = 0;
-        for (int i = 0; i < tokens.size(); i++) {
-            if (tokens.get(i).tipo != TipoToken.FIN) continue;
-            if (primeraFin < 0) {
-                primeraFin = i;
-            } else {
-                err(errores, tokens.get(i).linea, "el programa tiene mas de un"
-                    + " FIN (el primero esta en la linea "
-                    + tokens.get(primeraFin).linea + ").");
-            }
-            totalFins++;
-        }
-        if (primeraFin < 0) return;
-
-        int lineaFin = tokens.get(primeraFin).linea;
-        for (int i = primeraFin + 1; i < tokens.size(); i++) {
-            TipoToken t = tokens.get(i).tipo;
-            if (t == TipoToken.SENSOR || t == TipoToken.UMBRAL
-                    || t == TipoToken.SI || t == TipoToken.CALCULAR) {
-                err(errores, tokens.get(i).linea, "sentencia despues de FIN"
-                    + " (FIN en la linea " + lineaFin + ").");
-            }
-        }
     }
 
     // =============================================================

@@ -57,8 +57,6 @@ sensor temperatura;
 umbral maximo = 220;
 
 si voltaje >= maximo entonces estado = PICO;
-
-fin;
 ```
 
 ### Palabras reservadas
@@ -71,7 +69,6 @@ fin;
 | `estado` | Asignación de estado |
 | `normal` / `pico` / `caida` / `inestable` | Estados del sistema |
 | `abs()` | Función valor absoluto |
-| `fin;` | Marca el final del programa |
 
 ### Operadores relacionales
 
@@ -121,7 +118,7 @@ Timotomata/
 
 Consulta [`docs/analisis_lexico_sintactico.md`](docs/analisis_lexico_sintactico.md) para:
 - Diagrama del **AFD del analizador léxico** (13 estados, 17 clases de caracteres)
-- **Gramática BNF** completa (10 no-terminales, 26 producciones)
+- **Gramática BNF** completa (14 no terminales, 41 producciones)
 - **Tabla de parsing LL(1)** con conjuntos FIRST y FOLLOW
 
 ---

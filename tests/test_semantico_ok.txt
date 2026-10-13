@@ -16,5 +16,3 @@ si temperatura < temp_min entonces estado = CAIDA;
 calcular(voltaje, seno(amplitud=50, frecuencia=0.1));
 calcular(temperatura, promedio(ventana=5));
 calcular(voltaje, suma(con=voltaje, con=voltaje));
-
-fin;

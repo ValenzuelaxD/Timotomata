@@ -16,4 +16,3 @@ si temperatura < temp_min entonces estado = PICO;
 si presion > presion_max entonces estado = NORMAL;
 // Regla con abs
 si abs(voltaje - previo) > 50 entonces estado = CAIDA;
-FIN

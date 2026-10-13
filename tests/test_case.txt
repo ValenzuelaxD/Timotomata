@@ -13,4 +13,3 @@ sensor valor;
 sensor Valor;
 Si valor > 5 entonces estado = normal;
 Si Valor > 10 entonces estado = pico;
-FIN

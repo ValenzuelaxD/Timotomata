@@ -102,7 +102,7 @@ public class AppController {
         "sensor", "umbral", "si", "entonces", "estado",
         "abs", "calcular", "normal", "pico", "caida", "inestable",
         "seno", "coseno", "cuadrada", "promedio", "maximo", "suma",
-        "amplitud", "frecuencia", "ventana", "con", "fin"
+        "amplitud", "frecuencia", "ventana", "con"
     };
 
     // ─── Estado interno ───
@@ -534,7 +534,7 @@ public class AppController {
         // Reglas del documento "Errores semánticos propios": colisiones de
         // nombres, duplicados, sensor/umbral confundidos, rangos inválidos,
         // estados incoherentes, reglas contradictorias, parámetros de
-        // simulación, magnitudes mezcladas y FIN mal cerrado. Los
+        // simulación y magnitudes mezcladas. Los
         // identificadores no declarados NO se reportan (no forman parte del
         // spec) y la validación de forma de parámetros la hace el parser.
         construirTablaSimbolos(programa, tokens);
@@ -1698,7 +1698,7 @@ public class AppController {
         Token siguiente = indice + 1 < tokens.size() ? tokens.get(indice + 1) : null;
 
         if (anterior == null || anterior.tipo == TipoToken.PUNTO_COMA) {
-            return new String[] { "sensor", "umbral", "si", "calcular", "fin" };
+            return new String[] { "sensor", "umbral", "si", "calcular" };
         }
         if (anterior.tipo == TipoToken.ENTONCES) {
             return new String[] { "estado" };

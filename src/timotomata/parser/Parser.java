@@ -119,9 +119,9 @@ public class Parser {
     
     //  NO TERMINAL: SENTENCIA
     //  SENTENCIA → SENSOR ID PUNTO_COMA
-    //            | UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA
-    //            | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
-    //            | CALCULAR ID COMA TIPO_OP COMA LISTA_PARAMS PUNTO_COMA
+    //       | UMBRAL ID = VALOR_UMBRAL PUNTO_COMA
+    //            | SI CONDICION ENTONCES ESTADO = ESTADO_SISTEMA PUNTO_COMA
+    //            | CALCULAR ( ID , TIPO_OP ) PUNTO_COMA
     
     private void sentencia(NodoDerivacion nodo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.SENTENCIA, ver().tipo);
@@ -197,14 +197,6 @@ public class Parser {
                 nodo.agregarHijo(t(t7));
 
                 programa.calculos.add(calculo);
-                break;
-            }
-            case Gramatica.P_SENT_FIN: {
-                Token t1 = consumir(TipoToken.FIN, "Se esperaba FIN");
-                Token t2 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
-                nodo.agregarHijo(t(t1));
-                nodo.agregarHijo(t(t2));
-                // fin; — sentencia que termina el programa sin acción adicional
                 break;
             }
         }

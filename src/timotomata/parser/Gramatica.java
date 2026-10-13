@@ -132,16 +132,15 @@ public class Gramatica {
         P_PARAM_AMPL      = 37,
         P_PARAM_FREC      = 38,
         P_PARAM_VENT      = 39,
-        P_PARAM_CON       = 40,
-        P_SENT_FIN        = 41;
+        P_PARAM_CON       = 40;
 
-    public static final int NUM_PROD = 42;
+    public static final int NUM_PROD = 41;
 
     
     //  CODIFICACIÓN DE SÍMBOLOS
     
-    // Terminal: ordinal de TipoToken (0..22)
-    // No terminal: -(id + 1) → valores negativos (-1..-13)
+    // Terminal: ordinal de TipoToken (0..35, siendo EOF el último)
+    // No terminal: -(id + 1) → valores negativos (-1..-14)
     static int T(TipoToken t) { return t.ordinal(); }
     static int NT(int nt)     { return -(nt + 1); }
     static boolean esTerminal(int sym)   { return sym >= 0; }
@@ -228,8 +227,6 @@ public class Gramatica {
                                        T(TipoToken.NUMERO) },
         /* 40 */ { NT(PARAM),        T(TipoToken.CON),         T(TipoToken.ASIGNACION),
                                        T(TipoToken.ID) },
-
-        /* 41 */ { NT(SENTENCIA),    T(TipoToken.FIN),         T(TipoToken.PUNTO_COMA) },
     };
 
     
