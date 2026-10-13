@@ -11,13 +11,11 @@ import java.text.Normalizer;
  * "combinación de magnitudes incompatibles" NO se reporta (para evitar
  * falsos positivos con nombres arbitrarios).
  */
+import java.text.Normalizer;
+
 public enum Magnitud {
     ELECTRICO,
-    TERMICO,
-    MECANICO,
-    QUIMICO,
-    LUMINICO,
-    HIDRAULICO;
+    TERMICO;
 
     /**
      * Clasifica el nombre de un sensor. No distingue mayúsculas ni acentos.
@@ -26,43 +24,26 @@ public enum Magnitud {
      */
     public static Magnitud clasificar(String nombre) {
         if (nombre == null) return null;
-        String n = Normalizer.normalize(nombre.toLowerCase(), Normalizer.Form.NFD)
-            .replaceAll("\\p{M}", "");
 
+        String n = Normalizer.normalize(nombre.toLowerCase(), Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+//
         if (contiene(n, "voltaj", "tension", "volt", "corrient", "amper",
                 "potencia", "watt", "resistenc", "ohm", "capacit", "energ")) {
             return ELECTRICO;
         }
+
         if (contiene(n, "temper", "temp", "calor", "celsius", "fahrenheit",
                 "kelvin", "termo")) {
             return TERMICO;
         }
-        if (contiene(n, "presion", "pressure", "fuerza", "torque",
-                "vibracion", "velocidad", "rpm", "desplaz")) {
-            return MECANICO;
-        }
-        if (contiene(n, "ph", "concentracion", "humedad", "gas", "oxigeno",
-                "salinidad")) {
-            return QUIMICO;
-        }
-        if (contiene(n, "luz", "luminos", "ilumin", "brillo", "radiacion")) {
-            return LUMINICO;
-        }
-        if (contiene(n, "caudal", "flujo", "nivel", "agua")) {
-            return HIDRAULICO;
-        }
+
         return null;
     }
 
     private static boolean contiene(String texto, String... claves) {
-        // "ph" es corto: se exige que no sea parte de otra palabra.
         for (String c : claves) {
-            if (c.equals("ph")) {
-                if (texto.equals("ph") || texto.startsWith("ph_")
-                        || texto.endsWith("_ph") || texto.contains("ph_")) {
-                    return true;
-                }
-            } else if (texto.contains(c)) {
+            if (texto.contains(c)) {
                 return true;
             }
         }

@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Análisis Semántico — Timotomata</title>
+<style>
+  :root{
+    --bg:#11111b; --panel:#1e1e2e; --panel2:#181825;
+    --text:#cdd6f4; --muted:#a6adc8; --dim:#6c7086;
+    --blue:#89b4fa; --green:#a6e3a1; --red:#f38ba8; --yellow:#f9e2af; --peach:#fab387;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#000;overflow:hidden}
+  body{font-family:"Segoe UI",system-ui,sans-serif;color:var(--text);
+       display:flex;align-items:center;justify-content:center}
+  #stage{width:1280px;height:720px;position:relative;transform-origin:center center}
+  .slide{
+    position:absolute;inset:0;background:var(--bg);padding:52px 64px;
+    display:none;flex-direction:column;
+  }
+  .slide.active{display:flex}
+  h1{font-size:62px;line-height:1.1;font-weight:700}
+  h2{font-size:38px;font-weight:700;color:var(--blue);margin-bottom:6px;
+     border-bottom:2px solid var(--panel);padding-bottom:12px}
+  .sub{color:var(--dim);font-size:19px;margin-bottom:26px}
+  h3{font-size:21px;color:var(--yellow);margin-bottom:8px;font-weight:600}
+  p,li{font-size:20px;line-height:1.55}
+  ul{margin-left:26px}li{margin:7px 0}
+  code{font-family:Consolas,"Cascadia Mono",monospace;font-size:18px;color:var(--blue)}
+  .mono{font-family:Consolas,"Cascadia Mono",monospace}
+  pre{
+    background:var(--panel);border-left:4px solid var(--blue);
+    padding:14px 18px;border-radius:6px;overflow:hidden;
+    font-family:Consolas,"Cascadia Mono",monospace;font-size:17px;line-height:1.5;
+    color:var(--text);white-space:pre;
+  }
+  pre.err{border-left-color:var(--red)} pre.ok{border-left-color:var(--green)}
+  pre small{color:var(--dim);font-size:14px}
+  .row{display:flex;gap:26px;margin-top:18px;flex:1;min-height:0}
+  .col{flex:1;min-width:0;display:flex;flex-direction:column}
+  .card{background:var(--panel);border-radius:8px;padding:18px 20px}
+  .card.g{border-left:4px solid var(--green)}
+  .card.r{border-left:4px solid var(--red)}
+  .card.y{border-left:4px solid var(--yellow)}
+  .card.b{border-left:4px solid var(--blue)}
+  .tag{display:inline-block;background:var(--panel);border:1px solid var(--dim);
+       border-radius:5px;padding:2px 9px;font-size:15px;margin-right:6px;color:var(--muted)}
+  .ok{color:var(--green)} .no{color:var(--red)} .dim{color:var(--dim)}
+  .warn{color:var(--yellow)} .acc{color:var(--blue)}
+  table{border-collapse:collapse;width:100%;font-size:18px}
+  th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--panel)}
+  th{color:var(--blue);font-weight:600;font-size:17px}
+  td.n{color:var(--dim);width:44px}
+  .flow{display:flex;align-items:center;gap:10px;margin:22px 0;flex-wrap:wrap}
+  .box{background:var(--panel);border:1px solid var(--dim);border-radius:8px;
+       padding:14px 18px;font-size:18px}
+  .box.hi{border-color:var(--green);background:#1c2b22}
+  .arrow{color:var(--dim);font-size:24px}
+  #foot{position:absolute;left:64px;right:64px;bottom:20px;display:flex;
+        justify-content:space-between;font-size:14px;color:var(--dim)}
+  #bar{position:absolute;left:0;bottom:0;height:4px;background:var(--green);
+       width:0;transition:width .18s}
+  .foot-hint{color:var(--dim);font-size:15px;margin-top:auto;padding-top:10px}
+  @media print{
+    @page{size:1280px 720px;margin:0}
+    html,body{overflow:visible;background:#fff;height:auto}
+    #stage{transform:none!important;width:1280px;height:auto}
+    .slide{display:flex!important;position:relative;page-break-after:always;
+           width:1280px;height:720px}
+    #bar,#counter{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+
+<!-- 1 -->
+<section class="slide active">
+  <div style="margin:auto">
+    <h1>Análisis Semántico</h1>
+    <p class="sub" style="font-size:26px;margin-top:18px">Lenguaje Timotomata — tercera fase del compilador</p>
+    <div class="flow" style="margin-top:34px">
+      <span class="tag">15 reglas</span>
+      <span class="tag">2 clases nuevas</span>
+      <span class="tag">sin tocar la gramática</span>
+    </div>
+    <p class="dim" style="font-size:18px;margin-top:30px">
+      <code>src/timotomata/semantic/</code> · AnalizadorSemantico.java · Magnitud.java
+    </p>
+  </div>
+  <div id="foot"><span>Timotomata</span><span>1</span></div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <h2>El problema que resuelve</h2>
+  <p class="sub">Un programa puede ser léxica y sintácticamente correcto y aun así no significar nada.</p>
+  <div class="row">
+    <div class="col"><pre>// Léxica: OK.  Sintáctica: OK.
+sensor voltaje;
+umbral voltaje = 220;   <small>// sensor y umbral homónimos</small>
+sensor temp;
+sensor temp;            <small>// declarado dos veces</small>
+si temp &gt; 50 entonces estado = PICO;
+calcular(temp, promedio(ventana=0));  <small>// ventana no positiva</small>
+fin;</pre></div>
+    <div class="col">
+      <h3>Estructura válida, significado inválido</h3>
+      <ul>
+        <li>¿Cuál es el umbral y cuál el sensor?</li>
+        <li>¿Cuál <code>temp</code> manda?</li>
+        <li>¿Qué promedia una ventana de 0 muestras?</li>
+      </ul>
+      <div class="card y" style="margin-top:14px">
+        <p>El análisis semántico es la fase que responde <b>“esto compila, pero no tiene sentido”</b>.</p>
+      </div>
+    </div>
+  </div>
+  <div id="foot"><span>1 · El problema</span><span>2</span></div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <h2>Dónde se inserta</h2>
+  <div class="flow">
+    <span class="box">editor</span><span class="arrow">→</span>
+    <span class="box">Lexer <small style="color:#6c7086">(AFD)</small></span><span class="arrow">→</span>
+    <span class="box">Parser <small style="color:#6c7086">(LL(1) descendente)</small></span><span class="arrow">→</span>
+    <span class="box hi">AnalizadorSemantico</span><span class="arrow">→</span>
+    <span class="box">panel de errores</span>
+  </div>
+  <div class="row">
+    <div class="col">
+      <h3>Entradas</h3>
+      <ul>
+        <li><b>AST</b> (<code>Programa</code>): solo sentencias completas</li>
+        <li><b>Tokens</b>: para recuperar la línea de cada declaración y de <code>FIN</code></li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3>Salida</h3>
+      <pre class="err">Error semantico en linea 6: 'colision'
+esta declarado como sensor (linea 5)
+y como umbral (linea 6): colision de tipos.</pre>
+    </div>
+  </div>
+  <div class="card b" style="margin-top:8px">
+    <p>Se invoca desde <code>AppController.java:530</code>, donde antes decía “Semántica DESACTIVADA por pedido”.</p>
+  </div>
+  <div id="foot"><span>2 · Integración en el compilador</span><span>3</span></div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <h2>Las 12 reglas del enunciado</h2>
+  <p class="sub">Todas implementadas salvo la 9, omitida por decisión del proyecto.</p>
+  <table>
+    <tr><td class="n">1</td><td>Sensor y umbral con el mismo nombre (colisión)</td><td class="ok">✓</td></tr>
+    <tr><td class="n">2</td><td>Declaración duplicada</td><td class="ok">✓</td></tr>
+    <tr><td class="n">3</td><td>Sensor usado como umbral</td><td class="ok">✓</td></tr>
+    <tr><td class="n">4</td><td>Umbral usado como sensor</td><td class="ok">✓</td></tr>
+    <tr><td class="n">5</td><td>Rango mínimo/máximo inválido (<code>min &gt;= max</code>)</td><td class="ok">✓</td></tr>
+    <tr><td class="n">6</td><td>Diferencia máx − mín insuficiente</td><td class="ok">✓</td></tr>
+    <tr><td class="n">7</td><td>Estado incompatible con el rango</td><td class="ok">✓</td></tr>
+    <tr><td class="n">8</td><td>Reglas contradictorias</td><td class="ok">✓</td></tr>
+    <tr><td class="n">9</td><td>Operación sin historial/muestras</td><td class="no">— omitida</td></tr>
+    <tr><td class="n">10</td><td>Parámetros físicamente inválidos</td><td class="ok">✓</td></tr>
+    <tr><td class="n">11</td><td>Combinación de magnitudes incompatibles</td><td class="ok">✓</td></tr>
+    <tr><td class="n">12</td><td>Programa terminado de forma inválida</td><td class="ok">✓</td></tr>
+  </table>
+  <div id="foot"><span>3 · Reglas</span><span>4</span></div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <h2>Las 4 reglas genéricas añadidas</h2>
+  <p class="sub">Casos clásicos de compilador que también aplican aquí.</p>
+  <div class="row" style="flex:0 1 auto">
+    <div class="col"><div class="card b"><h3>13 · No declarado</h3>
+      <p>Usar un identificador que no se declaró con <code>sensor</code> ni <code>umbral</code>.</p></div></div>
+    <div class="col"><div class="card b"><h3>14 · Tipos incompatibles</h3>
+      <p>Operar o comparar sensores de magnitudes físicas distintas.</p></div></div>
+  </div>
+  <div class="row">
+    <div class="col"><div class="card b"><h3>15 · Argumentos incorrectos</h3>
+      <p>La cantidad o el tipo de parámetros de <code>calcular</code> no coincide con la firma de la operación.</p></div></div>
+    <div class="col"><div class="card b"><h3>16 · División entre cero</h3>
+      <p>Denominador que se puede evaluar a <code>0</code> en tiempo de compilación.</p></div></div>
+  </div>
+  <div class="card y" style="margin-top:14px">
+    <p><b>Cambio de diseño:</b> la regla 15 antes se lanzaba desde el parser como error <i>sintáctico</i>
+    (<code>validarParamsCalculo</code>). Se movió al análisis semántico, porque una firma no es sintaxis.
+    Beneficio: la sentencia llega al AST y puede revisarse con las demás reglas.</p>
+  </div>
+  <div id="foot"><span>3 · Reglas</span><span>5</span></div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <h2>Decisiones de diseño</h2>
+  <p class="sub">Las cuatro decisiones que definen el comportamiento del analizador.</p>
+  <div class="row" style="flex:0 1 auto">
+    <div class="col"><div class="card y"><h3>Regla 9 omitida</h3>
+      <p>“Sin historial/muestras suficientes” exige información de ejecución: el lenguaje no la tiene.</p></div></div>
+    <div class="col"><div class="card y"><h3>Constantes editables</h3>
+      <pre style="margin:0">FRECUENCIA_MUESTREO = 1.0
+MARGEN_SEGURIDAD   = 10.0</pre></div></div>
+  </div>
+  <div class="row">
+    <div class="col"><div class="card y"><h3>Magnitudes heurísticas</h3>
+      <p>No hay sintaxis de unidades, así que se infieren del nombre del sensor. Si no se reconoce, se ignora.</p></div></div>
+    <div class="col"><div class="card y"><h3>Rango flexible</h3>
+      <p>Se aceptan <code>S_min</code>, <code>min_S</code> y <code>minS</code>, sin distinguir mayúsculas.</p></div></div>
+  </div>
+  <div class="card r" style="margin-top:12px">
+    <p><b>Criterio rector:</b> ante la duda, no reportar. Un error inventado arruina la confianza en el compilador.</p>
+  </div>
+  <div id="foot"><span>3 · Reglas</span><span>6</span></div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <h2>Cómo funciona por dentro</h2>
+  <div class="row">
+    <div class="col">
+      <h3>Cuatro piezas</h3>
+      <ul>
+        <li><b>Declaraciones desde tokens</b>: solo <code>SENSOR/UMBRAL</code> van seguidos de <code>ID</code>, así que el patrón es inequívoco y conserva duplicados y líneas.</li>
+        <li><b>Evaluador</b>: convierte una expresión a <code>Double</code> o a <code>null</code> si depende de un sensor.</li>
+        <li><b>Intervalos</b>: traduce <code>&gt; &gt;= &lt; &lt;= == !=</code> al rango de valores que la regla admite.</li>
+        <li><b>Orden final</b>: los mensajes se ordenan por línea.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3>Solapamiento de intervalos</h3>
+      <pre>si contra &gt; 50  →  (50, +∞)
+si contra &lt; 60  →  (−∞, 60)
+
+     50        60
+───────██████████───────
+       <span style="color:#f38ba8">se solapan</span> → estados distintos
+                 → regla contradictoria</pre>
+      <p class="dim" style="font-size:17px;margin-top:10px">Los extremos abiertos y cerrados se respetan: <code>&gt;50</code> y <code>&lt;=50</code> no se tocan.</p>
+    </div>
+  </div>
+  <div id="foot"><span>4 · Implementación</span><span>7</span></div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <h2>Reglas 3 y 4 · Confundir sensor con umbral</h2>
+  <div class="row">
+    <div class="col">
+      <pre>// Regla 3: la derecha de una
+// comparación es un límite fijo
+sensor s;
+sensor limite_mentira;
+si s &gt; limite_mentira
+   entonces estado = NORMAL;</pre>
+      <pre class="err">el sensor 'limite_mentira' no puede
+usarse como umbral: un sensor se
+mide, no fija límites.</pre>
+    </div>
+    <div class="col">
+      <pre>// Regla 4: un umbral no es un sensor
+umbral tope = 10;
+calcular(tope, promedio(ventana=5));
+calcular(s, suma(con=s, con=tope));</pre>
+      <pre class="err">el umbral 'tope' no puede usarse
+como sensor: es el objetivo de
+calcular().</pre>
+    </div>
+  </div>
+  <div class="card b" style="margin-top:10px">
+    <p>La regla 3 también evita el falso positivo de comparar <code>abs(voltaje - previo) &gt; 50</code>:
+    si el límite no es evaluable, esa regla no entra en el análisis de contradicciones.</p>
+  </div>
+  <div id="foot"><span>4 · Implementación</span><span>8</span></div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <h2>Reglas 5 y 6 · El rango del sensor</h2>
+  <div class="row">
+    <div class="col">
+      <pre>sensor voltaje;
+umbral voltaje_min = 220;
+umbral voltaje_max = 100;</pre>
+      <pre class="err">rango invalido del sensor 'voltaje':
+el minimo (220.0) es mayor o igual
+que el maximo (100.0).</pre>
+    </div>
+    <div class="col">
+      <pre>sensor voltaje;
+umbral voltaje_min = 100;
+umbral voltaje_max = 105;</pre>
+      <pre class="err">la diferencia entre el maximo (105.0)
+y el minimo (100.0) es 5.0,
+inferior al margen de seguridad (10.0).</pre>
+    </div>
+  </div>
+  <div class="card y" style="margin-top:8px">
+    <p><b>Variantes aceptadas:</b> <code>voltaje_min</code> · <code>min_voltaje</code> · <code>minvoltaje</code>
+    &nbsp;(sin distinguir mayúsculas). Si el mínimo es inválido, la diferencia no se reporta: sería ruido.</p>
+  </div>
+  <div id="foot"><span>4 · Implementación</span><span>9</span></div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <h2>Reglas 7, 8 y 12 · Estados y cierre</h2>
+  <div class="row" style="flex:0 1 auto">
+    <div class="col">
+      <h3>Regla 7 · Estado incoherente</h3>
+      <pre>si v &lt; v_max entonces
+   estado = PICO;   <span style="color:#f38ba8">// PICO con '&lt;'</span></pre>
+      <p style="font-size:17px;color:#a6adc8">Convención del lenguaje: <code>PICO</code> es valor alto, <code>CAIDA</code> es valor bajo.</p>
+    </div>
+    <div class="col">
+      <h3>Regla 12 · FIN mal cerrado</h3>
+      <pre>fin;
+sensor despues;  <span style="color:#f38ba8">// sentencia tras FIN</span>
+fin;             <span style="color:#f38ba8">// segundo FIN</span></pre>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col">
+      <h3>Regla 8 · Contradicción</h3>
+      <pre>si contra &gt; 50 entonces estado = PICO;
+si contra &lt; 60 entonces estado = CAIDA;</pre>
+      <p style="font-size:17px;color:#a6adc8">Con 55 se cumplen las dos y cada una asigna un estado distinto: no hay prioridad definida.</p>
+    </div>
+    <div class="col">
+      <h3>Conservador por diseño</h3>
+      <ul style="font-size:18px">
+        <li>Solo entra si la izquierda es una variable simple y el límite es un número o umbral.</li>
+        <li>Dos reglas con el <i>mismo</i> estado que se solapan no son un error.</li>
+      </ul>
+    </div>
+  </div>
+  <div id="foot"><span>4 · Implementación</span><span>10</span></div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <h2>Reglas 11 y 14 · Magnitudes</h2>
+  <p class="sub">El lenguaje no tiene sintaxis de unidades, así que la magnitud se deduce del nombre del sensor.</p>
+  <div class="row">
+    <div class="col">
+      <pre>if (contiene(n, "voltaj", "tension", "volt",
+    "corrient", "amper", "potencia", "watt",
+    "resistenc", "ohm", "capacit", "energ"))
+      return ELECTRICO;
+
+if (contiene(n, "temper", "temp", "calor",
+    "celsius", "fahrenheit", "kelvin", "termo"))
+      return TERMICO;
+
+return null;   <span style="color:#f38ba8">// desconocido: se ignora</span></pre>
+    </div>
+    <div class="col">
+      <pre>sensor potencia_watt;
+sensor temperatura;
+calcular(potencia_watt,
+  suma(con=potencia_watt,
+       con=temperatura));</pre>
+      <pre class="err">SUMA combina sensores de magnitudes
+incompatibles: 'potencia_watt'
+(ELECTRICO) y 'temperatura' (TERMICO).</pre>
+      <p class="dim" style="font-size:16px;margin-top:8px">Las claves están en inglés: un sensor llamado <code>vatios</code> no matchea <code>watt</code> y queda sin clasificar.</p>
+    </div>
+  </div>
+  <div id="foot"><span>4 · Implementación</span><span>11</span></div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <h2>Regla 13 · Identificador no declarado</h2>
+  <div class="row">
+    <div class="col">
+      <pre>si voltaje &gt; maximo entonces
+   estado = PICO;      <span style="color:#f38ba8">// 'maximo' no existe</span></pre>
+      <pre class="err">identificador 'maximo' no declarado:
+se usa en la condicion sin haber
+sido definido con 'sensor' o 'umbral'.</pre>
+    </div>
+    <div class="col">
+      <h3>Cubre tres sitios</h3>
+      <ul>
+        <li>Las condiciones de todas las reglas <code>si</code></li>
+        <li>El sensor objetivo de <code>calcular</code></li>
+        <li>Cada argumento de <code>SUMA(CON=...)</code></li>
+      </ul>
+      <div class="card y" style="margin-top:12px">
+        <p>La comparación es <b>exacta</b>: el lenguaje distingue mayúsculas.
+        Declarar <code>Voltaje</code> y usar <code>voltaje</code> es un error real.</p>
+      </div>
+    </div>
+  </div>
+  <div id="foot"><span>4 · Implementación</span><span>12</span></div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <h2>Reglas 15 y 16 · Firma y división</h2>
+  <div class="row">
+    <div class="col">
+      <h3>15 · La firma de cada operación</h3>
+      <pre>calcular(x, seno(ventana=5));</pre>
+      <pre class="err">llamada con argumentos incorrectos:
+SENO exige AMPLITUD y FRECUENCIA
+(2 parametros).</pre>
+      <table style="font-size:16px;margin-top:8px">
+        <tr><th>Operación</th><th>Firma</th></tr>
+        <tr><td>SENO / COSENO / CUADRADA</td><td>AMPLITUD + FRECUENCIA</td></tr>
+        <tr><td>PROMEDIO</td><td>VENTANA</td></tr>
+        <tr><td>MAXIMO</td><td>sin parámetros</td></tr>
+        <tr><td>SUMA</td><td>2 o más CON</td></tr>
+      </table>
+    </div>
+    <div class="col">
+      <h3>16 · División entre cero constante</h3>
+      <pre>si v / 0 &gt; 1 entonces
+   estado = NORMAL;</pre>
+      <pre class="err">division entre cero constante: el
+denominador (0.0) vale 0.</pre>
+      <div class="card g" style="margin-top:10px">
+        <p>Solo se reporta si el denominador es <b>constante</b>: un literal o un umbral con valor 0.
+        Si depende de un sensor no es decidible en compilación.</p>
+      </div>
+    </div>
+  </div>
+  <div id="foot"><span>4 · Implementación</span><span>13</span></div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <h2>Regla 10 · Parámetros físicamente inválidos</h2>
+  <div class="row">
+    <div class="col">
+      <pre>calcular(p, seno(amplitud=500, frecuencia=0));
+calcular(p, promedio(ventana=0));
+calcular(p, seno(amplitud=50, frecuencia=9));</pre>
+    </div>
+    <div class="col">
+      <pre class="err">la amplitud (500.0) excede el rango del
+sensor 'p' [0.0, 100.0] (rango = 100.0).
+
+frecuencia invalida (0.0): debe ser positiva.
+
+ventana de promedio invalida (0.0): debe ser positiva.
+
+la frecuencia (9.0) supera la frecuencia
+de muestreo (1.0).</pre>
+    </div>
+  </div>
+  <div class="card b" style="margin-top:10px">
+    <p>La amplitud solo se compara si el sensor declara su par <i>mín/máx</i>; sin ese par no hay rango contra el cual medirla.</p>
+  </div>
+  <div id="foot"><span>4 · Implementación</span><span>14</span></div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <h2>Salvaguardas · Lo que NO se reporta</h2>
+  <p class="sub">Un analizador que inventa errores pierde credibilidad. Estas decisiones son deliberadas.</p>
+  <table>
+    <tr><th>Situación</th><th>Decisión</th><th>Por qué</th></tr>
+    <tr><td>Sensor con nombre desconocido</td><td class="dim">se ignora</td><td>sin magnitud conocida no hay conflicto que afirmar</td></tr>
+    <tr><td>Izquierda de <code>abs(...)</code> en contradicciones</td><td class="dim">se ignora</td><td>no es una variable medible simple</td></tr>
+    <tr><td>Denominador con sensor</td><td class="dim">se ignora</td><td>no es constante: no se puede decidir</td></tr>
+    <tr><td>Sin <code>FIN</code></td><td class="dim">no es error</td><td>la gramática lo permite</td></tr>
+    <tr><td>Rango solo con <i>mín</i> o solo con <i>máx</i></td><td class="dim">se ignora</td><td>falta el otro extremo para comparar</td></tr>
+    <tr><td>Dos reglas que se solapan con igual estado</td><td class="dim">no es error</td><td>no hay contradicción, solo redundancia</td></tr>
+  </table>
+  <div class="foot-hint">La línea de error siempre es la que explica el problema, no la del <code>FIN</code> ni la del error anterior.</div>
+  <div id="foot"><span>5 · Criterios</span><span>15</span></div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <h2>Cómo llega a la interfaz</h2>
+  <p class="sub">El formato del mensaje es la clave: la UI ya sabía interpretarlo.</p>
+  <div class="row">
+    <div class="col">
+      <h3>Reutilizado tal cual</h3>
+      <ul>
+        <li><code>[ERROR SEMANTICO]</code> en el panel</li>
+        <li>Conteo en el status</li>
+        <li><b>Icono rojo en el gutter</b>: extrae el número de <code>“en linea N”</code></li>
+        <li><code>codigoValido</code>: si hay error semántico, no se dibuja el AST</li>
+      </ul>
+    </div>
+    <div class="col">
+      <pre class="ok">// AppController.java
+List&lt;String&gt; erroresSemanticos =
+    new AnalizadorSemantico()
+        .analizar(programa, tokens);</pre>
+      <div class="card g" style="margin-top:12px">
+        <p>No hubo que escribir ni una línea de UI nueva: el panel, el gutter y el status ya contaban con esta fase.</p>
+      </div>
+    </div>
+  </div>
+  <div id="foot"><span>5 · Criterios</span><span>16</span></div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <h2>Verificación</h2>
+  <p class="sub">Harness que ejecuta lexer → parser → semántico sobre los 8 archivos de <code>tests/</code>.</p>
+  <table>
+    <tr><th>Archivo</th><th>Léxicos</th><th>Sintácticos</th><th>Semánticos</th><th>Nota</th></tr>
+    <tr><td>test_semantico.txt</td><td>0</td><td>0</td><td class="ok">24</td><td>un caso por regla</td></tr>
+    <tr><td>test_semantico_ok.txt</td><td>0</td><td>0</td><td class="ok">0</td><td>programa válido completo</td></tr>
+    <tr><td>test_basico.txt</td><td>0</td><td>1</td><td class="ok">0</td><td>sin falsos positivos</td></tr>
+    <tr><td>test_comentarios.txt</td><td>0</td><td>1</td><td class="ok">0</td><td>sin falsos positivos</td></tr>
+    <tr><td>test_errores.txt</td><td>4</td><td>2</td><td class="ok">0</td><td>sin errores en cascada</td></tr>
+    <tr><td>test_simulacion.txt</td><td>0</td><td>1</td><td>3</td><td>2 estados + 1 no declarado</td></tr>
+    <tr><td>test_case.txt</td><td>0</td><td>4</td><td>2</td><td>mayúsculas: Voltaje ≠ voltaje</td></tr>
+    <tr><td>test_operadores.txt</td><td>0</td><td>1</td><td>13</td><td>maraña de reglas contradictorias</td></tr>
+  </table>
+  <div class="foot-hint">Los errores sintácticos son preexistentes: los tests terminan en <code>FIN</code> sin punto y coma.</div>
+  <div id="foot"><span>6 · Verificación</span><span>17</span></div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <h2>Limitaciones y trabajo futuro</h2>
+  <div class="row">
+    <div class="col">
+      <h3>Limitaciones conocidas</h3>
+      <ul>
+        <li>La tabla de magnitudes solo distingue <b>eléctrico</b> y <b>térmico</b>: watts contra ohms pasa limpio.</li>
+        <li>Las claves están en inglés; <code>vatios</code> no se clasifica.</li>
+        <li>No se detecta la autorreferencia <code>calcular(x, suma(con=x, ...))</code>.</li>
+        <li><code>PROMEDIO</code> se valida pero no se ejecuta: no hay motor de simulación.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3>Por dónde seguir</h3>
+      <ul>
+        <li>Unidades explícitas en la gramática: <code>sensor v(electrico);</code></li>
+        <li>Valores físicamente imposibles por magnitud (un <code>-500 °C</code>)</li>
+        <li>Tipos reales: separar tensión, resistencia y capacitancia</li>
+        <li>Advertencias para lo raro frente a errores para lo imposible</li>
+      </ul>
+      <div class="card b" style="margin-top:12px">
+        <p><b>El precio de la heurística:</b> sin unidades en el lenguaje, el analizador solo puede gleanear del nombre.</p>
+      </div>
+    </div>
+  </div>
+  <div id="foot"><span>6 · Verificación</span><span>18</span></div>
+</section>
+
+</div>
+<div id="bar"></div>
+<script>
+  const slides=[...document.querySelectorAll('.slide')],stage=document.getElementById('stage'),bar=document.getElementById('bar');
+  let i=0;
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    bar.style.width=((i+1)/slides.length*100)+'%';
+  }
+  function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);stage.style.transform='scale('+s+')';}
+  addEventListener('resize',fit);
+  addEventListener('keydown',e=>{
+    if(['ArrowRight','PageDown',' '].includes(e.key))show(i+1);
+    else if(['ArrowLeft','PageUp'].includes(e.key))show(i-1);
+    else if(e.key==='Home')show(0);
+    else if(e.key==='End')show(slides.length-1);
+    else if(e.key.toLowerCase()==='f'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();}
+  });
+  addEventListener('click',e=>{if(e.clientX<innerWidth*0.25)show(i-1);else if(e.clientX>innerWidth*0.75)show(i+1);});
+  fit();show(0);
+</script>
+</body>
+</html>
