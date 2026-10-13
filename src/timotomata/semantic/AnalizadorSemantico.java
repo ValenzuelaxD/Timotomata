@@ -1,47 +1,59 @@
 package timotomata.semantic;
 
 import java.util.*;
-import timotomata.lexer.TipoToken;
+
 import timotomata.lexer.Token;
 import timotomata.parser.ast.*;
+import timotomata.simbolos.Simbolo;
+import timotomata.simbolos.TablaSimbolos;
 
 /**
  * ANÁLISIS SEMÁNTICO DEL LENGUAJE TIMOTOMATA
  * ==========================================
  *
- * Se ejecuta después del parser, sobre el AST (solo sentencias completas)
- * y sobre la lista de tokens (para las líneas de declaraciones).
+ * Se ejecuta después del parser, sobre el AST y sobre la tabla de símbolos
+ * que este construyó. Ya no re-escanea la lista de tokens para deducir las
+ * declaraciones: la tabla es la única fuente de verdad.
  *
- * Reglas del documento "Errores semánticos propios":
- *   1. Sensor y umbral con el mismo nombre (colisión de tipos)
- *   2. Declaración duplicada de sensor o umbral
- *   3. Sensor usado como umbral (límite fijo de una condición)
- *   4. Umbral usado como sensor (objetivo de calcular() o de CON=...)
- *   5. Rango mínimo/máximo inválido (min >= max)
- *   6. Diferencia entre máximo y mínimo insuficiente ( < margen de seguridad )
- *   7. Estado incompatible con el rango detectado (PICO en caída / CAIDA en pico)
- *   8. Reglas contradictorias (se solapan y asignan estados distintos)
- *  10. Parámetros de simulación físicamente inválidos (frecuencia, ventana, amplitud)
- *  11. Combinación de magnitudes incompatibles en SUMA(CON=...)
+ * <h2>Reglas del documento "Errores semánticos propios"</h2>
+ * <ol>
+ *   <li>1. Sensor y umbral con el mismo nombre (colisión de tipos)</li>
+ *   <li>2. Declaración duplicada de sensor, umbral o señal</li>
+ *   <li>3. Sensor usado como umbral (límite fijo de una condición)</li>
+ *   <li>4. Umbral usado como sensor (objetivo de calcular() o de CON=...)</li>
+ *   <li>5. Rango mínimo/máximo inválido (min &gt;= max)</li>
+ *   <li>6. Diferencia entre máximo y mínimo insuficiente</li>
+ *   <li>7. Estado incompatible con el rango (PICO en caída / CAIDA en pico)</li>
+ *   <li>8. Reglas contradictorias (se solapan y asignan estados distintos)</li>
+ *   <li>10. Parámetros físicamente inválidos (frecuencia, ventana, amplitud)</li>
+ *   <li>11. Combinación de magnitudes incompatibles en SUMA(CON=...)</li>
+ * </ol>
  *
- * Reglas genéricas añadidas:
- *  13. Variable o identificador no declarado (usar x sin definirla)
- *  14. Incompatibilidad de tipos: una operación (aritmética o comparación)
- *      mezcla sensores de magnitudes físicas distintas. La parte "asignar"
- *      la garantiza la gramática (umbral = NUMERO, estado = keyword).
- *  15. Llamada a calcular() con argumentos incorrectos: cantidad o tipo de
- *      parámetros que no coinciden con la firma de la operación.
- *  16. División entre cero constante (denominador evaluable a 0 en tiempo
- *      de compilación).
+ * <h2>Reglas genéricas</h2>
+ * <ol start="13">
+ *   <li>13. Variable o identificador no declarado</li>
+ *   <li>14. Incompatibilidad de tipos entre sensores de magnitud distinta</li>
+ *   <li>15. Llamada a calcular() con argumentos incorrectos</li>
+ *   <li>16. División entre cero constante</li>
+ * </ol>
  *
- * Las reglas 9 ("operación sin historial/muestras") y 12 ("programa
- * terminado de forma inválida") quedan omitidas: la 9 por pedido, y la 12
- * porque el lenguaje ya no tiene sentencia FIN.
+ * <h2>Reglas nuevas: tipos de sensor declarados</h2>
+ * <ol start="17">
+ *   <li>17. Umbral fuera del rango representable por el transductor</li>
+ *   <li>18. {@code FRECUENCIA=} por encima de la banda del sensor</li>
+ *   <li>19. {@code VENTANA=} por debajo del mínimo físico del tipo</li>
+ *   <li>20. Tipo de sensor ausente en una referencia</li>
+ * </ol>
+ *
+ * <p>Las reglas 18 y 19 existían solo de forma parcial contra una constante
+ * global ({@code FRECUENCIA_MUESTREO = 1.0}) que no pertenecía al lenguaje.
+ * Ahora se comparan contra la ficha técnica del tipo declarado, que sí.
+ *
+ * <p>Las reglas 9 ("operación sin historial") y 12 ("programa terminado de
+ * forma inválida") quedan omitidas: la 9 por pedido, y la 12 porque el
+ * lenguaje ya no tiene sentencia FIN.
  */
 public class AnalizadorSemantico {
-
-    /** Frecuencia de muestreo del simulador (los ejemplos usan 0.05 a 0.5). */
-    public static final double FRECUENCIA_MUESTREO = 1.0;
 
     /** Margen mínimo exigido entre el máximo y el mínimo de un sensor. */
     public static final double MARGEN_SEGURIDAD = 10.0;
@@ -54,22 +66,26 @@ public class AnalizadorSemantico {
         List<String> errores = new ArrayList<>();
         if (programa == null) return errores;
 
-        List<Declaracion> declaraciones = declaraciones(tokens);
-        Set<String> sensores = new LinkedHashSet<>(programa.sensores);
+        TablaSimbolos simbolos = programa.simbolos;
 
-        regla1Colision(programa, declaraciones, errores);
-        regla2Duplicadas(declaraciones, errores);
-        regla3SensorComoUmbral(programa, sensores, errores);
+        resolverTiposDeSenales(programa);
+
+        reglaMuestreo(programa, errores);
+        regla1Colision(simbolos, errores);
+        regla2Duplicadas(simbolos, errores);
+        regla3SensorComoUmbral(programa, errores);
         regla4UmbralComoSensor(programa, errores);
-        reglas5y6Rango(programa, declaraciones, errores);
+        reglas5y6Rango(programa, errores);
         regla7EstadoIncompatible(programa, errores);
         regla8ReglasContradictorias(programa, errores);
         regla10ParametrosInvalidos(programa, errores);
-        regla11Magnitudes(programa, sensores, errores);
+        regla11Magnitudes(programa, errores);
         regla13NoDeclarados(programa, errores);
         regla14TiposIncompatibles(programa, errores);
         regla15LlamadasIncorrectas(programa, errores);
         regla16DivisionPorCero(programa, errores);
+        reglas17a19Fisica(programa, errores);
+        regla20TiposAusentes(programa, errores);
 
         ordenarPorLinea(errores);
         return errores;
@@ -97,66 +113,98 @@ public class AnalizadorSemantico {
     }
 
     // =============================================================
-    //  DECLARACIONES (a partir de los tokens)
+    //  RESOLUCIÓN DE TIPOS DE LAS SEÑALES DERIVADAS
     // =============================================================
 
-    /** Declaración de sensor o umbral con su línea. */
-    private static class Declaracion {
-        final String nombre;
-        final TipoToken tipo;   // SENSOR o UMBRAL
-        final int linea;
-        Declaracion(String nombre, TipoToken tipo, int linea) {
-            this.nombre = nombre;
-            this.tipo = tipo;
-            this.linea = linea;
-        }
-    }
-
     /**
-     * Extrae todas las declaraciones de la lista de tokens. En la gramática
-     * solo SENSOR y UMBRAL van seguidos de un ID, así que el patrón es
-     * inequívoco y conserva duplicados y líneas (el mapa de Programa pisa
-     * los duplicados).
+     * Una señal derivada (`calcular(origen, op, destino)`) se mide en la misma
+     * magnitud física que su origen, así que hereda su tipo declarado.
+     *
+     * <p>El parseo no puede resolverlo porque la firma de la operación aún no
+     * se conoce cuando se declara el destino; por eso se completa acá, antes
+     * de correr cualquier verificación que dependa del tipo.
      */
-    private List<Declaracion> declaraciones(List<Token> tokens) {
-        List<Declaracion> decls = new ArrayList<>();
-        if (tokens == null) return decls;
-        for (int i = 0; i + 1 < tokens.size(); i++) {
-            Token t = tokens.get(i);
-            Token sig = tokens.get(i + 1);
-            if (sig.tipo != TipoToken.ID) continue;
-            if (t.tipo == TipoToken.SENSOR || t.tipo == TipoToken.UMBRAL) {
-                decls.add(new Declaracion(sig.lexema, t.tipo, t.linea));
+    private void resolverTiposDeSenales(Programa programa) {
+        for (Calculo c : programa.calculos) {
+            if (!c.deriva()) continue;
+            TipoSensor origen = programa.tipoDe(c.sensor);
+            Simbolo destino = programa.simbolos.buscar(c.destino);
+            if (destino != null && destino.tipo() == null) {
+                destino.asignarTipo(origen);
             }
         }
-        return decls;
     }
 
-    private boolean esSensor(String nombre, Collection<String> sensores) {
-        return nombre != null && sensores.contains(nombre);
+    /** Nombres que designan un canal medible (sensor o señal derivada). */
+    private boolean esMedible(Simbolo s) {
+        return s != null
+            && (s.clase() == Simbolo.Clase.SENSOR || s.clase() == Simbolo.Clase.SENAL);
+    }
+
+    private Set<String> medibles(Programa programa) {
+        Set<String> r = new LinkedHashSet<>();
+        for (Simbolo s : programa.simbolos.todos()) {
+            if (esMedible(s)) r.add(s.nombre());
+        }
+        return r;
+    }
+
+    // =============================================================
+    //  MUESTREO — el reloj del programa
+    // =============================================================
+
+    /**
+     * {@code muestreo = 0.01;} declara la duración de un tick, en segundos.
+     *
+     * <p>Sin ella el programa no es ejecutable: el kernel de muestreo es un
+     * bucle sobre el tiempo, y {@code FRECUENCIA=} no tiene contra qué
+     * validarse. Antes el paso de muestreo era una constante global del
+     * analizador ({@code FRECUENCIA_MUESTREO = 1.0}) que no pertenecía al
+     * lenguaje.
+     */
+    private void reglaMuestreo(Programa programa, List<String> errores) {
+        if (programa.muestreo == null) {
+            int linea = programa.sensoresDeclarados.isEmpty()
+                ? 1 : programa.sensoresDeclarados.get(0).linea();
+            err(errores, linea, "falta la declaracion 'muestreo = <segundos>;':"
+                + " define la duracion de un tick y es necesaria para validar"
+                + " la frecuencia de muestreo y las ventanas de promediado.");
+            return;
+        }
+        if (programa.muestreo <= 0) {
+            err(errores, programa.lineaMuestreo, "muestreo invalido ("
+                + programa.muestreo + "): la duracion de un tick debe ser"
+                + " positiva.");
+        }
+    }
+
+    /** Frecuencia de muestreo efectiva del programa, en Hz. */
+    private double frecuenciaMuestreo(Programa programa) {
+        return programa.muestreo == null || programa.muestreo <= 0
+            ? 0.0 : 1.0 / programa.muestreo;
     }
 
     // =============================================================
     //  REGLA 1 — Sensor y umbral con el mismo nombre
     // =============================================================
 
-    private void regla1Colision(Programa programa, List<Declaracion> decls,
-                                List<String> errores) {
-        Map<String, Declaracion> sensor = new HashMap<>();
-        Map<String, Declaracion> umbral = new HashMap<>();
-        for (Declaracion d : decls) {
-            Map<String, Declaracion> mapa =
-                d.tipo == TipoToken.SENSOR ? sensor : umbral;
-            mapa.putIfAbsent(d.nombre, d);
-        }
-        for (String nombre : sensor.keySet()) {
-            Declaracion ds = sensor.get(nombre);
-            Declaracion du = umbral.get(nombre);
-            if (du == null) continue;
-            int linea = Math.max(ds.linea, du.linea);
-            err(errores, linea, "'" + nombre + "' esta declarado como sensor"
-                + " (linea " + ds.linea + ") y como umbral (linea " + du.linea
-                + "): colision de tipos.");
+    /**
+     * Colisión de tipos: el mismo identificador declarado con dos clases
+     * distintas —por ejemplo, como sensor y como umbral—.
+     *
+     * <p>La tabla de símbolos conserva la primera declaración, así que la
+     * colisión no se ve comparando símbolos: se ve en los reintentos de
+     * declaración que quedaron registrados, comparando la clase del símbolo
+     * guardado con la clase que se intentó declarar.
+     */
+    private void regla1Colision(TablaSimbolos simbolos, List<String> errores) {
+        for (TablaSimbolos.Duplicado d : simbolos.duplicados()) {
+            Simbolo guardado = simbolos.buscar(d.nombre());
+            if (guardado == null || guardado.clase() == d.clase()) continue;
+            err(errores, d.lineaRepetida(), "'" + d.nombre() + "' esta declarado como "
+                + guardado.clase().name().toLowerCase() + " (linea " + d.lineaOriginal()
+                + ") y como " + d.clase().name().toLowerCase()
+                + " (linea " + d.lineaRepetida() + "): colision de tipos.");
         }
     }
 
@@ -164,18 +212,14 @@ public class AnalizadorSemantico {
     //  REGLA 2 — Declaración duplicada
     // =============================================================
 
-    private void regla2Duplicadas(List<Declaracion> decls, List<String> errores) {
-        Map<String, Integer> primeraVez = new HashMap<>();
-        for (Declaracion d : decls) {
-            String clave = d.tipo + " " + d.nombre;
-            Integer primera = primeraVez.get(clave);
-            if (primera == null) {
-                primeraVez.put(clave, d.linea);
-            } else {
-                String que = d.tipo == TipoToken.SENSOR ? "sensor" : "umbral";
-                err(errores, d.linea, "declaracion duplicada: el " + que + " '"
-                    + d.nombre + "' ya fue declarado en la linea " + primera + ".");
-            }
+    /** Re-declaración del mismo nombre con la misma clase. */
+    private void regla2Duplicadas(TablaSimbolos simbolos, List<String> errores) {
+        for (TablaSimbolos.Duplicado d : simbolos.duplicados()) {
+            Simbolo guardado = simbolos.buscar(d.nombre());
+            if (guardado == null || guardado.clase() != d.clase()) continue;
+            err(errores, d.lineaRepetida(), "declaracion duplicada: el "
+                + d.clase().name().toLowerCase() + " '" + d.nombre()
+                + "' ya fue declarado en la linea " + d.lineaOriginal() + ".");
         }
     }
 
@@ -184,17 +228,18 @@ public class AnalizadorSemantico {
     // =============================================================
 
     /**
-     * En una condición, la expresión de la derecha es el límite fijo.
-     * Un sensor se mide, no fija límites: si la derecha referencia un
-     * sensor declarado, es un error.
+     * En una condición, la expresión de la derecha es el límite fijo. Un canal
+     * medible se mide, no fija límites: si la derecha lo referencia, es un
+     * error. La detección ya no depende del nombre sino de la clase del
+     * símbolo.
      */
-    private void regla3SensorComoUmbral(Programa programa, Set<String> sensores,
-                                        List<String> errores) {
+    private void regla3SensorComoUmbral(Programa programa, List<String> errores) {
+        Set<String> medibles = medibles(programa);
         for (Regla r : programa.reglas) {
             Binaria cond = condicionRelacional(r);
             if (cond == null) continue;
             for (String var : variables(cond.derecha)) {
-                if (!esSensor(var, sensores)) continue;
+                if (!medibles.contains(var)) continue;
                 err(errores, r.linea, "el sensor '" + var
                     + "' no puede usarse como umbral: la expresion derecha de la"
                     + " condicion es un limite fijo y un sensor se mide, no fija"
@@ -208,18 +253,25 @@ public class AnalizadorSemantico {
     // =============================================================
 
     private void regla4UmbralComoSensor(Programa programa, List<String> errores) {
-        Set<String> umbrales = programa.umbrales.keySet();
+        TablaSimbolos simbolos = programa.simbolos;
+        Set<String> medibles = medibles(programa);
         for (Calculo c : programa.calculos) {
-            if (umbrales.contains(c.sensor)) {
-                err(errores, c.linea, "el umbral '" + c.sensor
-                    + "' no puede usarse como sensor: es el objetivo de calcular().");
+            if (!medibles.contains(c.sensor)) {
+                Simbolo s = simbolos.buscar(c.sensor);
+                if (s != null && s.clase() == Simbolo.Clase.UMBRAL) {
+                    err(errores, c.linea, "el umbral '" + c.sensor
+                        + "' no puede usarse como sensor: es el objetivo de calcular().");
+                }
             }
             for (Parametro p : c.parametros) {
-                if (p.nombre != null && p.nombre.equalsIgnoreCase("con")
-                        && umbrales.contains(p.valor)) {
-                    err(errores, c.linea, "el umbral '" + p.valor
-                        + "' no puede usarse como sensor en CON=... (suma de"
-                        + " sensores).");
+                if (!"con".equalsIgnoreCase(p.nombre)) continue;
+                if (!medibles.contains(p.valor)) {
+                    Simbolo s = simbolos.buscar(p.valor);
+                    if (s != null && s.clase() == Simbolo.Clase.UMBRAL) {
+                        err(errores, c.linea, "el umbral '" + p.valor
+                            + "' no puede usarse como sensor en CON=... (suma de"
+                            + " sensores).");
+                    }
                 }
             }
         }
@@ -230,14 +282,13 @@ public class AnalizadorSemantico {
     // =============================================================
 
     /**
-     * Busca el umbral mínimo y el máximo de un sensor aceptando las
-     * variantes S_min / min_S / minS (y su análogo con max), sin
-     * distinguir mayúsculas.
+     * Busca el umbral mínimo y el máximo de un sensor aceptando las variantes
+     * {@code S_min}, {@code min_S} y {@code minS}, sin distinguir
+     * mayúsculas. Es la convención de nombres del lenguaje.
      */
-    private double[] buscarRango(String sensor, Programa programa,
-                                 List<Declaracion> decls) {
-        String min = buscarUmbral(sensor, "min", programa, decls);
-        String max = buscarUmbral(sensor, "max", programa, decls);
+    private double[] buscarRango(String sensor, Programa programa) {
+        String min = buscarUmbral(sensor, "min", programa);
+        String max = buscarUmbral(sensor, "max", programa);
         if (min == null || max == null) return null;
         Double vMin = programa.umbrales.get(min);
         Double vMax = programa.umbrales.get(max);
@@ -245,20 +296,12 @@ public class AnalizadorSemantico {
         return new double[]{vMin, vMax};
     }
 
-    private String buscarUmbral(String sensor, String prefijo, Programa programa,
-                                List<Declaracion> decls) {
+    private String buscarUmbral(String sensor, String prefijo, Programa programa) {
         String[] variantes = {
             sensor + "_" + prefijo,          // voltaje_min
             prefijo + "_" + sensor,          // min_voltaje
             prefijo + sensor                 // minvoltaje
         };
-        for (Declaracion d : decls) {
-            if (d.tipo != TipoToken.UMBRAL) continue;
-            for (String v : variantes) {
-                if (d.nombre.equalsIgnoreCase(v)) return d.nombre;
-            }
-        }
-        // El mapa puede tener el nombre aunque el token no se haya hallado.
         for (String nombre : programa.umbrales.keySet()) {
             for (String v : variantes) {
                 if (nombre.equalsIgnoreCase(v)) return nombre;
@@ -267,23 +310,21 @@ public class AnalizadorSemantico {
         return null;
     }
 
-    private void reglas5y6Rango(Programa programa, List<Declaracion> decls,
-                               List<String> errores) {
-        for (Declaracion d : decls) {
-            if (d.tipo != TipoToken.SENSOR) continue;
-            double[] rango = buscarRango(d.nombre, programa, decls);
+    private void reglas5y6Rango(Programa programa, List<String> errores) {
+        for (Sensor s : programa.sensoresDeclarados) {
+            double[] rango = buscarRango(s.nombre(), programa);
             if (rango == null) continue;
             double min = rango[0], max = rango[1];
 
             if (min >= max) {
-                err(errores, d.linea, "rango invalido del sensor '" + d.nombre
+                err(errores, s.linea(), "rango invalido del sensor '" + s.nombre()
                     + "': el minimo (" + min + ") es mayor o igual que el maximo ("
                     + max + ").");
                 continue;
             }
             if (max - min < MARGEN_SEGURIDAD) {
-                err(errores, d.linea, "la diferencia entre el maximo (" + max
-                    + ") y el minimo (" + min + ") del sensor '" + d.nombre
+                err(errores, s.linea(), "la diferencia entre el maximo (" + max
+                    + ") y el minimo (" + min + ") del sensor '" + s.nombre()
                     + "' es " + (max - min) + ", inferior al margen de seguridad ("
                     + MARGEN_SEGURIDAD + ").");
             }
@@ -317,7 +358,6 @@ public class AnalizadorSemantico {
     //  REGLA 8 — Reglas de sensores contradictorias
     // =============================================================
 
-    /** Condición de la regla si es una comparación, o null. */
     private Binaria condicionRelacional(Regla r) {
         if (r.condicion instanceof Binaria b && esRelacional(b.operador)) return b;
         return null;
@@ -346,8 +386,6 @@ public class AnalizadorSemantico {
         for (Regla r : programa.reglas) {
             Binaria cond = condicionRelacional(r);
             if (cond == null || r.estado == null) continue;
-            // Solo cuando el lado izquierdo es la variable medida y el
-            // límite derecho es un valor fijo (número o umbral).
             if (!(cond.izquierda instanceof Variable var)) continue;
             Double cte = evaluar(cond.derecha, programa.umbrales);
             if (cte == null) continue;
@@ -391,10 +429,6 @@ public class AnalizadorSemantico {
                         if (valor <= 0) {
                             err(errores, c.linea, "frecuencia invalida (" + valor
                                 + "): debe ser positiva y no cero.");
-                        } else if (valor > FRECUENCIA_MUESTREO) {
-                            err(errores, c.linea, "la frecuencia (" + valor
-                                + ") supera la frecuencia de muestreo ("
-                                + FRECUENCIA_MUESTREO + ").");
                         }
                     }
                     case "ventana" -> {
@@ -404,7 +438,7 @@ public class AnalizadorSemantico {
                         }
                     }
                     case "amplitud" -> {
-                        double[] rango = buscarRangoDeclarado(c.sensor, programa);
+                        double[] rango = buscarRango(c.sensor, programa);
                         if (rango != null && valor > (rango[1] - rango[0])) {
                             err(errores, c.linea, "la amplitud (" + valor
                                 + ") excede el rango del sensor '" + c.sensor
@@ -418,36 +452,19 @@ public class AnalizadorSemantico {
         }
     }
 
-    /** Rango [min,max] del sensor declarado, o null si no tiene par. */
-    private double[] buscarRangoDeclarado(String sensor, Programa programa) {
-        String min = null, max = null;
-        for (String nombre : programa.umbrales.keySet()) {
-            String n = nombre.toLowerCase();
-            String s = sensor == null ? "\u0000" : sensor.toLowerCase();
-            if (n.equals(s + "_min") || n.equals("min_" + s) || n.equals("min" + s)) {
-                min = nombre;
-            } else if (n.equals(s + "_max") || n.equals("max_" + s)
-                    || n.equals("max" + s)) {
-                max = nombre;
-            }
-        }
-        if (min == null || max == null) return null;
-        return new double[]{programa.umbrales.get(min), programa.umbrales.get(max)};
-    }
-
     // =============================================================
     //  REGLA 11 — Combinación de magnitudes incompatibles en SUMA
     // =============================================================
 
-    private void regla11Magnitudes(Programa programa, Set<String> sensores,
-                                   List<String> errores) {
+    private void regla11Magnitudes(Programa programa, List<String> errores) {
+        Set<String> medibles = medibles(programa);
         for (Calculo c : programa.calculos) {
             if (!"suma".equalsIgnoreCase(c.operacion)) continue;
-            Map<Magnitud, String> vistas = new LinkedHashMap<>();
+            Map<TipoSensor, String> vistas = new LinkedHashMap<>();
             for (Parametro p : c.parametros) {
                 if (p.nombre == null || !p.nombre.equalsIgnoreCase("con")) continue;
-                if (!esSensor(p.valor, sensores)) continue;
-                Magnitud m = Magnitud.clasificar(p.valor);
+                if (!medibles.contains(p.valor)) continue;
+                TipoSensor m = programa.tipoDe(p.valor);
                 if (m == null) continue;
                 vistas.putIfAbsent(m, p.valor);
             }
@@ -459,34 +476,32 @@ public class AnalizadorSemantico {
     //  REGLA 13 — Variable o identificador no declarado
     // =============================================================
 
-    /**
-     * Se usa un identificador que no fue declarado con `sensor` ni con
-     * `umbral`. El lenguaje distingue mayúsculas, así que la comparación
-     * es exacta. Cubre condiciones, el objetivo de calcular() y los CON=.
-     */
     private void regla13NoDeclarados(Programa programa, List<String> errores) {
-        Set<String> declarados = new LinkedHashSet<>(programa.sensores);
-        declarados.addAll(programa.umbrales.keySet());
+        TablaSimbolos simbolos = programa.simbolos;
 
         for (Regla r : programa.reglas) {
             Set<String> yaVistos = new LinkedHashSet<>();
             for (String var : variables(r.condicion)) {
-                if (declarados.contains(var) || !yaVistos.add(var)) continue;
+                if (simbolos.declarado(var) || !yaVistos.add(var)) continue;
                 err(errores, r.linea, "identificador '" + var
                     + "' no declarado: se usa en la condicion sin haber sido"
-                    + " definido con 'sensor' o 'umbral'.");
+                    + " definido con 'sensor', 'umbral' o 'calcular'.");
             }
         }
 
         for (Calculo c : programa.calculos) {
             if (c.sensor != null && !c.sensor.isEmpty()
-                    && !declarados.contains(c.sensor)) {
+                    && !simbolos.declarado(c.sensor)) {
                 err(errores, c.linea, "identificador '" + c.sensor
-                    + "' no declarado: es el sensor objetivo de calcular().");
+                    + "' no declarado: es el sensor origen de calcular().");
+            }
+            if (c.deriva() && !simbolos.declarado(c.destino)) {
+                err(errores, c.linea, "identificador '" + c.destino
+                    + "' no declarado: es la señal de destino de calcular().");
             }
             for (Parametro p : c.parametros) {
                 if (p.nombre == null || !p.nombre.equalsIgnoreCase("con")) continue;
-                if (declarados.contains(p.valor)) continue;
+                if (simbolos.declarado(p.valor)) continue;
                 err(errores, c.linea, "identificador '" + p.valor
                     + "' no declarado: se usa en CON= sin haber sido definido"
                     + " con 'sensor'.");
@@ -495,25 +510,23 @@ public class AnalizadorSemantico {
     }
 
     // =============================================================
-    //  REGLA 14 — Incompatibilidad de tipos (operaciones que mezclan
-    //             sensores de magnitudes físicas distintas)
+    //  REGLA 14 — Incompatibilidad de tipos
     // =============================================================
 
     /**
-     * En Timotomata la "magnitud física" es el tipo del sensor: operar o
-     * comparar ELECTRICO con TERMICO es incompatibilidad de tipos. Abarca
-     * la aritmética (+ - * /) y la comparación, sea cual sea la posición
-     * del sensor en la expresión. Solo se reporta si AMBAS magnitudes se
-     * reconocen en la tabla de {@link Magnitud}; la parte "asignar" de la
-     * regla la garantiza la gramática (umbral = NUMERO, estado = keyword).
+     * En Timotomata la "magnitud física" es el tipo declarado del canal:
+     * operar o comparar un canal ELÉCTRICO con uno TÉRMICO es una
+     * incompatibilidad de tipos. Abarca la aritmética y la comparación, sea
+     * cual sea la posición.
      */
     private void regla14TiposIncompatibles(Programa programa,
                                            List<String> errores) {
+        Set<String> medibles = medibles(programa);
         for (Regla r : programa.reglas) {
-            Map<Magnitud, String> vistas = new LinkedHashMap<>();
+            Map<TipoSensor, String> vistas = new LinkedHashMap<>();
             for (String var : variables(r.condicion)) {
-                if (!esSensor(var, programa.sensores)) continue;
-                Magnitud m = Magnitud.clasificar(var);
+                if (!medibles.contains(var)) continue;
+                TipoSensor m = programa.tipoDe(var);
                 if (m == null) continue;
                 vistas.putIfAbsent(m, var);
             }
@@ -523,19 +536,16 @@ public class AnalizadorSemantico {
     }
 
     // =============================================================
-    //  REGLA 15 — Llamada a calcular() con argumentos incorrectos
+    //  REGLA 15 — Llamadas a calcular() con argumentos incorrectos
     // =============================================================
 
     /**
      * Cantidad o tipo de parámetros que no coinciden con la firma de la
-     * operación. (Antes esto se lanzaba como error sintáctico desde el
-     * parser; ahora pertenece a la fase semántica.)
+     * operación.
      *
-     * Firmas: SENO/COSENO/CUADRADA → AMPLITUD + FRECUENCIA (2).
-     *         PROMEDIO → VENTANA (1). MAXIMO → sin parámetros.
-     *         SUMA → 2 o más CON.
-     * Los valores numéricos (AMPLITUD/FRECUENCIA/VENTANA) y que CON reciba
-     * un ID los exige la gramática.
+     * <p>Firmas: SENO/COSENO/CUADRADA → AMPLITUD + FRECUENCIA (2).
+     * PROMEDIO → VENTANA (1). MAXIMO → VENTANA (1).
+     * SUMA → 2 o más CON.
      */
     private void regla15LlamadasIncorrectas(Programa programa,
                                             List<String> errores) {
@@ -564,9 +574,11 @@ public class AnalizadorSemantico {
                         + "PROMEDIO exige VENTANA (1 parametro).");
                 }
             } else if (op.equals("maximo")) {
-                if (!c.parametros.isEmpty()) {
+                if (c.parametros.size() != 1 || nVent != 1) {
                     err(errores, c.linea, "llamada con argumentos incorrectos: "
-                        + "MAXIMO no acepta parametros ().");
+                        + "MAXIMO exige VENTANA (1 parametro): el maximo va sobre "
+                        + "una ventana de muestras, como PROMEDIO. Sin ventana "
+                        + "no se sabria sobre que intervalo se toma.");
                 }
             } else if (op.equals("suma")) {
                 if (!soloCon || nCon < 2) {
@@ -581,11 +593,6 @@ public class AnalizadorSemantico {
     //  REGLA 16 — División entre cero constante
     // =============================================================
 
-    /**
-     * El denominador se evalúa en tiempo de compilación y da 0 (número
-     * literal o umbral con valor 0). Los denominadores que dependen de un
-     * sensor no son constantes y no se reportan.
-     */
     private void regla16DivisionPorCero(Programa programa, List<String> errores) {
         for (Regla r : programa.reglas) {
             buscarDivisionPorCero(r.condicion, r.linea, programa.umbrales, errores);
@@ -612,22 +619,134 @@ public class AnalizadorSemantico {
         }
     }
 
+    // =============================================================
+    //  REGLAS 17 a 19 — Física contra la ficha del tipo declarado
+    // =============================================================
+
+    /**
+     * Verificaciones que solo son posibles porque el tipo del sensor se
+     * declara en el lenguaje. Antes no existía información de unidad, rango ni
+     * banda, así que ninguna de ellas podía escribirse.
+     */
+    private void reglas17a19Fisica(Programa programa, List<String> errores) {
+        Set<String> medibles = medibles(programa);
+        double hzPrograma = frecuenciaMuestreo(programa);
+
+        // REGLA 17 — cada umbral se valida contra el tipo que él mismo
+        // declara, no contra el nombre de la variable.
+        for (Simbolo s : programa.simbolos.todos()) {
+            if (s.clase() != Simbolo.Clase.UMBRAL) continue;
+            TipoSensor t = s.tipo();
+            if (t == null || s.valor() == null) continue;
+            if (t.enRango(s.valor())) continue;
+            err(errores, s.linea(), "el umbral '" + s.nombre() + "' (" + s.valor()
+                + ") esta fuera del rango representable por un sensor "
+                + t.etiqueta() + " [" + t.rangoMin() + ", " + t.rangoMax()
+                + " " + t.unidad() + "].");
+        }
+
+        for (Calculo c : programa.calculos) {
+            if (!medibles.contains(c.sensor)) continue;
+            TipoSensor t = programa.tipoDe(c.sensor);
+            if (t == null) continue;
+
+            for (Parametro p : c.parametros) {
+                String nombre = p.nombre == null ? "" : p.nombre.toLowerCase();
+                Double valor = numero(p.valor);
+                // Los valores no positivos ya los reporta la regla 10.
+                if (valor == null || valor <= 0) continue;
+
+                // REGLA 18 — la frecuencia debe ser observable. El límite real
+                // es el menor entre la banda del transductor y la mitad de la
+                // frecuencia de muestreo del programa (criterio de Nyquist).
+                if (nombre.equals("frecuencia")) {
+                    double limiteTransductor = t.bandaMaxima();
+                    double limiteNyquist = hzPrograma / 2.0;
+                    double limite = Math.min(limiteTransductor, limiteNyquist);
+                    if (valor <= limite) continue;
+                    String causa = limiteNyquist < limiteTransductor
+                        ? "el programa muestrea cada " + programa.muestreo
+                            + " s (" + formatoHz(hzPrograma) + " Hz), asi que por"
+                            + " Nyquist no puede observar mas de "
+                            + formatoHz(limiteNyquist) + " Hz"
+                        : "el transductor solo sigue hasta "
+                            + formatoHz(limiteTransductor) + " Hz";
+                    err(errores, c.linea, "frecuencia (" + formatoHz(valor)
+                        + " Hz) no observable en un sensor " + t.etiqueta() + ": "
+                        + causa + ".");
+                }
+
+                // REGLA 19 — la ventana debe cubrir tiempo suficiente para que
+                // el sensor responda.
+                if (nombre.equals("ventana") && valor < t.ventanaMinima()) {
+                    double segundos = valor * t.periodoMuestreo();
+                    err(errores, c.linea, "ventana (" + entero(valor)
+                        + ") inferior al minimo fisico para " + t.etiqueta() + " ("
+                        + t.ventanaMinima() + " muestras): con un transductor de "
+                        + formatoHz(t.frecuenciaMuestreo()) + " Hz, " + entero(valor)
+                        + " muestras cubren " + formatoSegundos(segundos)
+                        + " y el sensor no puede responder tan rapido.");
+                }
+            }
+        }
+    }
+
+    private static String formatoHz(double hz) {
+        if (hz == Math.floor(hz) && !Double.isInfinite(hz)) return String.valueOf((long) hz);
+        return String.format("%.3f", hz).replaceAll("0+$", "").replaceAll("\\.$", "");
+    }
+
+    private static String formatoSegundos(double s) {
+        if (s < 1.0) return String.format("%.2f s", s);
+        if (s < 60.0) return String.format("%.1f s", s);
+        return String.format("%.1f min", s / 60.0);
+    }
+
+    /** Numero sin decimales cuando es entero. */
+    private static String entero(double v) {
+        return (v == Math.floor(v) && !Double.isInfinite(v))
+            ? String.valueOf((long) v) : String.valueOf(v);
+    }
+
+    // =============================================================
+    //  REGLA 20 — Tipo ausente
+    // =============================================================
+
+    /**
+     * Un canal medible usado en una condición o en `CON=` debe tener tipo
+     * declarado. Antes esto no era un error porque el tipo se deducía del
+     * nombre y, si no se deducía, la verificación se saltaba en silencio.
+     */
+    private void regla20TiposAusentes(Programa programa, List<String> errores) {
+        Set<String> sinTipo = new LinkedHashSet<>();
+        for (Simbolo s : programa.simbolos.todos()) {
+            if (esMedible(s) && s.tipo() == null) sinTipo.add(s.nombre());
+        }
+        if (sinTipo.isEmpty()) return;
+
+        for (String nombre : sinTipo) {
+            Simbolo s = programa.simbolos.buscar(nombre);
+            err(errores, s.linea(), "el sensor '" + nombre + "' no tiene tipo"
+                + " declarado: no se pueden verificar unidades, rango ni"
+                + " frecuencia sin el.");
+        }
+    }
+
     private void reportarMagnitudes(List<String> errores, int linea,
-                                    String contexto, Map<Magnitud, String> vistas) {
+                                    String contexto, Map<TipoSensor, String> vistas) {
         if (vistas.size() < 2) return;
-        Iterator<Map.Entry<Magnitud, String>> it = vistas.entrySet().iterator();
-        Map.Entry<Magnitud, String> a = it.next();
-        Map.Entry<Magnitud, String> b = it.next();
+        Iterator<Map.Entry<TipoSensor, String>> it = vistas.entrySet().iterator();
+        Map.Entry<TipoSensor, String> a = it.next();
+        Map.Entry<TipoSensor, String> b = it.next();
         err(errores, linea, contexto + " combina sensores de magnitudes"
-            + " incompatibles: '" + a.getValue() + "' (" + a.getKey()
-            + ") y '" + b.getValue() + "' (" + b.getKey() + ").");
+            + " incompatibles: '" + a.getValue() + "' (" + a.getKey().etiqueta()
+            + ") y '" + b.getValue() + "' (" + b.getKey().etiqueta() + ").");
     }
 
     // =============================================================
     //  EXPRESIONES: variables, evaluación y intervalos
     // =============================================================
 
-    /** Nombres de variable que aparecen en la expresión (en orden). */
     private List<String> variables(Expresion e) {
         List<String> vars = new ArrayList<>();
         recogerVariables(e, vars);
@@ -646,10 +765,8 @@ public class AnalizadorSemantico {
         } else if (e instanceof Abs a) {
             recogerVariables(a.expresion, vars);
         }
-        // Numero no aporta variables
     }
 
-    /** Evalúa la expresión; null si no es una constante (sensor/desconocida). */
     private Double evaluar(Expresion e, Map<String, Double> umbrales) {
         if (e == null) return null;
         if (e instanceof Numero n) return n.valor;
@@ -680,8 +797,8 @@ public class AnalizadorSemantico {
 
     /** Intervalo de valores de una variable para el que la condición se cumple. */
     private static class Intervalo {
-        double lo, hi;
-        boolean loInc, hiInc;
+        final double lo, hi;
+        final boolean loInc, hiInc;
         Intervalo(double lo, boolean loInc, double hi, boolean hiInc) {
             this.lo = lo; this.loInc = loInc; this.hi = hi; this.hiInc = hiInc;
         }
@@ -727,7 +844,6 @@ public class AnalizadorSemantico {
         return lo < hi || (lo == hi && loInc && hiInc);
     }
 
-    /** Convierte un lexema numérico a Double (null si no lo es). */
     private static Double numero(String lexema) {
         if (lexema == null) return null;
         try {

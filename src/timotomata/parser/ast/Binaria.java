@@ -5,6 +5,9 @@ public class Binaria implements Expresion {
     public String operador;
     public Expresion derecha;
 
+    /** Línea del operador. */
+    public int linea;
+
     public Binaria(Expresion izquierda, String operador, Expresion derecha) {
         this.izquierda = izquierda;
         this.operador = operador;

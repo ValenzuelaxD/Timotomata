@@ -14,20 +14,19 @@
    - [Gramática en BNF](#21-gramática-en-bnf)
    - [Símbolos](#22-símbolos)
    - [Producciones](#23-producciones)
-   - [Conjuntos FIRST](#24-conjuntos-first)
-   - [Conjuntos FOLLOW](#25-conjuntos-follow)
-   - [Tabla de Parsing LL(1)](#26-tabla-de-parsing-ll1)
-   - [Algoritmo de Parsing](#27-algoritmo-de-parsing)
+   - [Conjuntos FIRST y FOLLOW](#24-conjuntos-first-y-follow)
+   - [Tabla de Parsing LL(1)](#25-tabla-de-parsing-ll1)
+   - [Algoritmo de Parsing](#26-algoritmo-de-parsing)
 
 ---
 
 # 1. Analizador Léxico (AFD)
 
-El analizador léxico está implementado como un **Autómata Finito Determinista (AFD)** con **13 estados** y **17 clases de caracteres** en su alfabeto.
+El analizador léxico está implementado como un **Autómata Finito Determinista (AFD)** con **13 estados** y **19 clases de caracteres** en su alfabeto.
 
 ## 1.1 Alfabeto (clases de caracteres)
 
-El alfabeto de entrada se divide en **17 clases**. Cada carácter se clasifica en una única clase, y la transición se determina por `TABLA_TRANS[estado][clase]`.
+El alfabeto de entrada se divide en **19 clases**. Cada carácter se clasifica en una única clase, y la transición se determina por `TABLA_TRANS[estado][clase]`.
 
 | # | Clase | Caracteres que incluye | Símbolo en código |
 |---|-------|----------------------|-------------------|
@@ -47,7 +46,9 @@ El alfabeto de entrada se divide en **17 clases**. Cada carácter se clasifica e
 | 13 | `PUNTOCOMA` | `;` | Fin de sentencia |
 | 14 | `PIZQ` | `(` | Paréntesis izquierdo |
 | 15 | `PDER` | `)` | Paréntesis derecho |
-| 16 | `OTRO` | cualquier otro | Caracteres no válidos (`@`, `#`, `$`, etc.) |
+| 16 | `COMA_` | `,` | Separador de argumentos |
+| 17 | `DOSPUNTOS` | `:` | Declarador de tipo de sensor |
+| 18 | `OTRO` | cualquier otro | Caracteres no válidos (`@`, `#`, `$`, etc.) |
 
 ## 1.2 Estados del AFD
 
@@ -278,9 +279,19 @@ El analizador sintáctico es un **parser recursivo descendente basado en una tab
 PROGRAMA      → SENTENCIA PROGRAMA
               | ε
 
-SENTENCIA     → SENSOR ID PUNTO_COMA
-              | UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA
+SENTENCIA     → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD PUNTO_COMA
+              | UMBRAL ID DOS_PUNTOS TIPO_MAGNITUD ASIGNACION VALOR_UMBRAL PUNTO_COMA
               | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
+              | CALCULAR PAREN_IZQ ID COMA TIPO_OP DESTINO_OP PAREN_DER PUNTO_COMA
+              | ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
+              | SINO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
+              | MUESTREO ASIGNACION NUMERO PUNTO_COMA
+
+TIPO_MAGNITUD → ELECTRICO | TERMICO | LUMINICO
+              | MECANICO | QUIMICO | HIDRAULICO
+
+DESTINO_OP    → COMA ID
+              | ε
 
 VALOR_UMBRAL  → MENOS NUMERO
               | NUMERO
@@ -314,7 +325,7 @@ OP_REL        → MAYOR | MENOR | IGUAL_IGUAL
 
 ## 2.2 Símbolos
 
-### No terminales (10)
+### No terminales (16) — 52 producciones
 
 | ID | Nombre | Significado |
 |:--:|--------|-------------|
@@ -328,8 +339,14 @@ OP_REL        → MAYOR | MENOR | IGUAL_IGUAL
 | 7 | `TERMINO_SIG` | Continuación de término (recursión derecha para * y /) |
 | 8 | `FACTOR` | Unidad básica de expresión (número, variable, abs, negación) |
 | 9 | `OP_REL` | Operador relacional |
+| 10 | `TIPO_OP` | Operación de cálculo (seno, promedio, suma…) |
+| 11 | `LISTA_PARAMS` | Lista de parámetros de la operación |
+| 12 | `PARAM` | Un parámetro con nombre |
+| 13 | `LISTA_PARAMS_SIG` | Continuación de la lista de parámetros |
+| 14 | `TIPO_MAGNITUD` | Tipo de sensor declarado |
+| 15 | `DESTINO_OP` | Señal de destino del cálculo, o ε |
 
-### Terminales (24 tokens)
+### Terminales (45 tokens)
 
 | Token | Cómo se escribe |
 |-------|:---------------:|
@@ -338,10 +355,17 @@ OP_REL        → MAYOR | MENOR | IGUAL_IGUAL
 | `SI` | `si` |
 | `ENTONCES` | `entonces` |
 | `ESTADO` | `estado` |
+| `SINO` | `sino` |
+| `MUESTREO` | `muestreo` |
+| `DOS_PUNTOS` | `:` |
 | `ABS` | `abs` |
 | `ID` | cualquier identificador |
 | `NUMERO` | cualquier número |
 | `ESTADO_SISTEMA` | `normal`, `pico`, `caida`, `inestable` |
+| `CALCULAR` | `calcular` |
+| `SENO` `COSENO` `CUADRADA` `PROMEDIO` `MAXIMO` `SUMA` | nombres de operación |
+| `AMPLITUD` `FRECUENCIA` `VENTANA` `CON` | nombres de parámetro |
+| `ELECTRICO` `TERMICO` `LUMINICO` `MECANICO` `QUIMICO` `HIDRAULICO` | tipos de sensor |
 | `MAYOR` | `>` |
 | `MENOR` | `<` |
 | `IGUAL_IGUAL` | `==` |
@@ -354,22 +378,26 @@ OP_REL        → MAYOR | MENOR | IGUAL_IGUAL
 | `DIV` | `/` |
 | `ASIGNACION` | `=` |
 | `PUNTO_COMA` | `;` |
+| `COMA` | `,` |
 | `PAREN_IZQ` | `(` |
 | `PAREN_DER` | `)` |
+| `DOS_PUNTOS` | `:` |
 | `EOF` | fin de archivo |
 
 ## 2.3 Producciones
 
-Total: **41 producciones** (14 no terminales, 36 tokens).
+| No terminales | Producciones | Tokens |
+|:--------------:|:------------:|:------:|
+| 16 | 52 | 45 |
 
 | ID | Producción |
 |:--:|------------|
 | 0 | `PROGRAMA → SENTENCIA PROGRAMA` |
 | 1 | `PROGRAMA → ε` |
-| 2 | `SENTENCIA → SENSOR ID PUNTO_COMA` |
-| 3 | `SENTENCIA → UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA` |
+| 2 | `SENTENCIA → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD PUNTO_COMA` |
+| 3 | `SENTENCIA → UMBRAL ID DOS_PUNTOS TIPO_MAGNITUD ASIGNACION VALOR_UMBRAL PUNTO_COMA` |
 | 4 | `SENTENCIA → SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
-| 5 | `SENTENCIA → CALCULAR PAREN_IZQ ID COMA TIPO_OP PAREN_DER PUNTO_COMA` |
+| 5 | `SENTENCIA → CALCULAR PAREN_IZQ ID COMA TIPO_OP DESTINO_OP PAREN_DER PUNTO_COMA` |
 | 6 | `VALOR_UMBRAL → MENOS NUMERO` |
 | 7 | `VALOR_UMBRAL → NUMERO` |
 | 8 | `CONDICION → EXPRESION OP_REL EXPRESION` |
@@ -405,103 +433,54 @@ Total: **41 producciones** (14 no terminales, 36 tokens).
 | 38 | `PARAM → FRECUENCIA ASIGNACION NUMERO` |
 | 39 | `PARAM → VENTANA ASIGNACION NUMERO` |
 | 40 | `PARAM → CON ASIGNACION ID` |
+| 41 | `TIPO_MAGNITUD → ELECTRICO` |
+| 42 | `TIPO_MAGNITUD → TERMICO` |
+| 43 | `TIPO_MAGNITUD → LUMINICO` |
+| 44 | `TIPO_MAGNITUD → MECANICO` |
+| 45 | `TIPO_MAGNITUD → QUIMICO` |
+| 46 | `TIPO_MAGNITUD → HIDRAULICO` |
+| 47 | `DESTINO_OP → COMA ID` |
+| 48 | `DESTINO_OP → ε` |
+| 49 | `SENTENCIA → ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
+| 50 | `SENTENCIA → MUESTREO ASIGNACION NUMERO PUNTO_COMA` |
+| 51 | `SENTENCIA → SINO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
 
-> Tabla generada desde `Gramatica.PRODUCCIONES`; los identificadores coinciden
-> con las constantes `P_*` del código.
+> Generada desde `Gramatica.PRODUCCIONES`; los identificadores coinciden con
+> las constantes `P_*` del código.
 
-## 2.4 Conjuntos FIRST
+## 2.4 Conjuntos FIRST y FOLLOW
 
-Los conjuntos FIRST contienen los terminales que pueden aparecer al inicio de una derivación de cada no-terminal. ε indica que el no-terminal puede derivar la cadena vacía.
+FIRST contiene los terminales que pueden iniciar una derivación; FOLLOW, los
+que pueden aparecer inmediatamente después.
 
-| No terminal | FIRST | ¿ε? |
-|:-----------:|-------|:---:|
-| `PROGRAMA` | `{ SENSOR, UMBRAL, SI, CALCULAR }` | ✅ |
-| `SENTENCIA` | `{ SENSOR, UMBRAL, SI, CALCULAR }` | ❌ |
-| `VALOR_UMBRAL` | `{ NUMERO, MENOS }` | ❌ |
-| `CONDICION` | `{ ABS, ID, NUMERO, MENOS }` | ❌ |
-| `EXPRESION` | `{ ABS, ID, NUMERO, MENOS }` | ❌ |
-| `EXPRESION_SIG` | `{ MAS, MENOS }` | ✅ |
-| `TERMINO` | `{ ABS, ID, NUMERO, MENOS }` | ❌ |
-| `TERMINO_SIG` | `{ POR, DIV }` | ✅ |
-| `FACTOR` | `{ ABS, ID, NUMERO, MENOS }` | ❌ |
-| `OP_REL` | `{ MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE }` | ❌ |
-| `TIPO_OP` | `{ SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO, SUMA }` | ❌ |
-| `LISTA_PARAMS` | `{ AMPLITUD, FRECUENCIA, VENTANA, CON }` | ✅ |
-| `LISTA_PARAMS_SIG` | `{ COMA }` | ✅ |
-| `PARAM` | `{ AMPLITUD, FRECUENCIA, VENTANA, CON }` | ❌ |
+| No terminal | FIRST | ¿ε? | FOLLOW |
+|:-----------:|-------|:---:|--------|
+| `PROGRAMA` | SENSOR, UMBRAL, SI, ESTADO, SINO, MUESTREO, CALCULAR | sí | EOF |
+| `SENTENCIA` | SENSOR, UMBRAL, SI, ESTADO, SINO, MUESTREO, CALCULAR | no | SENSOR, UMBRAL, SI, ESTADO, SINO, MUESTREO, CALCULAR, EOF |
+| `VALOR_UMBRAL` | NUMERO, MENOS | no | PUNTO_COMA |
+| `CONDICION` | ABS, ID, NUMERO, MENOS | no | ENTONCES |
+| `EXPRESION` | ABS, ID, NUMERO, MENOS | no | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PAREN_DER |
+| `EXPRESION_SIG` | MAS, MENOS | sí | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PAREN_DER |
+| `TERMINO` | ABS, ID, NUMERO, MENOS | no | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, PAREN_DER |
+| `TERMINO_SIG` | POR, DIV | sí | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, PAREN_DER |
+| `FACTOR` | ABS, ID, NUMERO, MENOS | no | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, POR, DIV, PAREN_DER |
+| `OP_REL` | MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE | no | ABS, ID, NUMERO, MENOS |
+| `TIPO_OP` | SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO, SUMA | no | PAREN_DER, COMA |
+| `LISTA_PARAMS` | AMPLITUD, FRECUENCIA, VENTANA, CON | sí | PAREN_DER |
+| `PARAM` | AMPLITUD, FRECUENCIA, VENTANA, CON | no | PAREN_DER, COMA |
+| `LISTA_PARAMS_SIG` | COMA | sí | PAREN_DER |
+| `TIPO_MAGNITUD` | ELECTRICO, TERMICO, LUMINICO, MECANICO, QUIMICO, HIDRAULICO | no | PUNTO_COMA |
+| `DESTINO_OP` | COMA | sí | PAREN_DER |
 
-### FIRST calculado por producción
+## 2.5 Tabla de Parsing LL(1)
 
-Para cada producción, FIRST(cuerpo) se toma hasta el primer terminal o el
-primer no-terminal que no deriva ε. Las de cuerpo ε heredan FIRST de su
-cabecera.
-
-| Producción | Cuerpo | FIRST(cuerpo) |
-|:----------:|--------|:-------------:|
-| 0 | `SENTENCIA PROGRAMA` | `{ SENSOR, UMBRAL, SI, CALCULAR }` |
-| 1 | `ε` | `{ ε }` |
-| 2 | `SENSOR ID PUNTO_COMA` | `{ SENSOR }` |
-| 3 | `UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA` | `{ UMBRAL }` |
-| 4 | `SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` | `{ SI }` |
-| 5 | `CALCULAR PAREN_IZQ ID COMA TIPO_OP PAREN_DER PUNTO_COMA` | `{ CALCULAR }` |
-| 6 | `MENOS NUMERO` | `{ MENOS }` |
-| 7 | `NUMERO` | `{ NUMERO }` |
-| 8 | `EXPRESION OP_REL EXPRESION` | `{ ABS, ID, NUMERO, MENOS }` |
-| 9 | `TERMINO EXPRESION_SIG` | `{ ABS, ID, NUMERO, MENOS }` |
-| 10 | `MAS TERMINO EXPRESION_SIG` | `{ MAS }` |
-| 11 | `MENOS TERMINO EXPRESION_SIG` | `{ MENOS }` |
-| 12 | `ε` | `{ ε }` |
-| 13 | `FACTOR TERMINO_SIG` | `{ ABS, ID, NUMERO, MENOS }` |
-| 14 | `POR FACTOR TERMINO_SIG` | `{ POR }` |
-| 15 | `DIV FACTOR TERMINO_SIG` | `{ DIV }` |
-| 16 | `ε` | `{ ε }` |
-| 17 | `NUMERO` | `{ NUMERO }` |
-| 18 | `ID` | `{ ID }` |
-| 19 | `ABS PAREN_IZQ EXPRESION PAREN_DER` | `{ ABS }` |
-| 20 | `MENOS FACTOR` | `{ MENOS }` |
-| 21–26 | `MAYOR`, `MENOR`, `IGUAL_IGUAL`, `MAYOR_IGUAL`, `MENOR_IGUAL`, `DIFERENTE` | cada uno su respectivo terminal |
-| 27–32 | `SENO`, `COSENO`, `CUADRADA`, `PROMEDIO`, `MAXIMO`, `SUMA` (seguido de `PAREN_IZQ`) | cada uno su respectivo terminal |
-| 33 | `PARAM LISTA_PARAMS_SIG` | `{ AMPLITUD, FRECUENCIA, VENTANA, CON }` |
-| 34 | `ε` | `{ ε }` |
-| 35 | `COMA LISTA_PARAMS` | `{ COMA }` |
-| 36 | `ε` | `{ ε }` |
-| 37 | `AMPLITUD ASIGNACION NUMERO` | `{ AMPLITUD }` |
-| 38 | `FRECUENCIA ASIGNACION NUMERO` | `{ FRECUENCIA }` |
-| 39 | `VENTANA ASIGNACION NUMERO` | `{ VENTANA }` |
-| 40 | `CON ASIGNACION ID` | `{ CON }` |
-
-## 2.5 Conjuntos FOLLOW
-
-Los conjuntos FOLLOW contienen los terminales que pueden aparecer inmediatamente después de cada no-terminal. `EOF` representa el fin del archivo.
-
-| No terminal | FOLLOW |
-|:-----------:|--------|
-| `PROGRAMA` | `{ EOF }` |
-| `SENTENCIA` | `{ SENSOR, UMBRAL, SI, CALCULAR, EOF }` |
-| `VALOR_UMBRAL` | `{ PUNTO_COMA }` |
-| `CONDICION` | `{ ENTONCES }` |
-| `EXPRESION` | `{ ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PAREN_DER }` |
-| `EXPRESION_SIG` | `{ ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PAREN_DER }` |
-| `TERMINO` | `{ ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, PAREN_DER }` |
-| `TERMINO_SIG` | `{ ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, PAREN_DER }` |
-| `FACTOR` | `{ ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, POR, DIV, PAREN_DER }` |
-| `OP_REL` | `{ ABS, ID, NUMERO, MENOS }` |
-| `TIPO_OP` | `{ PAREN_DER }` |
-| `LISTA_PARAMS` | `{ PAREN_DER }` |
-| `LISTA_PARAMS_SIG` | `{ PAREN_DER }` |
-| `PARAM` | `{ PAREN_DER, COMA }` |
-
-## 2.6 Tabla de Parsing LL(1)
-
-La tabla `TABLA[no_terminal][terminal]` indica qué producción aplicar (`-1` =
-error sintáctico). Se lista por no-terminal en forma `terminal → producción`;
-**toda pareja no listada vale `-1`**. Es equivalente a la matriz completa, pero
-evita repetir 36 columnas para los 14 no terminales.
+`TABLA[no_terminal][terminal]` indica qué producción aplicar (`-1` = error
+sintáctico). Se lista solo lo no vacío; **toda pareja no listada vale `-1`**.
 
 | No terminal | Terminal → producción |
 |:-----------:|:---------------------|
-| `PROGRAMA` | `SENSOR`→0, `UMBRAL`→0, `SI`→0, `CALCULAR`→0, `EOF`→1 |
-| `SENTENCIA` | `SENSOR`→2, `UMBRAL`→3, `SI`→4, `CALCULAR`→5 |
+| `PROGRAMA` | `SENSOR`→0, `UMBRAL`→0, `SI`→0, `ESTADO`→0, `SINO`→0, `MUESTREO`→0, `CALCULAR`→0, `EOF`→1 |
+| `SENTENCIA` | `SENSOR`→2, `UMBRAL`→3, `SI`→4, `ESTADO`→49, `SINO`→51, `MUESTREO`→50, `CALCULAR`→5 |
 | `VALOR_UMBRAL` | `NUMERO`→7, `MENOS`→6 |
 | `CONDICION` | `ABS`→8, `ID`→8, `NUMERO`→8, `MENOS`→8 |
 | `EXPRESION` | `ABS`→9, `ID`→9, `NUMERO`→9, `MENOS`→9 |
@@ -514,23 +493,26 @@ evita repetir 36 columnas para los 14 no terminales.
 | `LISTA_PARAMS` | `AMPLITUD`→33, `FRECUENCIA`→33, `VENTANA`→33, `CON`→33, `PAREN_DER`→34 |
 | `LISTA_PARAMS_SIG` | `COMA`→35, `PAREN_DER`→36 |
 | `PARAM` | `AMPLITUD`→37, `FRECUENCIA`→38, `VENTANA`→39, `CON`→40 |
+| `TIPO_MAGNITUD` | `ELECTRICO`→41, `TERMICO`→42, `LUMINICO`→43, `MECANICO`→44, `QUIMICO`→45, `HIDRAULICO`→46 |
+| `DESTINO_OP` | `COMA`→47, `PAREN_DER`→48 |
 
-*Nota: no hay ninguna celda con más de una producción para el mismo terminal,
-es decir, la gramática es LL(1) efectiva.*
-
-*Tabla generada desde `Gramatica.TABLA`.*
-
+No hay ninguna celda con dos producciones para el mismo terminal: **la
+gramática es LL(1) efectiva.** Los conjuntos se calculan por punto fijo en
+`Gramatica.calcularFIRST()` / `calcularFOLLOW()`, y la tabla se arma en
+`construirTabla()`, así que no pueden desviarse de la gramática a mano.
 ### Ejemplo de uso de la tabla
 
-Para parsear `sensor voltaje;`:
+Para parsear `sensor voltaje : ELECTRICO;`:
 
 1. `PROGRAMA`, lookahead = `SENSOR` → producción 0 (`PROGRAMA → SENTENCIA PROGRAMA`)
-2. `SENTENCIA`, lookahead = `SENSOR` → producción 2 (`SENTENCIA → SENSOR ID PUNTO_COMA`)
-3. Se consumen `SENSOR`, `ID`, `PUNTO_COMA`
-4. `PROGRAMA`, lookahead = `EOF` → producción 1 (`PROGRAMA → ε`)
-5. Parseo completado.
+2. `SENTENCIA`, lookahead = `SENSOR` → producción 2 (`SENTENCIA → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD PUNTO_COMA`)
+3. Se consumen `SENSOR`, `ID`, `DOS_PUNTOS`
+4. `TIPO_MAGNITUD`, lookahead = `ELECTRICO` → producción 41
+5. Se consumen `PUNTO_COMA`
+6. `PROGRAMA`, lookahead = `EOF` → producción 1 (`PROGRAMA → ε`)
+7. Parseo completado.
 
-## 2.7 Algoritmo de Parsing
+## 2.6 Algoritmo de Parsing
 
 El parser implementa un **recursivo descendente table-driven**. Cada no-terminal es un método que:
 

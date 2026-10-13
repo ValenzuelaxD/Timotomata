@@ -12,10 +12,19 @@ import timotomata.lexer.TipoToken;
  *   PROGRAMA      → SENTENCIA PROGRAMA
  *                 | ε
  *
- *   SENTENCIA     → SENSOR ID PUNTO_COMA
- *                 | UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA
+ *   SENTENCIA     → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD PUNTO_COMA
+ *                 | UMBRAL ID DOS_PUNTOS TIPO_MAGNITUD ASIGNACION VALOR_UMBRAL PUNTO_COMA
  *                 | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
- *                 | CALCULAR PAREN_IZQ ID COMA TIPO_OP PAREN_DER PUNTO_COMA
+ *                 | CALCULAR PAREN_IZQ ID COMA TIPO_OP DESTINO_OP PAREN_DER PUNTO_COMA
+ *                 | ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
+ *                 | SINO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
+ *                 | MUESTREO ASIGNACION NUMERO PUNTO_COMA
+ *
+ *   TIPO_MAGNITUD  → ELECTRICO | TERMICO | LUMINICO
+ *                 | MECANICO | QUIMICO | HIDRAULICO
+ *
+ *   DESTINO_OP     → COMA ID
+ *                 | ε
  *
  *   VALOR_UMBRAL  → MENOS NUMERO
  *                 | NUMERO
@@ -77,15 +86,18 @@ public class Gramatica {
         TIPO_OP       = 10,
         LISTA_PARAMS  = 11,
         PARAM         = 12,
-        LISTA_PARAMS_SIG = 13;
+        LISTA_PARAMS_SIG = 13,
+        TIPO_MAGNITUD = 14,
+        DESTINO_OP    = 15;
 
-    public static final int NUM_NT = 14;
+    public static final int NUM_NT = 16;
 
     public static final String[] NOMBRES_NT = {
         "PROGRAMA", "SENTENCIA", "VALOR_UMBRAL",
         "CONDICION", "EXPRESION", "EXPRESION_SIG",
         "TERMINO", "TERMINO_SIG", "FACTOR", "OP_REL",
-        "TIPO_OP", "LISTA_PARAMS", "PARAM", "LISTA_PARAMS_SIG"
+        "TIPO_OP", "LISTA_PARAMS", "PARAM", "LISTA_PARAMS_SIG",
+        "TIPO_MAGNITUD", "DESTINO_OP"
     };
 
     
@@ -132,9 +144,20 @@ public class Gramatica {
         P_PARAM_AMPL      = 37,
         P_PARAM_FREC      = 38,
         P_PARAM_VENT      = 39,
-        P_PARAM_CON       = 40;
+        P_PARAM_CON       = 40,
+        P_TIPO_ELECTRICO  = 41,
+        P_TIPO_TERMICO    = 42,
+        P_TIPO_LUMINICO   = 43,
+        P_TIPO_MECANICO   = 44,
+        P_TIPO_QUIMICO    = 45,
+        P_TIPO_HIDRAULICO = 46,
+        P_DEST_ID         = 47,
+        P_DEST_EPS        = 48,
+        P_SENT_ESTADO     = 49,
+        P_SENT_MUESTREO   = 50,
+        P_SENT_SINO       = 51;
 
-    public static final int NUM_PROD = 41;
+    public static final int NUM_PROD = 52;
 
     
     //  CODIFICACIÓN DE SÍMBOLOS
@@ -155,8 +178,10 @@ public class Gramatica {
         /*  1 */ { NT(PROGRAMA) },                                    // ε
 
         /*  2 */ { NT(SENTENCIA),    T(TipoToken.SENSOR),       T(TipoToken.ID),
+                                       T(TipoToken.DOS_PUNTOS), NT(TIPO_MAGNITUD),
                                        T(TipoToken.PUNTO_COMA) },
         /*  3 */ { NT(SENTENCIA),    T(TipoToken.UMBRAL),       T(TipoToken.ID),
+                                       T(TipoToken.DOS_PUNTOS), NT(TIPO_MAGNITUD),
                                        T(TipoToken.ASIGNACION),  NT(VALOR_UMBRAL),
                                        T(TipoToken.PUNTO_COMA) },
         /*  4 */ { NT(SENTENCIA),    T(TipoToken.SI),           NT(CONDICION),
@@ -165,7 +190,7 @@ public class Gramatica {
                                        T(TipoToken.PUNTO_COMA) },
         /*  5 */ { NT(SENTENCIA),    T(TipoToken.CALCULAR),     T(TipoToken.PAREN_IZQ),
                                        T(TipoToken.ID),          T(TipoToken.COMA),
-                                       NT(TIPO_OP),
+                                       NT(TIPO_OP),              NT(DESTINO_OP),
                                        T(TipoToken.PAREN_DER),   T(TipoToken.PUNTO_COMA) },
 
         /*  6 */ { NT(VALOR_UMBRAL), T(TipoToken.MENOS),       T(TipoToken.NUMERO) },
@@ -227,6 +252,23 @@ public class Gramatica {
                                        T(TipoToken.NUMERO) },
         /* 40 */ { NT(PARAM),        T(TipoToken.CON),         T(TipoToken.ASIGNACION),
                                        T(TipoToken.ID) },
+
+        /* 41 */ { NT(TIPO_MAGNITUD), T(TipoToken.ELECTRICO) },
+        /* 42 */ { NT(TIPO_MAGNITUD), T(TipoToken.TERMICO) },
+        /* 43 */ { NT(TIPO_MAGNITUD), T(TipoToken.LUMINICO) },
+        /* 44 */ { NT(TIPO_MAGNITUD), T(TipoToken.MECANICO) },
+        /* 45 */ { NT(TIPO_MAGNITUD), T(TipoToken.QUIMICO) },
+        /* 46 */ { NT(TIPO_MAGNITUD), T(TipoToken.HIDRAULICO) },
+
+        /* 47 */ { NT(DESTINO_OP),   T(TipoToken.COMA),  T(TipoToken.ID) },
+        /* 48 */ { NT(DESTINO_OP) },                               // ε
+
+        /* 49 */ { NT(SENTENCIA),    T(TipoToken.ESTADO),      T(TipoToken.ASIGNACION),
+                                       T(TipoToken.ESTADO_SISTEMA), T(TipoToken.PUNTO_COMA) },
+        /* 50 */ { NT(SENTENCIA),    T(TipoToken.MUESTREO),    T(TipoToken.ASIGNACION),
+                                       T(TipoToken.NUMERO),        T(TipoToken.PUNTO_COMA) },
+        /* 51 */ { NT(SENTENCIA),    T(TipoToken.SINO),        T(TipoToken.ASIGNACION),
+                                       T(TipoToken.ESTADO_SISTEMA), T(TipoToken.PUNTO_COMA) },
     };
 
     

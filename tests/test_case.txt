@@ -1,15 +1,19 @@
-// Palabras reservadas en diferentes capitalizaciones
-Sensor Voltaje;
-SENSOR Corriente;
-sensor Frecuencia;
-UMBRAL Maximo = 200;
-Umbral Minimo = 10;
-umbral Medio = 50;
+// Palabras reservadas y tipos en diferentes capitalizaciones.
+// Las PALABRAS son insensibles a mayusculas; los IDENTIFICADORES no.
+// Por eso `Voltaje` y `valor`/`Valor` son nombres distintos de `voltaje`.
+// Esperado: 0 lexicos, 0 sintacticos, 3 semanticos (identificadores no declarados).
+Sensor     Voltaje    : Electrico;
+SENSOR     Corriente  : ELECTRICO;
+Umbral   Techo  : ELECTRICO = 200;
+Umbral   Piso   : ELECTRICO = 10;
+umbral   Medio  : ELECTRICO = 50;
+MUESTREO = 0.01;
 Si voltaje > 100 ENTONCES Estado = normal;
 SI corriente <= 50 entonces ESTADO = NORMAL;
-si frecuencia == 60 ENTONCES estado = pico;
+si voltaje == 60 ENTONCES estado = pico;
 // Identificadores con capitalizacion diferente (deben ser distintos)
-sensor valor;
-sensor Valor;
+sensor valor : MECANICO;
+sensor Valor : MECANICO;
 Si valor > 5 entonces estado = normal;
 Si Valor > 10 entonces estado = pico;
+SINO = NORMAL;

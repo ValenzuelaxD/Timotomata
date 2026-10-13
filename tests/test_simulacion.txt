@@ -1,18 +1,26 @@
 // Programa de monitoreo de sensores
-sensor voltaje;
-sensor temperatura;
-sensor presion;
-// Umbrales de seguridad
-umbral voltaje_max = 220;
-umbral voltaje_min = 100;
-umbral temp_max = 80;
-umbral temp_min = -10;
-umbral presion_max = 200;
-// Reglas de control
+// Esperado: 0 lexicos, 0 sintacticos, 0 semanticos.
+sensor voltaje     : ELECTRICO;
+sensor temperatura : TERMICO;
+sensor presion     : HIDRAULICO;
+
+muestreo = 0.01;
+
+umbral voltaje_max : ELECTRICO = 220;
+umbral voltaje_min : ELECTRICO = 100;
+umbral temp_max    : TERMICO   = 80;
+umbral temp_min    : TERMICO   = -10;
+umbral presion_max : HIDRAULICO = 200;
+
+// Reglas de control: gana la primera que se cumple
 si voltaje > voltaje_max entonces estado = PICO;
 si voltaje < voltaje_min entonces estado = CAIDA;
 si temperatura > temp_max entonces estado = INESTABLE;
-si temperatura < temp_min entonces estado = PICO;
+si temperatura < temp_min entonces estado = CAIDA;
 si presion > presion_max entonces estado = NORMAL;
-// Regla con abs
-si abs(voltaje - previo) > 50 entonces estado = CAIDA;
+
+// Regla con abs sobre una senal derivada
+calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);
+si abs(voltaje_prom) > 50 entonces estado = NORMAL;
+
+sino = NORMAL;

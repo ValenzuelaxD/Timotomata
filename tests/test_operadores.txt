@@ -1,8 +1,12 @@
-// Prueba de todos los operadores relacionales
-sensor a;
-sensor b;
-umbral x = 10;
-umbral y = 20;
+// Prueba de todos los operadores relacionales.
+// Las reglas se solapan a proposito: se espera que la 8 las marque como
+// contradictorias (gana la primera que se cumple).
+// Esperado: 0 lexicos, 0 sintacticos, 13 semanticos.
+sensor a     : ELECTRICO;
+sensor b     : ELECTRICO;
+umbral x : ELECTRICO = 10;
+umbral y : ELECTRICO = 20;
+muestreo = 0.01;
 si a > x entonces estado = NORMAL;
 si a < y entonces estado = PICO;
 si a == x entonces estado = CAIDA;
@@ -10,7 +14,8 @@ si a >= x entonces estado = INESTABLE;
 si a <= y entonces estado = NORMAL;
 si a != x entonces estado = PICO;
 // Prueba de expresiones aritmeticas con abs
-sensor valor;
-umbral limite = 100;
+sensor valor  : MECANICO;
+umbral limite : MECANICO = 40;
 si abs(valor - 5) > limite entonces estado = CAIDA;
 si abs(valor + 10) <= 50 entonces estado = NORMAL;
+sino = NORMAL;

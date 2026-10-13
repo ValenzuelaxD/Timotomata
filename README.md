@@ -52,27 +52,62 @@ Opción 2 — Desde VS Code
 ## 📝 Código de ejemplo
 
 ```timotomata
-sensor voltaje;
-sensor temperatura;
-umbral maximo = 220;
+// Cada sensor declara su tipo: fija la unidad, el rango que el transductor
+// puede medir y su banda de frecuencia.
+sensor voltaje     : ELECTRICO;
+sensor temperatura : TERMICO;
 
-si voltaje >= maximo entonces estado = PICO;
+umbral voltaje_max : ELECTRICO = 220;
+umbral voltaje_min : ELECTRICO = 100;
+
+// El reloj del programa: segundos por muestreo. Fija el límite de Nyquist.
+muestreo = 0.01;
+
+estado = NORMAL;
+
+si voltaje > voltaje_max entonces estado = PICO;
+si voltaje < voltaje_min entonces estado = CAIDA;
+si temperatura > 80 entonces estado = INESTABLE;
+
+// El cálculo escribe en una señal derivada: el canal físico queda intacto.
+calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);
+si voltaje_prom >= voltaje_max entonces estado = PICO;
+
+sino = NORMAL;
 ```
 
 ### Palabras reservadas
 
 | Palabra | Uso |
 |---------|-----|
-| `sensor` | Declara un sensor |
-| `umbral` | Declara un umbral con valor |
+| `sensor` | Declara un sensor con su tipo |
+| `umbral` | Declara un umbral con su tipo y valor |
+| `muestreo` | Declara la duración de un tick, en segundos |
 | `si` / `entonces` | Condicional |
-| `estado` | Asignación de estado |
+| `estado` | Estado inicial de la máquina |
+| `sino` | Estado cuando ninguna regla se cumple |
+| `calcular` | Cálculo sobre un sensor |
 | `normal` / `pico` / `caida` / `inestable` | Estados del sistema |
 | `abs()` | Función valor absoluto |
+| `electrico` `termico` `luminico` `mecanico` `quimico` `hidraulico` | Tipos de sensor |
+
+### Tipos de sensor
+
+Cada tipo declara su ficha técnica, y el analizador semántico la usa para
+verificar unidades, rangos y frecuencias:
+
+| Tipo | Unidad | Rango | Muestreo | Banda | `PROMEDIO` mín. |
+|------|--------|-------|----------|-------|-----------------|
+| `ELECTRICO` | V | 0 – 250 | 100 Hz | 50 Hz | 5 muestras |
+| `TERMICO` | °C | −40 – 125 | 0.1 Hz | 0.05 Hz | 20 muestras |
+| `LUMINICO` | lux | 0 – 10 000 | 10 Hz | 5 Hz | 3 muestras |
+| `MECANICO` | mm/s | 0 – 50 | 2000 Hz | 1000 Hz | 3 muestras |
+| `QUIMICO` | pH | 0 – 14 | 0.01 Hz | 0.005 Hz | 50 muestras |
+| `HIDRAULICO` | bar | 0 – 400 | 1 Hz | 0.5 Hz | 10 muestras |
 
 ### Operadores relacionales
 
-`>` `<` `==` `>=` `<=` `!=`
+`>` `<` `==` `>=` `<=` `!=` `<>`
 
 ### Operadores aritméticos
 
@@ -101,6 +136,12 @@ Timotomata/
 │   │       ├── Binaria.java
 │   │       ├── Negacion.java
 │   │       └── Abs.java
+│   ├── semantic/                 ← Analizador semántico
+│   │   ├── AnalizadorSemantico.java  ← 20 reglas de verificación
+│   │   └── TipoSensor.java       ← Ficha técnica de cada tipo de sensor
+│   ├── simbolos/                 ← Tabla de símbolos
+│   │   ├── Simbolo.java          ← Símbolo con sus atributos
+│   │   └── TablaSimbolos.java    ← Registro único de declaraciones
 │   └── ui/                       ← Interfaz gráfica (JavaFX)
 │       ├── MainApp.java
 │       ├── AppController.java
@@ -117,8 +158,8 @@ Timotomata/
 ## 📚 Documentación técnica
 
 Consulta [`docs/analisis_lexico_sintactico.md`](docs/analisis_lexico_sintactico.md) para:
-- Diagrama del **AFD del analizador léxico** (13 estados, 17 clases de caracteres)
-- **Gramática BNF** completa (14 no terminales, 41 producciones)
+- Diagrama del **AFD del analizador léxico** (13 estados, 19 clases de caracteres)
+- **Gramática BNF** completa (16 no terminales, 52 producciones, 45 tokens)
 - **Tabla de parsing LL(1)** con conjuntos FIRST y FOLLOW
 
 ---

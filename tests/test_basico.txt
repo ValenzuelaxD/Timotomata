@@ -1,7 +1,9 @@
-sensor temperatura;
-sensor presion;
-umbral temp_max = 100;
-umbral temp_min = 0;
+sensor temperatura : TERMICO;
+sensor presion    : MECANICO;
+umbral temp_max : TERMICO = 100;
+umbral temp_min : TERMICO = 0;
+muestreo = 0.01;
 si temperatura > temp_max entonces estado = PICO;
 si temperatura < temp_min entonces estado = CAIDA;
 si presion > 50 entonces estado = INESTABLE;
+sino = NORMAL;

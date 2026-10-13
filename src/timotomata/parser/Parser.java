@@ -4,6 +4,7 @@ import java.util.*;
 import timotomata.lexer.Token;
 import timotomata.lexer.TipoToken;
 import timotomata.parser.ast.*;
+import timotomata.semantic.TipoSensor;
 
 
 public class Parser {
@@ -109,6 +110,7 @@ public class Parser {
             }
             if (t == TipoToken.SENSOR || t == TipoToken.UMBRAL
                 || t == TipoToken.SI || t == TipoToken.CALCULAR
+                || t == TipoToken.ESTADO
                 || t == TipoToken.EOF) {
                 return; // no consumir — es el inicio de la siguiente sentencia
             }
@@ -118,10 +120,11 @@ public class Parser {
 
     
     //  NO TERMINAL: SENTENCIA
-    //  SENTENCIA → SENSOR ID PUNTO_COMA
+    //  SENTENCIA → SENSOR ID : TIPO_MAGNITUD PUNTO_COMA
     //       | UMBRAL ID = VALOR_UMBRAL PUNTO_COMA
     //            | SI CONDICION ENTONCES ESTADO = ESTADO_SISTEMA PUNTO_COMA
-    //            | CALCULAR ( ID , TIPO_OP ) PUNTO_COMA
+    //            | CALCULAR ( ID , TIPO_OP , DESTINO_OP ) PUNTO_COMA
+    //            | ESTADO = ESTADO_SISTEMA PUNTO_COMA
     
     private void sentencia(NodoDerivacion nodo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.SENTENCIA, ver().tipo);
@@ -133,25 +136,41 @@ public class Parser {
             case Gramatica.P_SENT_SENSOR: {
                 Token t1 = consumir(TipoToken.SENSOR, "Se esperaba SENSOR");
                 Token t2 = consumir(TipoToken.ID, "Se esperaba el nombre del sensor");
-                Token t3 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+                Token t3 = consumir(TipoToken.DOS_PUNTOS, "Se esperaba : y el tipo del sensor");
+                Token t4 = consumirTipoMagnitud("Se esperaba un tipo de sensor valido");
+                Token t5 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+
+                TipoSensor tipo = TipoSensor.deLexema(t4.lexema);
                 nodo.agregarHijo(t(t1));
                 nodo.agregarHijo(t(t2));
                 nodo.agregarHijo(t(t3));
+                nodo.agregarHijo(t(t4));
+                nodo.agregarHijo(t(t5));
+
                 programa.sensores.add(t2.lexema);
+                programa.sensoresDeclarados.add(new Sensor(t2.lexema, tipo, t1.linea));
+                programa.simbolos.declararSensor(t2.lexema, tipo, t1.linea);
                 break;
             }
             case Gramatica.P_SENT_UMBRAL: {
                 Token t1 = consumir(TipoToken.UMBRAL, "Se esperaba UMBRAL");
                 Token t2 = consumir(TipoToken.ID, "Se esperaba el nombre del umbral");
+                Token t6 = consumir(TipoToken.DOS_PUNTOS, "Se esperaba : y el tipo del umbral");
+                Token t7 = consumirTipoMagnitud("Se esperaba un tipo de sensor valido");
                 Token t3 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
                 NodoDerivacion nVal = valorUmbral();
                 Token t5 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+                TipoSensor tipoU = TipoSensor.deLexema(t7.lexema);
                 nodo.agregarHijo(t(t1));
                 nodo.agregarHijo(t(t2));
+                nodo.agregarHijo(t(t6));
+                nodo.agregarHijo(t(t7));
                 nodo.agregarHijo(t(t3));
                 nodo.agregarHijo(nVal);
                 nodo.agregarHijo(t(t5));
                 programa.umbrales.put(t2.lexema, (double) ultimoValorSemantico);
+                programa.simbolos.declararUmbral(t2.lexema, tipoU,
+                    (double) ultimoValorSemantico, t1.linea);
                 break;
             }
             case Gramatica.P_SENT_SI: {
@@ -191,12 +210,57 @@ public class Parser {
                 tipoOp(nTipoOp, calculo);
                 nodo.agregarHijo(nTipoOp);
 
+                NodoDerivacion nDest = new NodoDerivacion("DESTINO_OP");
+                nDest.sintetico = true;
+                destinoOp(nDest, calculo);
+                nodo.agregarHijo(nDest);
+
                 Token t6 = consumir(TipoToken.PAREN_DER, "Se esperaba )");
                 Token t7 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
                 nodo.agregarHijo(t(t6));
                 nodo.agregarHijo(t(t7));
 
                 programa.calculos.add(calculo);
+                break;
+            }
+            case Gramatica.P_SENT_ESTADO: {
+                Token t1 = consumir(TipoToken.ESTADO, "Se esperaba ESTADO");
+                Token t2 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+                Token t3 = consumir(TipoToken.ESTADO_SISTEMA,
+                    "Se esperaba NORMAL, PICO, CAIDA o INESTABLE");
+                Token t4 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+                nodo.agregarHijo(t(t1));
+                nodo.agregarHijo(t(t2));
+                nodo.agregarHijo(t(t3));
+                nodo.agregarHijo(t(t4));
+                programa.estadoInicial = t3.lexema.toLowerCase();
+                break;
+            }
+            case Gramatica.P_SENT_SINO: {
+                Token t1 = consumir(TipoToken.SINO, "Se esperaba SINO");
+                Token t2 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+                Token t3 = consumir(TipoToken.ESTADO_SISTEMA,
+                    "Se esperaba NORMAL, PICO, CAIDA o INESTABLE");
+                Token t4 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+                nodo.agregarHijo(t(t1));
+                nodo.agregarHijo(t(t2));
+                nodo.agregarHijo(t(t3));
+                nodo.agregarHijo(t(t4));
+                programa.estadoPorDefecto = t3.lexema.toLowerCase();
+                break;
+            }
+            case Gramatica.P_SENT_MUESTREO: {
+                Token t1 = consumir(TipoToken.MUESTREO, "Se esperaba MUESTREO");
+                Token t2 = consumir(TipoToken.ASIGNACION, "Se esperaba =");
+                Token t3 = consumir(TipoToken.NUMERO,
+                    "Se esperaba un numero de segundos por muestreo");
+                Token t4 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
+                nodo.agregarHijo(t(t1));
+                nodo.agregarHijo(t(t2));
+                nodo.agregarHijo(t(t3));
+                nodo.agregarHijo(t(t4));
+                programa.muestreo = Double.parseDouble(t3.lexema);
+                programa.lineaMuestreo = t1.linea;
                 break;
             }
         }
@@ -247,6 +311,7 @@ public class Parser {
         NodoDerivacion nExprIzq = expresion();
         Expresion izq = (Expresion) ultimoValorSemantico;
         nodo.agregarHijo(nExprIzq);
+        marcarUso(izq);
 
         NodoDerivacion nOpRel = operadorRelacional();
         String op = (String) ultimoValorSemantico;
@@ -255,9 +320,25 @@ public class Parser {
         NodoDerivacion nExprDer = expresion();
         Expresion der = (Expresion) ultimoValorSemantico;
         nodo.agregarHijo(nExprDer);
+        marcarUso(der);
 
         ultimoValorSemantico = new Binaria(izq, op, der);
+        ((Binaria) ultimoValorSemantico).linea = ver().linea;
         return nodo;
+    }
+
+    /** Anota en la tabla de símbolos los identificadores leídos en una expresión. */
+    private void marcarUso(Expresion e) {
+        if (e instanceof Variable v) {
+            programa.simbolos.registrarUso(v.nombre, v.linea);
+        } else if (e instanceof Binaria b) {
+            marcarUso(b.izquierda);
+            marcarUso(b.derecha);
+        } else if (e instanceof Negacion n) {
+            marcarUso(n.expresion);
+        } else if (e instanceof Abs a) {
+            marcarUso(a.expresion);
+        }
     }
 
     
@@ -335,7 +416,8 @@ public class Parser {
                 NodoDerivacion nTerm = termino();
                 Expresion der = (Expresion) ultimoValorSemantico;
                 nodo.agregarHijo(nTerm);
-                Expresion nuevaIzq = new Binaria(izquierda, "+", der);
+                Binaria nuevaIzq = new Binaria(izquierda, "+", der);
+                nuevaIzq.linea = t.linea;
                 NodoDerivacion nRec = expresionSig(nuevaIzq);
                 nodo.agregarHijo(nRec);
                 ultimoValorSemantico = nuevaIzq;
@@ -347,7 +429,8 @@ public class Parser {
                 NodoDerivacion nTerm = termino();
                 Expresion der = (Expresion) ultimoValorSemantico;
                 nodo.agregarHijo(nTerm);
-                Expresion nuevaIzq = new Binaria(izquierda, "-", der);
+                Binaria nuevaIzq = new Binaria(izquierda, "-", der);
+                nuevaIzq.linea = t.linea;
                 NodoDerivacion nRec = expresionSig(nuevaIzq);
                 nodo.agregarHijo(nRec);
                 ultimoValorSemantico = nuevaIzq;
@@ -390,7 +473,8 @@ public class Parser {
                 NodoDerivacion nFact = factor();
                 Expresion der = (Expresion) ultimoValorSemantico;
                 nodo.agregarHijo(nFact);
-                Expresion nuevaIzq = new Binaria(izquierda, "*", der);
+                Binaria nuevaIzq = new Binaria(izquierda, "*", der);
+                nuevaIzq.linea = t.linea;
                 NodoDerivacion nRec = terminoSig(nuevaIzq);
                 nodo.agregarHijo(nRec);
                 ultimoValorSemantico = nuevaIzq;
@@ -402,7 +486,8 @@ public class Parser {
                 NodoDerivacion nFact = factor();
                 Expresion der = (Expresion) ultimoValorSemantico;
                 nodo.agregarHijo(nFact);
-                Expresion nuevaIzq = new Binaria(izquierda, "/", der);
+                Binaria nuevaIzq = new Binaria(izquierda, "/", der);
+                nuevaIzq.linea = t.linea;
                 NodoDerivacion nRec = terminoSig(nuevaIzq);
                 nodo.agregarHijo(nRec);
                 ultimoValorSemantico = nuevaIzq;
@@ -431,12 +516,14 @@ public class Parser {
                 Token t = consumir(TipoToken.NUMERO, null);
                 nodo.agregarHijo(t(t));
                 ultimoValorSemantico = new Numero(Double.parseDouble(t.lexema));
+                ((Numero) ultimoValorSemantico).linea = t.linea;
                 break;
             }
             case Gramatica.P_FACT_ID: {
                 Token t = consumir(TipoToken.ID, null);
                 nodo.agregarHijo(t(t));
                 ultimoValorSemantico = new Variable(t.lexema);
+                ((Variable) ultimoValorSemantico).linea = t.linea;
                 break;
             }
             case Gramatica.P_FACT_ABS: {
@@ -450,6 +537,7 @@ public class Parser {
                 Token t3 = consumir(TipoToken.PAREN_DER, null);
                 nodo.agregarHijo(t(t3));
                 ultimoValorSemantico = new Abs(expr);
+                ((Abs) ultimoValorSemantico).linea = t1.linea;
                 break;
             }
             case Gramatica.P_FACT_MENOS: {
@@ -459,6 +547,7 @@ public class Parser {
                 Expresion expr = (Expresion) ultimoValorSemantico;
                 nodo.agregarHijo(nFact);
                 ultimoValorSemantico = new Negacion(expr);
+                ((Negacion) ultimoValorSemantico).linea = t.linea;
                 break;
             }
             default:
@@ -514,6 +603,47 @@ public class Parser {
         // La firma de cada operación (cantidad/tipos de parámetros) se valida
         // en la fase semántica (AnalizadorSemantico), como error de llamada.
         ultimoValorSemantico = opStr;
+    }
+
+
+    //  NO TERMINAL: TIPO_MAGNITUD
+    //  TIPO_MAGNITUD → ELECTRICO | TERMICO | LUMINICO
+    //               | MECANICO | QUIMICO | HIDRAULICO
+
+    private Token consumirTipoMagnitud(String mensaje) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.TIPO_MAGNITUD, ver().tipo);
+        if (prod == -1) throw error(mensaje + contexto());
+        return avanzar();
+    }
+
+
+    //  NO TERMINAL: DESTINO_OP
+    //  DESTINO_OP → COMA ID | ε
+    //
+    //  Cuando hay destino, el resultado del cálculo se guarda en una señal
+    //  derivada y el canal físico del sensor queda intacto.
+
+    private void destinoOp(NodoDerivacion nodo, Calculo calculo) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.DESTINO_OP, ver().tipo);
+
+        switch (prod) {
+            case Gramatica.P_DEST_ID: {
+                Token coma = consumir(TipoToken.COMA, "Se esperaba ,");
+                Token destino = consumir(TipoToken.ID,
+                    "Se esperaba el nombre de la señal de destino");
+                nodo.agregarHijo(t(coma));
+                nodo.agregarHijo(t(destino));
+                calculo.destino = destino.lexema;
+
+                // El tipo de la señal derivada se resuelve en la fase semántica,
+                // cuando ya se conoce el tipo del origen y la firma de la
+                // operación.
+                programa.simbolos.declararSenal(destino.lexema, null, calculo.linea);
+                break;
+            }
+            case Gramatica.P_DEST_EPS:
+                break; // sin destino: el cálculo sobrescribe el canal de origen
+        }
     }
 
 

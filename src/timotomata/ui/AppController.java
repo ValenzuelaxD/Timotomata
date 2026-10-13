@@ -31,6 +31,7 @@ import timotomata.lexer.*;
 import timotomata.parser.*;
 import timotomata.parser.ast.*;
 import timotomata.semantic.AnalizadorSemantico;
+import timotomata.simbolos.Simbolo;
 
 /**
  * Controlador principal de la interfaz gráfica.
@@ -58,23 +59,27 @@ public class AppController {
     // ─── Modelo de datos para la tabla de símbolos ───
     public static class InfoSimbolo {
         private final StringProperty nombre = new SimpleStringProperty();
+        private final StringProperty clase = new SimpleStringProperty();
         private final StringProperty tipo = new SimpleStringProperty();
-        private final IntegerProperty linea = new SimpleIntegerProperty();
+        private final StringProperty unidad = new SimpleStringProperty();
         private final StringProperty valor = new SimpleStringProperty();
-        private final StringProperty tipoNum = new SimpleStringProperty();
+        private final IntegerProperty linea = new SimpleIntegerProperty();
 
-        public InfoSimbolo(String nombre, String tipo, int linea, String valor, String tipoNum) {
+        public InfoSimbolo(String nombre, String clase, String tipo,
+                           String unidad, String valor, int linea) {
             this.nombre.set(nombre);
+            this.clase.set(clase);
             this.tipo.set(tipo);
-            this.linea.set(linea);
+            this.unidad.set(unidad);
             this.valor.set(valor);
-            this.tipoNum.set(tipoNum);
+            this.linea.set(linea);
         }
         public StringProperty nombreProperty() { return nombre; }
+        public StringProperty claseProperty() { return clase; }
         public StringProperty tipoProperty() { return tipo; }
-        public IntegerProperty lineaProperty() { return linea; }
+        public StringProperty unidadProperty() { return unidad; }
         public StringProperty valorProperty() { return valor; }
-        public StringProperty tipoNumProperty() { return tipoNum; }
+        public IntegerProperty lineaProperty() { return linea; }
     }
 
     // ─── Componentes de la UI ───
@@ -99,10 +104,11 @@ public class AppController {
 
     // ─── Palabras reservadas para sugerencias ───
     private static final String[] PALABRAS_RESERVADAS = {
-        "sensor", "umbral", "si", "entonces", "estado",
+        "sensor", "umbral", "si", "entonces", "estado", "sino", "muestreo",
         "abs", "calcular", "normal", "pico", "caida", "inestable",
         "seno", "coseno", "cuadrada", "promedio", "maximo", "suma",
-        "amplitud", "frecuencia", "ventana", "con"
+        "amplitud", "frecuencia", "ventana", "con",
+        "electrico", "termico", "luminico", "mecanico", "quimico", "hidraulico"
     };
 
     // ─── Estado interno ───
@@ -365,9 +371,17 @@ public class AppController {
         colSimbNombre.setCellValueFactory(new PropertyValueFactory<>("nombre"));
         colSimbNombre.setPrefWidth(110);
 
+        TableColumn<InfoSimbolo, String> colSimbClase = new TableColumn<>("Clase");
+        colSimbClase.setCellValueFactory(new PropertyValueFactory<>("clase"));
+        colSimbClase.setPrefWidth(70);
+
         TableColumn<InfoSimbolo, String> colSimbTipo = new TableColumn<>("Tipo");
         colSimbTipo.setCellValueFactory(new PropertyValueFactory<>("tipo"));
-        colSimbTipo.setPrefWidth(80);
+        colSimbTipo.setPrefWidth(95);
+
+        TableColumn<InfoSimbolo, String> colSimbUnidad = new TableColumn<>("Unidad");
+        colSimbUnidad.setCellValueFactory(new PropertyValueFactory<>("unidad"));
+        colSimbUnidad.setPrefWidth(55);
 
         TableColumn<InfoSimbolo, Number> colSimbLinea = new TableColumn<>("Linea");
         colSimbLinea.setCellValueFactory(new PropertyValueFactory<>("linea"));
@@ -378,11 +392,8 @@ public class AppController {
         colSimbValor.setCellValueFactory(new PropertyValueFactory<>("valor"));
         colSimbValor.setPrefWidth(70);
 
-        TableColumn<InfoSimbolo, String> colSimbTipoNum = new TableColumn<>("Tipo Num.");
-        colSimbTipoNum.setCellValueFactory(new PropertyValueFactory<>("tipoNum"));
-        colSimbTipoNum.setPrefWidth(80);
-
-        tablaSimbolos.getColumns().addAll(colSimbNombre, colSimbTipo, colSimbLinea, colSimbValor, colSimbTipoNum);
+        tablaSimbolos.getColumns().addAll(colSimbNombre, colSimbClase,
+            colSimbTipo, colSimbUnidad, colSimbValor, colSimbLinea);
         tablaSimbolos.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
 
         tablaPane = new TitledPane("TABLA SIMBOLOS", tablaSimbolos);
@@ -510,7 +521,8 @@ public class AppController {
         // 'asdasdones6465465' contiene 'ones' = 'seno' al revés).
         // Un error léxico por cada ocurrencia.
         Map<String, List<String>> erroresIncluidos =
-            detectarReservadaIncluida(tokens, erroresReservadas.keySet());
+            detectarReservadaIncluida(tokens, erroresReservadas.keySet(),
+                                      nombresDeclarados(programa));
         for (List<String> lista : erroresIncluidos.values()) {
             erroresLex.addAll(lista);
         }
@@ -1061,51 +1073,28 @@ public class AppController {
     // =============================================================
 
     /**
-     * Construye la tabla de símbolos a partir del AST y los tokens.
-     * Análisis semántico DESACTIVADO: solo muestra lo declarado
-     * (sensores y umbrales). No se agregan filas "NO DECLARADO".
+     * Vuelca la tabla de símbolos que construyó el parser.
+     *
+     * Antes esta tabla se armaba aquí, re-escaneando la lista de tokens para
+     * recuperar la línea de cada declaración —una segunda fuente de verdad que
+     * podía desincronizarse de la del analizador semántico. Ahora se lee la
+     * misma estructura que usaron las verificaciones.
      */
     private void construirTablaSimbolos(Programa programa, List<Token> tokens) {
         simbolosData.clear();
         if (programa == null) return;
 
-        Set<String> declaradas = new HashSet<>();
-
-        // 1. Sensores declarados
-        for (String s : programa.sensores) {
-            int linea = buscarLineaDeclaracion(s, tokens, TipoToken.SENSOR);
-            simbolosData.add(new InfoSimbolo(s, "SENSOR", linea, "\u2014", "\u2014"));
-            declaradas.add(s);
+        for (Simbolo s : programa.simbolos.todos()) {
+            simbolosData.add(new InfoSimbolo(
+                s.nombre(),
+                s.clase().name(),
+                s.nombreTipo(),
+                s.unidad(),
+                s.valorTexto(),
+                s.linea()));
         }
 
-        // 2. Umbrales declarados
-        for (Map.Entry<String, Double> e : programa.umbrales.entrySet()) {
-            int linea = buscarLineaDeclaracion(e.getKey(), tokens, TipoToken.UMBRAL);
-            String valorStr = String.valueOf(e.getValue());
-            // Determinar si es ENTERO o DECIMAL según si tiene punto decimal
-            String tipoNum = esEntero(e.getValue()) ? "ENTERO" : "DECIMAL";
-            simbolosData.add(new InfoSimbolo(e.getKey(), "UMBRAL", linea, valorStr, tipoNum));
-            declaradas.add(e.getKey());
-        }
-
-        tablaPane.setText("\u25C6 TABLA SIMBOLOS (" + simbolosData.size() + ")");
-    }
-
-    /** Determina si un valor double es entero (sin parte decimal) */
-    private boolean esEntero(double valor) {
-        return valor == Math.floor(valor) && !Double.isInfinite(valor);
-    }
-
-    /** Busca la línea donde se declaró un sensor o umbral */
-    private int buscarLineaDeclaracion(String nombre, List<Token> tokens, TipoToken tipoDecl) {
-        for (int i = 0; i < tokens.size() - 1; i++) {
-            Token t = tokens.get(i);
-            Token next = tokens.get(i + 1);
-            if (t.tipo == tipoDecl && next.tipo == TipoToken.ID && next.lexema.equals(nombre)) {
-                return t.linea;
-            }
-        }
-        return 0;
+        tablaPane.setText("◆ TABLA SIMBOLOS (" + simbolosData.size() + ")");
     }
 
     /** Busca la primera línea donde aparece una referencia a un identificador */
@@ -1243,14 +1232,53 @@ public class AppController {
      * 'fin', 'abs' dentro de cualquier palabra. Los lexemas ya reportados
      * como typo (Levenshtein) se omiten para no duplicar.
      * Retorna mapa lexema-minúsculas → lista de errores por ocurrencia.
+     *
+     * <p>Solo se examinan los identificadores que están en una posición donde
+     * la gramática esperaba una palabra reservada. En el resto —el nombre de un
+     * sensor, el destino de un `calcular`, una referencia dentro de una
+     * condición— un identificador compuesto es normal y no se toca. Sin esa
+     * guarda, una señal legítima como `voltaje_prom` se reportaba como error
+     * léxico por contener el fragmento `prom` de `promedio`.
+     *
+     * @param declarados nombres declarados en el programa, en minúsculas
      */
-    private Map<String, List<String>> detectarReservadaIncluida(List<Token> tokens,
-                                                                Set<String> lexemasYaReportados) {
+    /**
+     * Nombres que el programa declara de forma explícita: sensores, umbrales y
+     * señales derivadas de `calcular(origen, op, destino)`.
+     *
+     * <p>Un identificador declarado es legítimo por construcción —el usuario
+     * le puso ese nombre—, así que el detector de typos no debe suspectar de
+     * él.
+     */
+    private static Set<String> nombresDeclarados(Programa programa) {
+        Set<String> nombres = new HashSet<>();
+        if (programa == null) return nombres;
+        nombres.addAll(programa.sensores);
+        nombres.addAll(programa.umbrales.keySet());
+        for (Simbolo s : programa.simbolos.todos()) nombres.add(s.nombre());
+        for (Calculo c : programa.calculos) {
+            if (c.destino != null) nombres.add(c.destino);
+        }
+        return nombres;
+    }
+
+    private Map<String, List<String>> detectarReservadaIncluida(
+            List<Token> tokens, Set<String> lexemasYaReportados,
+            Set<String> declarados) {
         Map<String, List<String>> errores = new LinkedHashMap<>();
         for (Token token : tokens) {
             if (token.tipo != TipoToken.ID) continue;
             String lower = token.lexema.toLowerCase();
             if (lexemasYaReportados != null && lexemasYaReportados.contains(lower)) continue;
+            if (declarados != null && declarados.contains(lower)) continue;
+
+            // El lenguaje compone nombres con '_' (sensor_atributo). Una
+            // palabra reservada en el SUFIJO es un segmento legítimo —
+            // voltaje_prom, voltaje_pico, temp_prom — así que solo se examina
+            // el segmento base, donde sí puede ser una palabra mal escrita
+            // (estdao_sensor, CAL165CULAR).
+            int corte = lower.indexOf('_');
+            String base = corte >= 0 ? lower.substring(0, corte) : lower;
 
             String mejorReservada = null;
             String fragmentoHallado = null;
@@ -1260,12 +1288,12 @@ public class AppController {
 
             // Solo-letras: quita dígitos y '_' para ver si la reservada está
             // partida por caracteres en medio (ej. CAL165CULAR → CALCULAR).
-            String soloLetras = lower.replaceAll("[^a-z]", "");
+            String soloLetras = base.replaceAll("[^a-z]", "");
 
             for (String reservada : PALABRAS_RESERVADAS) {
                 String r = reservada.toLowerCase();
                 if (r.length() < 4) continue;
-                if (lower.contains(r)) {
+                if (base.contains(r)) {
                     if (mejorReservada == null || r.length() > mejorReservada.length()) {
                         mejorReservada = reservada;
                         fragmentoHallado = r;
@@ -1275,7 +1303,7 @@ public class AppController {
                     }
                 }
                 String rev = new StringBuilder(r).reverse().toString();
-                if (lower.contains(rev)) {
+                if (base.contains(rev)) {
                     if (mejorReservada == null || r.length() > mejorReservada.length()) {
                         mejorReservada = reservada;
                         fragmentoHallado = rev;
@@ -1286,7 +1314,7 @@ public class AppController {
                 }
                 // Con caracteres en medio: la reservada aparece en soloLetras
                 // pero NO contigua en el texto original.
-                if (!soloLetras.equals(lower)) {
+                if (!soloLetras.equals(base)) {
                     if (soloLetras.contains(r)) {
                         if (mejorReservada == null || r.length() > mejorReservada.length()) {
                             mejorReservada = reservada;
@@ -1698,7 +1726,18 @@ public class AppController {
         Token siguiente = indice + 1 < tokens.size() ? tokens.get(indice + 1) : null;
 
         if (anterior == null || anterior.tipo == TipoToken.PUNTO_COMA) {
-            return new String[] { "sensor", "umbral", "si", "calcular" };
+            return new String[] { "sensor", "umbral", "si", "calcular", "estado",
+                                 "sino", "muestreo" };
+        }
+        // Tras `sensor ID =` o `umbral ID =` se espera un tipo de sensor.
+        if (anterior.tipo == TipoToken.ASIGNACION && indice > 1) {
+            TipoToken previo = tokens.get(indice - 2).tipo;
+            if (previo == TipoToken.ID) {
+                boolean trasNombre = (indice > 2
+                        && (tokens.get(indice - 3).tipo == TipoToken.SENSOR
+                            || tokens.get(indice - 3).tipo == TipoToken.UMBRAL));
+                if (trasNombre) return tiposReservados();
+            }
         }
         if (anterior.tipo == TipoToken.ENTONCES) {
             return new String[] { "estado" };
@@ -1754,6 +1793,12 @@ public class AppController {
 
     private String[] parametrosReservados() {
         return new String[] { "amplitud", "frecuencia", "ventana", "con" };
+    }
+
+    /** Los seis tipos de sensor declarables. */
+    private String[] tiposReservados() {
+        return new String[] { "electrico", "termico", "luminico",
+                             "mecanico", "quimico", "hidraulico" };
     }
 
     /**
@@ -1961,16 +2006,37 @@ public class AppController {
 
     private void cargarEjemploPorDefecto() {
         editor.replaceText(0, editor.getLength(),
-            "sensor voltaje;\n"
-            + "sensor temperatura;\n"
-            + "umbral maxValor = 220;\n"
-            + "umbral minValor = 100;\n"
+            "// Cada sensor declara su tipo: define la unidad, el rango que el\n"
+            + "// transductor puede medir y su banda de frecuencia.\n"
+            + "sensor voltaje     : ELECTRICO;\n"
+            + "sensor temperatura : TERMICO;\n"
             + "\n"
-            + "si voltaje >= maxValor entonces estado = PICO;\n"
-            + "si voltaje <= minValor entonces estado = CAIDA;\n"
-            + "si temperatura > 80 entonces estado = INESTABLE;\n"
+            + "// El reloj del programa: segundos por muestreo. Define el limite de\n"
+            + "// Nyquist contra el que se validan las frecuencias.\n"
+            + "muestreo = 0.01;\n"
             + "\n"
-            + "calcular(voltaje, SENO(AMPLITUD=300, FRECUENCIA=0.1));\n"
+            + "umbral voltaje_max : ELECTRICO = 220;\n"
+            + "umbral voltaje_min : ELECTRICO = 100;\n"
+            + "umbral temp_max    : TERMICO   = 80;\n"
+            + "umbral temp_min    : TERMICO   = 0;\n"
+            + "\n"
+            + "// Estado inicial de la maquina.\n"
+            + "estado = NORMAL;\n"
+            + "\n"
+            + "// Las reglas se evaluan en orden: gana la primera que se cumpla.\n"
+            + "si voltaje     >= voltaje_max entonces estado = PICO;\n"
+            + "si voltaje     <= voltaje_min entonces estado = CAIDA;\n"
+            + "si temperatura >  temp_max    entonces estado = INESTABLE;\n"
+            + "si temperatura <  temp_min    entonces estado = CAIDA;\n"
+            + "\n"
+            + "// El calculo escribe en una senal derivada: el canal fisico\n"
+            + "// de voltaje queda intacto.\n"
+            + "calcular(voltaje,     PROMEDIO(VENTANA=10), voltaje_prom);\n"
+            + "calcular(temperatura, MAXIMO(VENTANA=20), temp_maximo);\n"
+            + "si voltaje_prom >= voltaje_max entonces estado = PICO;\n"
+            + "\n"
+            + "// Si ninguna regla se cumple.\n"
+            + "sino = NORMAL;\n"
         );
     }
 

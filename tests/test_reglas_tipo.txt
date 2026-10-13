@@ -1,0 +1,37 @@
+//  REGLAS QUE SOLO EXISTEN PORQUE EL TIPO Y EL RELOJ SE DECLARAN
+//  Esperado: 0 lexicos, 0 sintacticos, 9 semanticos.
+
+muestreo = 0.02;           // 50 Hz de muestreo -> Nyquist en 25 Hz
+
+sensor v : ELECTRICO;     // banda 50 Hz,  PROMEDIO minimo 5,  rango 0-250
+sensor t : TERMICO;       // banda 0.05 Hz, PROMEDIO minimo 20, rango -40-125
+sensor r : MECANICO;      // banda 1000 Hz, PROMEDIO minimo 3,  rango 0-50
+
+umbral v_min : ELECTRICO = 10;
+umbral v_max : ELECTRICO = 200;
+
+// REGLA 17 — umbral fuera del rango que el transductor puede medir
+umbral v_fuera : ELECTRICO = 5000;
+
+// REGLA 18a — frecuencia por encima de la banda del transductor
+calcular(t, SENO(AMPLITUD=10, FRECUENCIA=5), r18a);
+
+// REGLA 18b — frecuencia por encima de la Nyquist del programa.
+// muestreo=0.02 s -> 50 Hz -> Nyquist 25 Hz. El ELECTRICO aguanta hasta
+// 50 Hz, asi que 30 Hz lo supera por el muestreo, no por el transductor.
+calcular(v, SENO(AMPLITUD=10, FRECUENCIA=30), r18b);
+
+// REGLA 19 — ventana por debajo del minimo fisico del tipo
+calcular(v, PROMEDIO(VENTANA=2), r19a);
+calcular(t, PROMEDIO(VENTANA=5), r19b);
+
+// REGLA 15 — MAXIMO sin ventana: no se sabria sobre que intervalo se toma
+calcular(v, MAXIMO(), r15a);
+
+// REGLA 11 — magnitudes incompatibles en una misma SUMA
+calcular(v, SUMA(CON=v, CON=t), r11);
+
+// REGLA 4 y 20 — el origen es un umbral: no tiene tipo fisico, y la senal
+// derivada tampoco puede heredar uno
+umbral sin_tipo : ELECTRICO = 50;
+calcular(sin_tipo, MAXIMO(VENTANA=5), r20);
