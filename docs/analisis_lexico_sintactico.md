@@ -360,7 +360,7 @@ OP_REL        → MAYOR | MENOR | IGUAL_IGUAL
 
 ## 2.3 Producciones
 
-Total: **26 producciones**.
+Total: **41 producciones** (14 no terminales, 36 tokens).
 
 | ID | Producción |
 |:--:|------------|
@@ -369,27 +369,45 @@ Total: **26 producciones**.
 | 2 | `SENTENCIA → SENSOR ID PUNTO_COMA` |
 | 3 | `SENTENCIA → UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA` |
 | 4 | `SENTENCIA → SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
-| 5 | `VALOR_UMBRAL → MENOS NUMERO` |
-| 6 | `VALOR_UMBRAL → NUMERO` |
-| 7 | `CONDICION → EXPRESION OP_REL EXPRESION` |
-| 8 | `EXPRESION → TERMINO EXPRESION_SIG` |
-| 9 | `EXPRESION_SIG → MAS TERMINO EXPRESION_SIG` |
-| 10 | `EXPRESION_SIG → MENOS TERMINO EXPRESION_SIG` |
-| 11 | `EXPRESION_SIG → ε` |
-| 12 | `TERMINO → FACTOR TERMINO_SIG` |
-| 13 | `TERMINO_SIG → POR FACTOR TERMINO_SIG` |
-| 14 | `TERMINO_SIG → DIV FACTOR TERMINO_SIG` |
-| 15 | `TERMINO_SIG → ε` |
-| 16 | `FACTOR → NUMERO` |
-| 17 | `FACTOR → ID` |
-| 18 | `FACTOR → ABS PAREN_IZQ EXPRESION PAREN_DER` |
-| 19 | `FACTOR → MENOS FACTOR` |
-| 20 | `OP_REL → MAYOR` |
-| 21 | `OP_REL → MENOR` |
-| 22 | `OP_REL → IGUAL_IGUAL` |
-| 23 | `OP_REL → MAYOR_IGUAL` |
-| 24 | `OP_REL → MENOR_IGUAL` |
-| 25 | `OP_REL → DIFERENTE` |
+| 5 | `SENTENCIA → CALCULAR PAREN_IZQ ID COMA TIPO_OP PAREN_DER PUNTO_COMA` |
+| 6 | `VALOR_UMBRAL → MENOS NUMERO` |
+| 7 | `VALOR_UMBRAL → NUMERO` |
+| 8 | `CONDICION → EXPRESION OP_REL EXPRESION` |
+| 9 | `EXPRESION → TERMINO EXPRESION_SIG` |
+| 10 | `EXPRESION_SIG → MAS TERMINO EXPRESION_SIG` |
+| 11 | `EXPRESION_SIG → MENOS TERMINO EXPRESION_SIG` |
+| 12 | `EXPRESION_SIG → ε` |
+| 13 | `TERMINO → FACTOR TERMINO_SIG` |
+| 14 | `TERMINO_SIG → POR FACTOR TERMINO_SIG` |
+| 15 | `TERMINO_SIG → DIV FACTOR TERMINO_SIG` |
+| 16 | `TERMINO_SIG → ε` |
+| 17 | `FACTOR → NUMERO` |
+| 18 | `FACTOR → ID` |
+| 19 | `FACTOR → ABS PAREN_IZQ EXPRESION PAREN_DER` |
+| 20 | `FACTOR → MENOS FACTOR` |
+| 21 | `OP_REL → MAYOR` |
+| 22 | `OP_REL → MENOR` |
+| 23 | `OP_REL → IGUAL_IGUAL` |
+| 24 | `OP_REL → MAYOR_IGUAL` |
+| 25 | `OP_REL → MENOR_IGUAL` |
+| 26 | `OP_REL → DIFERENTE` |
+| 27 | `TIPO_OP → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER` |
+| 28 | `TIPO_OP → COSENO PAREN_IZQ LISTA_PARAMS PAREN_DER` |
+| 29 | `TIPO_OP → CUADRADA PAREN_IZQ LISTA_PARAMS PAREN_DER` |
+| 30 | `TIPO_OP → PROMEDIO PAREN_IZQ LISTA_PARAMS PAREN_DER` |
+| 31 | `TIPO_OP → MAXIMO PAREN_IZQ LISTA_PARAMS PAREN_DER` |
+| 32 | `TIPO_OP → SUMA PAREN_IZQ LISTA_PARAMS PAREN_DER` |
+| 33 | `LISTA_PARAMS → PARAM LISTA_PARAMS_SIG` |
+| 34 | `LISTA_PARAMS → ε` |
+| 35 | `LISTA_PARAMS_SIG → COMA LISTA_PARAMS` |
+| 36 | `LISTA_PARAMS_SIG → ε` |
+| 37 | `PARAM → AMPLITUD ASIGNACION NUMERO` |
+| 38 | `PARAM → FRECUENCIA ASIGNACION NUMERO` |
+| 39 | `PARAM → VENTANA ASIGNACION NUMERO` |
+| 40 | `PARAM → CON ASIGNACION ID` |
+
+> Tabla generada desde `Gramatica.PRODUCCIONES`; los identificadores coinciden
+> con las constantes `P_*` del código.
 
 ## 2.4 Conjuntos FIRST
 
@@ -397,42 +415,60 @@ Los conjuntos FIRST contienen los terminales que pueden aparecer al inicio de un
 
 | No terminal | FIRST | ¿ε? |
 |:-----------:|-------|:---:|
-| `PROGRAMA` | `{ SENSOR, UMBRAL, SI }` | ✅ |
-| `SENTENCIA` | `{ SENSOR, UMBRAL, SI }` | ❌ |
-| `VALOR_UMBRAL` | `{ MENOS, NUMERO }` | ❌ |
-| `CONDICION` | `{ NUMERO, ID, ABS, MENOS }` | ❌ |
-| `EXPRESION` | `{ NUMERO, ID, ABS, MENOS }` | ❌ |
+| `PROGRAMA` | `{ SENSOR, UMBRAL, SI, CALCULAR }` | ✅ |
+| `SENTENCIA` | `{ SENSOR, UMBRAL, SI, CALCULAR }` | ❌ |
+| `VALOR_UMBRAL` | `{ NUMERO, MENOS }` | ❌ |
+| `CONDICION` | `{ ABS, ID, NUMERO, MENOS }` | ❌ |
+| `EXPRESION` | `{ ABS, ID, NUMERO, MENOS }` | ❌ |
 | `EXPRESION_SIG` | `{ MAS, MENOS }` | ✅ |
-| `TERMINO` | `{ NUMERO, ID, ABS, MENOS }` | ❌ |
+| `TERMINO` | `{ ABS, ID, NUMERO, MENOS }` | ❌ |
 | `TERMINO_SIG` | `{ POR, DIV }` | ✅ |
-| `FACTOR` | `{ NUMERO, ID, ABS, MENOS }` | ❌ |
+| `FACTOR` | `{ ABS, ID, NUMERO, MENOS }` | ❌ |
 | `OP_REL` | `{ MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE }` | ❌ |
+| `TIPO_OP` | `{ SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO, SUMA }` | ❌ |
+| `LISTA_PARAMS` | `{ AMPLITUD, FRECUENCIA, VENTANA, CON }` | ✅ |
+| `LISTA_PARAMS_SIG` | `{ COMA }` | ✅ |
+| `PARAM` | `{ AMPLITUD, FRECUENCIA, VENTANA, CON }` | ❌ |
 
 ### FIRST calculado por producción
 
+Para cada producción, FIRST(cuerpo) se toma hasta el primer terminal o el
+primer no-terminal que no deriva ε. Las de cuerpo ε heredan FIRST de su
+cabecera.
+
 | Producción | Cuerpo | FIRST(cuerpo) |
 |:----------:|--------|:-------------:|
-| 0 | `SENTENCIA PROGRAMA` | `{ SENSOR, UMBRAL, SI }` |
+| 0 | `SENTENCIA PROGRAMA` | `{ SENSOR, UMBRAL, SI, CALCULAR }` |
 | 1 | `ε` | `{ ε }` |
 | 2 | `SENSOR ID PUNTO_COMA` | `{ SENSOR }` |
 | 3 | `UMBRAL ID ASIGNACION VALOR_UMBRAL PUNTO_COMA` | `{ UMBRAL }` |
 | 4 | `SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` | `{ SI }` |
-| 5 | `MENOS NUMERO` | `{ MENOS }` |
-| 6 | `NUMERO` | `{ NUMERO }` |
-| 7 | `EXPRESION OP_REL EXPRESION` | `{ NUMERO, ID, ABS, MENOS }` |
-| 8 | `TERMINO EXPRESION_SIG` | `{ NUMERO, ID, ABS, MENOS }` |
-| 9 | `MAS TERMINO EXPRESION_SIG` | `{ MAS }` |
-| 10 | `MENOS TERMINO EXPRESION_SIG` | `{ MENOS }` |
-| 11 | `ε` | `{ ε }` |
-| 12 | `FACTOR TERMINO_SIG` | `{ NUMERO, ID, ABS, MENOS }` |
-| 13 | `POR FACTOR TERMINO_SIG` | `{ POR }` |
-| 14 | `DIV FACTOR TERMINO_SIG` | `{ DIV }` |
-| 15 | `ε` | `{ ε }` |
-| 16 | `NUMERO` | `{ NUMERO }` |
-| 17 | `ID` | `{ ID }` |
-| 18 | `ABS PAREN_IZQ EXPRESION PAREN_DER` | `{ ABS }` |
-| 19 | `MENOS FACTOR` | `{ MENOS }` |
-| 20–25 | `MAYOR`, `MENOR`, `IGUAL_IGUAL`, `MAYOR_IGUAL`, `MENOR_IGUAL`, `DIFERENTE` | cada uno su respectivo terminal |
+| 5 | `CALCULAR PAREN_IZQ ID COMA TIPO_OP PAREN_DER PUNTO_COMA` | `{ CALCULAR }` |
+| 6 | `MENOS NUMERO` | `{ MENOS }` |
+| 7 | `NUMERO` | `{ NUMERO }` |
+| 8 | `EXPRESION OP_REL EXPRESION` | `{ ABS, ID, NUMERO, MENOS }` |
+| 9 | `TERMINO EXPRESION_SIG` | `{ ABS, ID, NUMERO, MENOS }` |
+| 10 | `MAS TERMINO EXPRESION_SIG` | `{ MAS }` |
+| 11 | `MENOS TERMINO EXPRESION_SIG` | `{ MENOS }` |
+| 12 | `ε` | `{ ε }` |
+| 13 | `FACTOR TERMINO_SIG` | `{ ABS, ID, NUMERO, MENOS }` |
+| 14 | `POR FACTOR TERMINO_SIG` | `{ POR }` |
+| 15 | `DIV FACTOR TERMINO_SIG` | `{ DIV }` |
+| 16 | `ε` | `{ ε }` |
+| 17 | `NUMERO` | `{ NUMERO }` |
+| 18 | `ID` | `{ ID }` |
+| 19 | `ABS PAREN_IZQ EXPRESION PAREN_DER` | `{ ABS }` |
+| 20 | `MENOS FACTOR` | `{ MENOS }` |
+| 21–26 | `MAYOR`, `MENOR`, `IGUAL_IGUAL`, `MAYOR_IGUAL`, `MENOR_IGUAL`, `DIFERENTE` | cada uno su respectivo terminal |
+| 27–32 | `SENO`, `COSENO`, `CUADRADA`, `PROMEDIO`, `MAXIMO`, `SUMA` (seguido de `PAREN_IZQ`) | cada uno su respectivo terminal |
+| 33 | `PARAM LISTA_PARAMS_SIG` | `{ AMPLITUD, FRECUENCIA, VENTANA, CON }` |
+| 34 | `ε` | `{ ε }` |
+| 35 | `COMA LISTA_PARAMS` | `{ COMA }` |
+| 36 | `ε` | `{ ε }` |
+| 37 | `AMPLITUD ASIGNACION NUMERO` | `{ AMPLITUD }` |
+| 38 | `FRECUENCIA ASIGNACION NUMERO` | `{ FRECUENCIA }` |
+| 39 | `VENTANA ASIGNACION NUMERO` | `{ VENTANA }` |
+| 40 | `CON ASIGNACION ID` | `{ CON }` |
 
 ## 2.5 Conjuntos FOLLOW
 
@@ -441,38 +477,48 @@ Los conjuntos FOLLOW contienen los terminales que pueden aparecer inmediatamente
 | No terminal | FOLLOW |
 |:-----------:|--------|
 | `PROGRAMA` | `{ EOF }` |
-| `SENTENCIA` | `{ SENSOR, UMBRAL, SI, EOF }` |
+| `SENTENCIA` | `{ SENSOR, UMBRAL, SI, CALCULAR, EOF }` |
 | `VALOR_UMBRAL` | `{ PUNTO_COMA }` |
 | `CONDICION` | `{ ENTONCES }` |
-| `EXPRESION` | `{ MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PUNTO_COMA, ENTONCES, PAREN_DER }` |
-| `EXPRESION_SIG` | `{ MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PUNTO_COMA, ENTONCES, PAREN_DER }` |
-| `TERMINO` | `{ MAS, MENOS, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PUNTO_COMA, ENTONCES, PAREN_DER }` |
-| `TERMINO_SIG` | `{ MAS, MENOS, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PUNTO_COMA, ENTONCES, PAREN_DER }` |
-| `FACTOR` | `{ POR, DIV, MAS, MENOS, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PUNTO_COMA, ENTONCES, PAREN_DER }` |
-| `OP_REL` | `{ NUMERO, ID, ABS, MENOS }` |
+| `EXPRESION` | `{ ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PAREN_DER }` |
+| `EXPRESION_SIG` | `{ ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PAREN_DER }` |
+| `TERMINO` | `{ ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, PAREN_DER }` |
+| `TERMINO_SIG` | `{ ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, PAREN_DER }` |
+| `FACTOR` | `{ ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, POR, DIV, PAREN_DER }` |
+| `OP_REL` | `{ ABS, ID, NUMERO, MENOS }` |
+| `TIPO_OP` | `{ PAREN_DER }` |
+| `LISTA_PARAMS` | `{ PAREN_DER }` |
+| `LISTA_PARAMS_SIG` | `{ PAREN_DER }` |
+| `PARAM` | `{ PAREN_DER, COMA }` |
 
 ## 2.6 Tabla de Parsing LL(1)
 
-La tabla `TABLA[no_terminal][terminal]` indica qué producción aplicar (`-1` = error sintáctico).
+La tabla `TABLA[no_terminal][terminal]` indica qué producción aplicar (`-1` =
+error sintáctico). Se lista por no-terminal en forma `terminal → producción`;
+**toda pareja no listada vale `-1`**. Es equivalente a la matriz completa, pero
+evita repetir 36 columnas para los 14 no terminales.
 
-| NT \ Terminal | SENSOR | UMBRAL | SI | ENTONCES | ESTADO | ABS | ID | NUMERO | ESTADO_SISTEMA | MAYOR | MENOR | IGUAL_IGUAL | MAYOR_IGUAL | MENOR_IGUAL | DIFERENTE | MAS | MENOS | POR | DIV | ASIGNACION | PUNTO_COMA | PAREN_IZQ | PAREN_DER | EOF |
-|:-------------:|:------:|:------:|:--:|:--------:|:------:|:---:|:--:|:------:|:--------------:|:-----:|:-----:|:-----------:|:-----------:|:-----------:|:---------:|:---:|:-----:|:---:|:---:|:----------:|:----------:|:---------:|:---------:|:---:|
-| **PROGRAMA** | 0 | 0 | 0 | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | 1 |
-| **SENTENCIA** | 2 | 3 | 4 | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| **VALOR_UMBRAL** | — | — | — | — | — | — | — | 6 | — | — | — | — | — | — | — | — | 5 | — | — | — | — | — | — | — |
-| **CONDICION** | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | 7 | — | — | — | — | — | — | — |
-| | | | | | | 7 | 7 | 7 | | | | | | | | | 7 | | | | | 7 | 7 | |
-| **EXPRESION** | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| | | | | | | 8 | 8 | 8 | | | | | | | | | 8 | | | | | 8 | 8 | |
-| **EXPRESION_SIG** | — | — | — | 11 | — | — | — | — | — | 11 | 11 | 11 | 11 | 11 | 11 | 9 | 10 | — | — | — | 11 | 11 | 11 | — |
-| **TERMINO** | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| | | | | | | 12 | 12 | 12 | | | | | | | | | 12 | | | | | 12 | 12 | |
-| **TERMINO_SIG** | — | — | — | 15 | — | — | — | — | — | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 15 | 13 | 14 | — | 15 | 15 | 15 | — |
-| **FACTOR** | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| | | | | | | 18 | 17 | 16 | | | | | | | | | 19 | | | | | 18 | 18 | |
-| **OP_REL** | — | — | — | — | — | — | — | — | — | 20 | 21 | 22 | 23 | 24 | 25 | — | — | — | — | — | — | — | — | — |
+| No terminal | Terminal → producción |
+|:-----------:|:---------------------|
+| `PROGRAMA` | `SENSOR`→0, `UMBRAL`→0, `SI`→0, `CALCULAR`→0, `EOF`→1 |
+| `SENTENCIA` | `SENSOR`→2, `UMBRAL`→3, `SI`→4, `CALCULAR`→5 |
+| `VALOR_UMBRAL` | `NUMERO`→7, `MENOS`→6 |
+| `CONDICION` | `ABS`→8, `ID`→8, `NUMERO`→8, `MENOS`→8 |
+| `EXPRESION` | `ABS`→9, `ID`→9, `NUMERO`→9, `MENOS`→9 |
+| `EXPRESION_SIG` | `MAS`→10, `MENOS`→11, `ENTONCES`→12, `MAYOR`→12, `MENOR`→12, `IGUAL_IGUAL`→12, `MAYOR_IGUAL`→12, `MENOR_IGUAL`→12, `DIFERENTE`→12, `PAREN_DER`→12 |
+| `TERMINO` | `ABS`→13, `ID`→13, `NUMERO`→13, `MENOS`→13 |
+| `TERMINO_SIG` | `POR`→14, `DIV`→15, `MAS`→16, `MENOS`→16, `ENTONCES`→16, `MAYOR`→16, `MENOR`→16, `IGUAL_IGUAL`→16, `MAYOR_IGUAL`→16, `MENOR_IGUAL`→16, `DIFERENTE`→16, `PAREN_DER`→16 |
+| `FACTOR` | `NUMERO`→17, `ID`→18, `ABS`→19, `MENOS`→20 |
+| `OP_REL` | `MAYOR`→21, `MENOR`→22, `IGUAL_IGUAL`→23, `MAYOR_IGUAL`→24, `MENOR_IGUAL`→25, `DIFERENTE`→26 |
+| `TIPO_OP` | `SENO`→27, `COSENO`→28, `CUADRADA`→29, `PROMEDIO`→30, `MAXIMO`→31, `SUMA`→32 |
+| `LISTA_PARAMS` | `AMPLITUD`→33, `FRECUENCIA`→33, `VENTANA`→33, `CON`→33, `PAREN_DER`→34 |
+| `LISTA_PARAMS_SIG` | `COMA`→35, `PAREN_DER`→36 |
+| `PARAM` | `AMPLITUD`→37, `FRECUENCIA`→38, `VENTANA`→39, `CON`→40 |
 
-*Nota: Las celdas con `—` indican `-1` (error sintáctico).*
+*Nota: no hay ninguna celda con más de una producción para el mismo terminal,
+es decir, la gramática es LL(1) efectiva.*
+
+*Tabla generada desde `Gramatica.TABLA`.*
 
 ### Ejemplo de uso de la tabla
 
@@ -481,7 +527,7 @@ Para parsear `sensor voltaje;`:
 1. `PROGRAMA`, lookahead = `SENSOR` → producción 0 (`PROGRAMA → SENTENCIA PROGRAMA`)
 2. `SENTENCIA`, lookahead = `SENSOR` → producción 2 (`SENTENCIA → SENSOR ID PUNTO_COMA`)
 3. Se consumen `SENSOR`, `ID`, `PUNTO_COMA`
-4. `PROGRAMA`, lookahead = `FIN` (EOF) → producción 1 (`PROGRAMA → ε`)
+4. `PROGRAMA`, lookahead = `EOF` → producción 1 (`PROGRAMA → ε`)
 5. Parseo completado.
 
 ## 2.7 Algoritmo de Parsing

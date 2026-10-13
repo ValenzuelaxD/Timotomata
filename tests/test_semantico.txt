@@ -1,5 +1,5 @@
 // PROGRAMA CON TODOS LOS ERRORES SEMÁNTICOS (uno por regla)
-// Esperado: 24 errores semánticos, 0 léxicos, 0 sintácticos.
+// Esperado: 20 errores semánticos, 0 léxicos, 0 sintácticos.
 
 // Regla 1: sensor y umbral con el mismo nombre (colisión)
 sensor colision;
@@ -68,10 +68,3 @@ calcular(amperio, seno(ventana=5));
 
 // Regla 16: división entre cero constante
 si amperio / 0 > 1 entonces estado = NORMAL;
-
-// Programa terminado de forma inválida (regla 12)
-fin;
-sensor despuesDeFin;
-sensor extra1;
-si extra1 > 1 entonces estado = NORMAL;
-fin;

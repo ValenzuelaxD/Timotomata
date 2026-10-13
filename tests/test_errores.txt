@@ -6,5 +6,3 @@ si x !y entonces estado = NORMAL;
 sensor ok;
 /* comentario sin cerrar
 sensor despues_bloque;
-// Fin del programa (con errores reportados pero sin detenerse)
-FIN

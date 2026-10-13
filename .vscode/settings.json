@@ -6,5 +6,6 @@
         "${env:LOCALAPPDATA}/Timotomata/richtextfx/*.jar"
     ],
     "java.inlayHints.parameterNames.enabled": "none",
-    "java.configuration.updateBuildConfiguration": "automatic"
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "java.jdt.ls.vmargs": "-XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -Dsun.zip.disableMemoryMapping=true -Xmx8G -Xms100m -Xlog:disable"
 }

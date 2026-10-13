@@ -10,4 +10,3 @@ umbral max = 150;
 // Comentario al final
 si voltaje >= max entonces estado = NORMAL;
 // Esto tambien es comentario
-FIN

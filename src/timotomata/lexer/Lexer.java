@@ -336,7 +336,6 @@ public class Lexer {
                 case "frecuencia" -> agregar(TipoToken.FRECUENCIA, lexema, linea, columna);
                 case "ventana"    -> agregar(TipoToken.VENTANA, lexema, linea, columna);
                 case "con"        -> agregar(TipoToken.CON, lexema, linea, columna);
-                case "fin"        -> agregar(TipoToken.FIN, lexema, linea, columna);
                 default -> agregar(TipoToken.ID, lexema, linea, columna);
             }
         } else if (estado == Q_NUM || estado == Q_NUM_DEC) {
