@@ -76,18 +76,35 @@
 }
 
 .text-area .scroll-pane .content {
-    -fx-background-color: #1e1e2e;
+    -fx-background-color: transparent;
     -fx-background-radius: 0;
     -fx-padding: 0;
 }
 
-/* CodeArea es el unico renderizador y receptor de interacción del editor. */
+/* modena.css pinta un degradado opaco en `.text-area .content`; hay que
+   anularlo o tapa la franja del gutter. */
+.text-area .content {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-padding: 0;
+}
+
+/* CodeArea es el unico renderizador y receptor de interacción del editor.
+   El fondo visible lo pinta el CodeArea con un degradado (AppController):
+   franja del gutter a la izquierda, área de código a la derecha. Por eso los
+   contenedores internos deben quedar TRANSPARENTES: si pintan ellos, tapan la
+   franja y reaparece el escalón de color. */
 .syntax-editor,
 .syntax-editor .virtual-flow,
 .syntax-editor .virtual-flow .clipped-container,
 .syntax-editor .virtual-flow .sheet {
-    -fx-background-color: #1e1e2e;
     -fx-border-color: transparent;
+}
+
+.syntax-editor .virtual-flow,
+.syntax-editor .virtual-flow .clipped-container,
+.syntax-editor .virtual-flow .sheet {
+    -fx-background-color: transparent;
 }
 
 .syntax-editor .paragraph-box .paragraph-text {
@@ -152,11 +169,23 @@
     -rtfx-background-color: rgba(243, 139, 168, 0.15);
 }
 
+/* Gutter: números de línea a la derecha, con hueco reservado a la izquierda
+   para el punto ● de error. El ancho es FIJO para que marcar una línea no
+   desplace el texto de esa línea hacia la derecha.
+   Desglose del -fx-pref-width (51px):
+     4px  padding izquierdo
+     9px  punto ● (ANCHO_PUNTO en AppController)
+     4px  -fx-graphic-gap
+    22px  hasta 3 dígitos de número a 13px monoespaciado
+    12px  margen hasta el código                                */
 .syntax-editor .tm-line-number {
     -fx-font-family: 'Consolas', 'Courier New', monospace;
     -fx-font-size: 13px;
-    -fx-padding: 0 5px 0 5px;
+    -fx-padding: 0 12px 0 4px;
+    -fx-graphic-gap: 4px;
     -fx-alignment: TOP_RIGHT;
+    -fx-min-width: 51px;
+    -fx-pref-width: 51px;
 }
 
 .syntax-editor .tm-line-number:current-line {

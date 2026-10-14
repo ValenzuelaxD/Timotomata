@@ -105,6 +105,43 @@ public class AppController {
         "amplitud", "frecuencia", "ventana", "con"
     };
 
+    // ─── Margen del gutter (números de línea) ───
+    // El ancho total del gutter vive en estilos.css (.tm-line-number) para que
+    // el número quede siempre a la misma distancia del código. Aquí solo se
+    // fija el ancho del punto, que debe reservarse aunque esté invisible.
+    private static final double ANCHO_PUNTO = 9;
+
+    /** Ancho total de la franja del gutter. DEBE coincidir con el
+     *  -fx-pref-width de `.tm-line-number` en estilos.css: es el punto donde
+     *  termina la franja y arranca el área de código. */
+    private static final double ANCHO_GUTTER = 51;
+
+    /** Fondo de los números de línea sin error (franja del gutter). */
+    private static final String COLOR_GUTTER = "#181825";
+    /** Fondo del área de código. */
+    private static final String COLOR_CODIGO = "#1e1e2e";
+
+    /** Líneas mínimas que se muestran en el gutter. Los números existen
+     *  únicamente para párrafos reales: si el programa tiene 11 líneas, solo
+     *  hay 11 números. Para que la columna se vea siempre igual de larga se
+     *  rellena el documento con líneas vacías hasta llegar a este mínimo.
+     *  El relleno es solo visual: se recorta al guardar (ver textoAGuardar). */
+    private static final int MIN_LINEAS_GUTTER = 64;
+
+    /** Cuántas líneas tenía el contenido real la última vez que se cargó.
+     *  Todo lo que haya por debajo y esté vacío es relleno. */
+    private int lineasReales = 1;
+
+    // ─── Alturas de los paneles ───
+    // La columna derecha reparte su alto entre árbol, tokens, tabla y AST.
+    // El AST tiene Vgrow=ALWAYS, así que se queda con el sobrante; para que
+    // el espacio liberado llegue a tokens y tabla hay que subirles a ellos
+    // también el alto preferred, no basta con encoger el árbol.
+    private static final int ALTO_PANEL_DERIVACION = 130;
+    /** Alto de la vista previa del árbol dentro de su panel: el resto son el
+     *  encabezado con el botón y el padding. */
+    private static final int ALTO_PREVIA_ARBOL = 78;
+
     // ─── Estado interno ───
     private Programa ultimoPrograma;
     private Parser ultimoParser;
@@ -141,9 +178,10 @@ public class AppController {
         SplitPane.setResizableWithParent(split.getItems().get(0), true);
         root.setCenter(split);
 
-        // ─── Panel inferior: árbol de derivación + barra de estado ───
-        VBox bottomArea = new VBox();
-        bottomArea.getChildren().add(crearPanelDerivacion());
+        // ─── Panel inferior: errores + barra de estado ───
+        VBox bottomArea = new VBox(0);
+        bottomArea.setStyle("-fx-background-color: #11111b;");
+        bottomArea.getChildren().add(crearPanelErrores());
         bottomArea.getChildren().add(crearStatusBar());
         root.setBottom(bottomArea);
 
@@ -166,11 +204,21 @@ public class AppController {
     // ─── Panel del editor (con números de línea a la izquierda) ───
     private VBox crearPanelEditor() {
         VBox panel = new VBox(0);
-        panel.setStyle("-fx-background-color: #1e1e2e;");
+        panel.setStyle("-fx-background-color: " + COLOR_CODIGO + ";");
 
         editor = new CodeArea();
         editor.getStyleClass().add("syntax-editor");
-        editor.setStyle("-fx-background-color: #1e1e2e;"
+        // El fondo se pinta como un degradado con un corte duro a ANCHO_GUTTER:
+        // así la franja oscura del gutter llega hasta el borde inferior de la
+        // ventana en vez de terminar en la última línea con código, que es lo
+        // que producía el escalón de color. El degradado vive en el CodeArea
+        // porque los contenedores internos de RichTextFX/Flowless están
+        // transparentizados en estilos.css y dejan ver este fondo.
+        editor.setStyle("-fx-background-color: linear-gradient(to right,"
+            + " " + COLOR_GUTTER + " 0px,"
+            + " " + COLOR_GUTTER + " " + ANCHO_GUTTER + "px,"
+            + " " + COLOR_CODIGO + " " + ANCHO_GUTTER + "px,"
+            + " " + COLOR_CODIGO + " 100%);"
             + " -fx-highlight-fill: rgba(137, 180, 250, 0.22);"
             + " -fx-highlight-text-fill: #cdd6f4;"
             + " -fx-font-family: 'Consolas', 'Courier New', monospace;"
@@ -178,7 +226,8 @@ public class AppController {
             + " -fx-line-spacing: 2px;"
             + " -fx-border-color: transparent;"
             + " -fx-padding: 4px 8px 4px 0;"
-            + " -fx-background-insets: 0;");
+            + " -fx-background-insets: 0;"
+            + " -fx-background-radius: 0;");
         editor.setWrapText(false);
         editor.useInitialStyleForInsertionProperty().set(false);
         editor.setTextInsertionStyle(Collections.singleton("tm-plain"));
@@ -213,6 +262,17 @@ public class AppController {
                 Label punto = new Label("●");
                 punto.setTextFill(Color.web("#f38ba8"));
                 punto.setStyle("-fx-font-size: 9px;");
+                // Ancho fijo: el punto debe reservar su hueco aunque no se vea.
+                punto.setPadding(Insets.EMPTY);
+                punto.setMinWidth(ANCHO_PUNTO);
+                punto.setPrefWidth(ANCHO_PUNTO);
+                punto.setAlignment(Pos.CENTER);
+                // El gráfico se asigna una sola vez y NUNCA se quita. Si se
+                // hiciese setGraphic(null) el Label encogería, RichTextFX
+                // reservaría menos margen y el código de esa línea se
+                // desplazaría hacia la derecha. La visibilidad se controla
+                // con opacidad, que sí conserva el espacio en el layout.
+                numero.setGraphic(punto);
                 Runnable actualizar = () -> {
                     boolean activo = parrafoActual.getValue() == indice;
                     int linea = indice + 1;
@@ -222,15 +282,16 @@ public class AppController {
                         numero.setBackground(new Background(new BackgroundFill(
                             Color.web("rgba(243, 139, 168, 0.16)"),
                             CornerRadii.EMPTY, Insets.EMPTY)));
-                    } else {
+} else {
                         numero.setBackground(new Background(new BackgroundFill(
-                            Color.web(activo ? "rgba(137, 180, 250, 0.22)" : "#181825"),
+                            Color.web(activo ? "rgba(137, 180, 250, 0.22)"
+                                : COLOR_GUTTER),
                             CornerRadii.EMPTY, Insets.EMPTY)));
                     }
                     numero.setTextFill(Color.web(conError ? "#f38ba8"
                         : (activo ? "#cdd6f4" : "#6c7086")));
                     numero.setStyle(conError ? "-fx-font-weight: bold;" : "");
-                    numero.setGraphic(conError ? punto : null);
+                    punto.setOpacity(conError ? 1.0 : 0.0);
                     String detalle = mensajeErrorPorLinea.get(linea);
                     numero.setTooltip(conError && detalle != null
                         ? new Tooltip("⚠ " + detalle) : null);
@@ -291,20 +352,13 @@ public class AppController {
         VBox panel = new VBox(6);
         panel.setStyle("-fx-background-color: #11111b; -fx-padding: 6;");
 
-        // Panel de Errores
-        errorList = new ListView<>();
-        errorList.setPrefHeight(140);
-        errorList.setStyle("-fx-control-inner-background: #1e1e2e;"
-            + " -fx-text-fill: #cdd6f4;"
-            + " -fx-font-family: 'Consolas', monospace;"
-            + " -fx-font-size: 11px;");
-        erroresPane = new TitledPane("ERRORES", errorList);
-        erroresPane.getStyleClass().add("titled-pane-custom");
-        erroresPane.setCollapsible(false);
+        // El árbol de derivación va arriba: antes ocupaba la franja inferior
+        // completa y ahora comparte columna con los paneles de la derecha.
+        crearPanelDerivacion();
 
         // Panel de Tokens — 3 columnas: Tipo, Lexema, Linea
         tokenTable = new TableView<>(tokenData);
-        tokenTable.setPrefHeight(180);
+        tokenTable.setPrefHeight(215);
         tokenTable.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-table-cell-border-color: #313244;"
             + " -fx-text-fill: #cdd6f4;"
@@ -354,7 +408,7 @@ public class AppController {
 
         // ─── Panel de la Tabla de Símbolos (5 columnas) ───
         tablaSimbolos = new TableView<>(simbolosData);
-        tablaSimbolos.setPrefHeight(150);
+        tablaSimbolos.setPrefHeight(190);
         tablaSimbolos.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-table-cell-border-color: #313244;"
             + " -fx-text-fill: #cdd6f4;"
@@ -402,15 +456,40 @@ public class AppController {
         astPane.getStyleClass().add("titled-pane-custom");
         astPane.setCollapsible(false);
 
-        panel.getChildren().addAll(erroresPane, tokensPane, tablaPane, astPane);
+        panel.getChildren().addAll(derivacionPanel, tokensPane, tablaPane, astPane);
         VBox.setVgrow(astPane, Priority.ALWAYS);
         return panel;
     }
 
-    // ─── Panel inferior: árbol de derivación ───
+    // ─── Panel de errores (franja inferior, a todo el ancho) ───
+    private TitledPane crearPanelErrores() {
+        errorList = new ListView<>();
+        errorList.setPrefHeight(140);
+        errorList.setStyle("-fx-control-inner-background: #1e1e2e;"
+            + " -fx-text-fill: #cdd6f4;"
+            + " -fx-font-family: 'Consolas', monospace;"
+            + " -fx-font-size: 11px;");
+        erroresPane = new TitledPane("ERRORES", errorList);
+        erroresPane.getStyleClass().add("titled-pane-custom");
+        erroresPane.setCollapsible(false);
+        return erroresPane;
+    }
+
+    // ─── Panel del árbol de derivación (columna derecha) ───
     private VBox crearPanelDerivacion() {
         derivacionPanel = new VBox(6);
-        derivacionPanel.setStyle("-fx-background-color: #181825; -fx-padding: 8 12;");
+        // Alto del árbol de derivación. Es la vista previa en texto; la vista
+        // completa se abre con el botón. Es el panel más bajo de la columna a
+        // propósito: el espacio va a TOKENS y TABLA SIMBOLOS, que muestran
+        // muchas más filas. Alto fijo para que la columna no salte entre
+        // "árbol mostrado" y "hay errores: corrige primero el código".
+        derivacionPanel.setStyle("-fx-background-color: #1e1e2e;"
+            + " -fx-border-color: #313244;"
+            + " -fx-border-width: 1;"
+            + " -fx-border-radius: 6;"
+            + " -fx-padding: 8 10;");
+        derivacionPanel.setPrefHeight(ALTO_PANEL_DERIVACION);
+        derivacionPanel.setMinHeight(ALTO_PANEL_DERIVACION);
 
         HBox header = new HBox(10);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -965,7 +1044,7 @@ public class AppController {
         String arbolTexto = arbolPreviewCompleto(parser.arbolDerivacion);
         TextArea arbolPreviewArea = new TextArea(arbolTexto);
         arbolPreviewArea.setEditable(false);
-        arbolPreviewArea.setPrefHeight(130);
+        arbolPreviewArea.setPrefHeight(ALTO_PREVIA_ARBOL);
         arbolPreviewArea.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-text-fill: #a6e3a1;"
             + " -fx-font-family: 'Consolas', monospace;"
@@ -1905,11 +1984,70 @@ public class AppController {
     }
 
     // =============================================================
+    //  RELLENO DEL GUTTER
+    // =============================================================
+
+    /**
+     * Coloca un texto en el editor y lo completa con líneas vacías hasta
+     * {@link #MIN_LINEAS_GUTTER} para que la columna de números tenga siempre
+     * la misma altura. Se recuerda qué parte es contenido real.
+     */
+    private void setTextoConRelleno(String texto) {
+        String limpio = texto == null ? "" : texto;
+        lineasReales = contarLineas(limpio);
+        editor.replaceText(0, editor.getLength(),
+            completarConRelleno(limpio, MIN_LINEAS_GUTTER));
+    }
+
+    /** Texto a escribir en disco: el documento sin el relleno. */
+    private String textoAGuardar() {
+        return quitarRelleno(editor.getText(), lineasReales);
+    }
+
+    /**
+     * Añade líneas vacías al final hasta llegar a {@code minimo} líneas.
+     * No toca el contenido si ya hay suficientes.
+     */
+    static String completarConRelleno(String texto, int minimo) {
+        int faltan = minimo - contarLineas(texto);
+        return faltan > 0 ? texto + "\n".repeat(faltan) : texto;
+    }
+
+    /**
+     * Quita el relleno de líneas vacías que {@link #completarConRelleno} añadió
+     * por debajo de {@code lineasReales}. Solo recorta si esas líneas siguen
+     * vacías; si el usuario escribió ahí, se respeta su contenido y se devuelve
+     * el texto tal cual.
+     */
+    static String quitarRelleno(String texto, int lineasReales) {
+        int sobra = contarLineas(texto) - lineasReales;
+        if (sobra <= 0) return texto;
+
+        int fin = texto.length();
+        for (int i = 0; i < sobra; i++) {
+            int salto = texto.lastIndexOf('\n', fin - 1);
+            if (salto < 0) break;
+            if (!texto.substring(salto + 1, fin).isBlank()) return texto;
+            fin = salto;
+        }
+        return texto.substring(0, fin);
+    }
+
+    /** Cuántas líneas tiene un texto: un texto vacío tiene 1 línea. */
+    static int contarLineas(String texto) {
+        int lineas = 1;
+        for (int i = 0; i < texto.length(); i++) {
+            if (texto.charAt(i) == '\n') lineas++;
+        }
+        return lineas;
+    }
+
+    // =============================================================
     //  ACCIONES
     // =============================================================
 
     private void nuevoArchivo() {
-        editor.replaceText(0, editor.getLength(), "");
+        setTextoConRelleno("");
         archivoActual = null;
     }
 
@@ -1922,7 +2060,7 @@ public class AppController {
         File file = fc.showOpenDialog(root.getScene().getWindow());
         if (file != null) {
             try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-                editor.replaceText(0, editor.getLength(), br.lines().collect(Collectors.joining("\n")));
+                setTextoConRelleno(br.lines().collect(Collectors.joining("\n")));
                 archivoActual = file.getAbsolutePath();
             } catch (IOException ex) {
                 mostrarError("No se pudo abrir el archivo: " + ex.getMessage());
@@ -1953,14 +2091,14 @@ public class AppController {
 
     private void guardarA(File file) {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(file))) {
-            bw.write(editor.getText());
+            bw.write(textoAGuardar());
         } catch (IOException ex) {
             mostrarError("No se pudo guardar: " + ex.getMessage());
         }
     }
 
     private void cargarEjemploPorDefecto() {
-        editor.replaceText(0, editor.getLength(),
+        setTextoConRelleno(
             "sensor voltaje;\n"
             + "sensor temperatura;\n"
             + "umbral maxValor = 220;\n"
