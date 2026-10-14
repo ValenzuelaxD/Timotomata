@@ -20,7 +20,7 @@ si temperatura < temp_min entonces estado = CAIDA;
 si presion > presion_max entonces estado = NORMAL;
 
 // Regla con abs sobre una senal derivada
-calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);
 si abs(voltaje_prom) > 50 entonces estado = NORMAL;
 
 sino = NORMAL;

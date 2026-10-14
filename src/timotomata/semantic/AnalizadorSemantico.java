@@ -128,6 +128,7 @@ public class AnalizadorSemantico {
         regla24Inalcanzables(programa, errores);
         regla25ZonasSinCubrir(programa, avisos);
         regla26SenalesMuertas(programa, avisos);
+        regla27MezclaEnExpresion(programa, errores);
 
         ordenarPorLinea(errores);
         if (avisos != null) ordenarPorLinea(avisos);
@@ -186,14 +187,71 @@ public class AnalizadorSemantico {
      */
     private void resolverTiposDeSenales(Programa programa) {
         for (Calculo c : programa.calculos) {
-            if (!c.deriva()) continue;
-            Simbolo origen = programa.simbolos.buscar(c.sensor);
-            if (!esMedible(origen)) continue;
             Simbolo destino = programa.simbolos.buscar(c.destino);
-            if (destino != null && destino.tipo() == null) {
-                destino.asignarTipo(origen.tipo());
-            }
+            if (destino == null || destino.tipo() != null) continue;
+
+            // El tipo sale de lo que la transformación lee: para una operación,
+            // de su CON=; para una expresión, de las variables que aparecen.
+            TipoSensor t = tipoDeLectura(c, programa);
+            if (t != null) destino.asignarTipo(t);
         }
+    }
+
+    /**
+     * Magnitud física que lee o declara un cálculo, o {@code null}.
+     *
+     * <p>Para una expresión son las variables que aparecen. Para una operación
+     * es su {@code CON=}, incluido el de los generadores: ahí el {@code CON=} no
+     * es una dependencia de datos —un {@code SENO} no lee el canal— sino la
+     * declaración de *qué magnitud* representa la onda. Sin eso la señal
+     * no tendría unidad, y las reglas 17 a 19 no tendrían contra qué
+     * verificar la frecuencia.
+     */
+    private TipoSensor tipoDeLectura(Calculo c, Programa programa) {
+        if (c.esExpresion()) {
+            for (String v : Expressiones.variables(c.expresion)) {
+                Simbolo s = programa.simbolos.buscar(v);
+                if (esMedible(s) && s.tipo() != null) return s.tipo();
+            }
+            return null;
+        }
+        String canal = c.canal();
+        if (canal == null) return null;
+        Simbolo s = programa.simbolos.buscar(canal);
+        return esMedible(s) ? s.tipo() : null;
+    }
+
+    /**
+ * ¿La señal la produce un generador de onda?
+ *
+ * <p>Un {@code SENO}, {@code COSENO} o {@code CUADRADA} construye su valor a
+ * partir del reloj, no de un canal. Antes el destino heredaba el tipo del
+ * argumento posicional, y ese argumento —el canal que la cabecera nominal
+ * nombraba— no lo leía nadie: la señal salía con la unidad de un canal que no
+ * había participar en el cálculo. Ahora que el canal es un {@code CON=} y los
+ * generadores no lo admiten, la señal se queda sin tipo, que es la respuesta
+ * honesta: una onda sintética no tiene magnitud física.
+ *
+ * <p>Por eso la re/**
+ * ¿La señal la produce un generador de onda?
+ *
+ * <p>Un {@code SENO}, {@code COSENO} o {@code CUADRADA} construye su valor a
+ * partir del reloj, no leyendo un canal. Su {@code CON=} no es una dependencia
+ * de datos: declara <i>qué magnitud</i> representa la onda, y es lo que permite
+ * verificar la frecuencia contra la banda y contra la Nyquist.
+ *
+ * <p>Las señales de este tipo quedan fuera de la regla 20 porque su tipo
+ * depende de que el generador traiga su {@code CON=}, y si no lo trae es la
+ * regla 15 la que lo dice, con un mensaje que explica qué escribir. Anunciarlo
+ * dos veces por el mismo error solo hace más ruidoso el diagnóstico.
+ */
+    private boolean esSintetica(Programa programa, String nombre) {
+        for (Calculo c : programa.calculos) {
+            if (!nombre.equals(c.destino)) continue;
+            String op = c.operacion == null ? "" : c.operacion.toLowerCase();
+            return op.equals("seno") || op.equals("coseno") || op.equals("cuadrada");
+        }
+        return false;
     }
 
     /** Nombres que designan un canal medible (sensor o señal derivada). */
@@ -323,21 +381,17 @@ public class AnalizadorSemantico {
         TablaSimbolos simbolos = programa.simbolos;
         Set<String> medibles = medibles(programa);
         for (Calculo c : programa.calculos) {
-            if (!medibles.contains(c.sensor)) {
-                Simbolo s = simbolos.buscar(c.sensor);
-                if (s != null && s.clase() == Simbolo.Clase.UMBRAL) {
-                    err(errores, c.linea, "el umbral '" + c.sensor
-                        + "' no puede usarse como sensor: es el objetivo de calcular().");
-                }
-            }
+            // El canal de entrada ya no es un argumento sino un CON=, y es el
+            // único sitio por el que una operación puede leer. La comprobación
+            // de los parametros cubre las dos formas por igual.
             for (Parametro p : c.parametros) {
                 if (!"con".equalsIgnoreCase(p.nombre)) continue;
                 if (!medibles.contains(p.valor)) {
                     Simbolo s = simbolos.buscar(p.valor);
                     if (s != null && s.clase() == Simbolo.Clase.UMBRAL) {
                         err(errores, c.linea, "el umbral '" + p.valor
-                            + "' no puede usarse como sensor en CON=... (suma de"
-                            + " sensores).");
+                            + "' no puede usarse como sensor en CON=...: es un"
+                            + " limite fijo y no hay transductor detras.");
                     }
                 }
             }
@@ -539,10 +593,14 @@ public class AnalizadorSemantico {
                         }
                     }
                     case "amplitud" -> {
-                        double[] rango = buscarRango(c.sensor, programa);
+                        // La amplitud se mide contra el rango del sensor que
+                        // alimenta el generador, si lo hay.
+                        String canal = c.canal();
+                        double[] rango = canal == null
+                            ? null : buscarRango(canal, programa);
                         if (rango != null && valor > (rango[1] - rango[0])) {
                             err(errores, c.linea, "la amplitud (" + valor
-                                + ") excede el rango del sensor '" + c.sensor
+                                + ") excede el rango del sensor '" + canal
                                 + "' [" + rango[0] + ", " + rango[1] + "] (rango = "
                                 + (rango[1] - rango[0]) + ").");
                         }
@@ -574,6 +632,36 @@ public class AnalizadorSemantico {
     }
 
     // =============================================================
+    //  REGLA 27 — Magnitudes mezcladas dentro de una expresión
+    // =============================================================
+
+    /**
+     * Una expresión de {@code calcular} tiene que medir en una sola magnitud.
+     *
+     * <p>Es la regla 11 Applied a las expresiones. {@code SUMA} ya tenía su
+     * comprobación, y la regla 14 cubre cada lado de cada comparación, pero
+     * {@code calcular(v + t, mezcla)} se quedaba en silencio: el destino
+     * heredaba el tipo de la primera variable con tipo —volts— y la suma sin
+     * unidad pasaba por buena.
+     *
+     * <p>No es un caso raro. Sumar un voltaje con una temperatura es
+     * exactamente el error que alguien escribe un día creyendo que las dos
+     * señales comparten escala, y sin un tipo declarado que lo impida solo lo
+     * detecta quien recuerda la física.
+     *
+     * <p>Las constantes y los umbrales quedan fuera: no tienen magnitud propia,
+     * la toman del otro lado. Solo se miran los sensores y las señales derivadas.
+     */
+    private void regla27MezclaEnExpresion(Programa programa, List<String> errores) {
+        Set<String> medibles = medibles(programa);
+        for (Calculo c : programa.calculos) {
+            if (!c.esExpresion()) continue;
+            Map<TipoSensor, String> vistas = magnitudesDe(c.expresion, medibles, programa);
+            reportarMagnitudes(errores, c.linea, "la expresion", vistas);
+        }
+    }
+
+    // =============================================================
     //  REGLA 13 — Variable o identificador no declarado
     // =============================================================
 
@@ -591,12 +679,7 @@ public class AnalizadorSemantico {
         }
 
         for (Calculo c : programa.calculos) {
-            if (c.sensor != null && !c.sensor.isEmpty()
-                    && !simbolos.declarado(c.sensor)) {
-                err(errores, c.linea, "identificador '" + c.sensor
-                    + "' no declarado: es el sensor origen de calcular().");
-            }
-            if (c.deriva() && !simbolos.declarado(c.destino)) {
+            if (!simbolos.declarado(c.destino)) {
                 err(errores, c.linea, "identificador '" + c.destino
                     + "' no declarado: es la señal de destino de calcular().");
             }
@@ -623,7 +706,7 @@ public class AnalizadorSemantico {
      * condición entera. `voltaje > 220` mezcla cero magnitudes, y
      * `amp + temp > 10` mezcla dos. Pero `voltaje > max y temp > tempMax`
      * también junta dos magnitudes en la misma línea, y no hay nada malo en
-     * ello: una conjunction de dos preguntas sobre sensores distintos es
+     * ello: una conjuncion de dos preguntas sobre sensores distintos es
      * justamente lo que un sistema de monitoreo hace todo el tiempo.
      *
      * <p>Antes de los conectores esto no se confundía porque una condición era
@@ -669,9 +752,18 @@ public class AnalizadorSemantico {
      * Cantidad o tipo de parámetros que no coinciden con la firma de la
      * operación.
      *
-     * <p>Firmas: SENO/COSENO/CUADRADA → AMPLITUD + FRECUENCIA (2).
-     * PROMEDIO → VENTANA (1). MAXIMO → VENTANA (1).
-     * SUMA → 2 o más CON.
+     * <p>Desde que el canal de entrada es un {@code CON=} y no un argumento
+     * posicional, las firmas son:
+     *
+     * <ul>
+     *   <li>{@code SENO/COSENO/CUADRADA} → CON + AMPLITUD + FRECUENCIA. El
+     *       {@code CON=} no se lee —un generador produce su valor a partir del
+     *       reloj— pero declara qué magnitud representa la onda, y sin él no
+     *       hay unidad contra la que verificar la frecuencia.</li>
+     *   <li>{@code PROMEDIO} → CON + VENTANA.</li>
+     *   <li>{@code MAXIMO} → CON + VENTANA.</li>
+     *   <li>{@code SUMA} → 2 o más CON.</li>
+     * </ul>
      */
     private void regla15LlamadasIncorrectas(Programa programa,
                                             List<String> errores) {
@@ -690,21 +782,31 @@ public class AnalizadorSemantico {
             String nombre = op.toUpperCase();
 
             if (op.equals("seno") || op.equals("coseno") || op.equals("cuadrada")) {
-                if (c.parametros.size() != 2 || nAmpl != 1 || nFrec != 1) {
+                // El CON= de un generador no es una lectura: declara que
+                // magnitud representa la onda. Es lo que permite verificar la
+                // frecuencia contra la banda del transductor y contra la
+                // Nyquist del programa; sin el, la onda se queda sin unidad.
+                if (nAmpl != 1 || nFrec != 1 || nCon > 1
+                    || c.parametros.size() != 2 + nCon
+                    || (!soloCon && c.parametros.size() != 3)) {
                     err(errores, c.linea, "llamada con argumentos incorrectos: "
-                        + nombre + " exige AMPLITUD y FRECUENCIA (2 parametros).");
+                        + nombre + " exige CON, AMPLITUD y FRECUENCIA. El CON= no se"
+                        + " lee —un generador produce su valor a partir del reloj—"
+                        + " pero declara que magnitud representa la onda, y sin el no"
+                        + " hay unidad contra la que verificar la frecuencia.");
                 }
             } else if (op.equals("promedio")) {
-                if (c.parametros.size() != 1 || nVent != 1) {
+                if (c.parametros.size() != 2 || nCon != 1 || nVent != 1) {
                     err(errores, c.linea, "llamada con argumentos incorrectos: "
-                        + "PROMEDIO exige VENTANA (1 parametro).");
+                        + "PROMEDIO exige CON y VENTANA (2 parametros), como en "
+                        + "PROMEDIO(CON=voltaje, VENTANA=20).");
                 }
             } else if (op.equals("maximo")) {
-                if (c.parametros.size() != 1 || nVent != 1) {
+                if (c.parametros.size() != 2 || nCon != 1 || nVent != 1) {
                     err(errores, c.linea, "llamada con argumentos incorrectos: "
-                        + "MAXIMO exige VENTANA (1 parametro): el maximo va sobre "
-                        + "una ventana de muestras, como PROMEDIO. Sin ventana "
-                        + "no se sabria sobre que intervalo se toma.");
+                        + "MAXIMO exige CON y VENTANA (2 parametros). El maximo va "
+                        + "sobre una ventana de muestras, como PROMEDIO: sin "
+                        + "ventana no se sabria sobre que intervalo se toma.");
                 }
             } else if (op.equals("suma")) {
                 if (!soloCon || nCon < 2) {
@@ -775,8 +877,10 @@ public class AnalizadorSemantico {
         }
 
         for (Calculo c : programa.calculos) {
-            if (!medibles.contains(c.sensor)) continue;
-            TipoSensor t = programa.tipoDe(c.sensor);
+            // Reglas 18 y 19 verifican la fisica contra el tipo del canal que
+            // alimenta la operacion. Sin canal (un generador) no hay nada que
+            // contrastar.
+            TipoSensor t = tipoDeLectura(c, programa);
             if (t == null) continue;
 
             for (Parametro p : c.parametros) {
@@ -849,7 +953,9 @@ public class AnalizadorSemantico {
     private void regla20TiposAusentes(Programa programa, List<String> errores) {
         Set<String> sinTipo = new LinkedHashSet<>();
         for (Simbolo s : programa.simbolos.todos()) {
-            if (esMedible(s) && s.tipo() == null) sinTipo.add(s.nombre());
+            if (esMedible(s) && s.tipo() == null && !esSintetica(programa, s.nombre())) {
+                sinTipo.add(s.nombre());
+            }
         }
         if (sinTipo.isEmpty()) return;
 
@@ -903,7 +1009,6 @@ public class AnalizadorSemantico {
      */
     private void regla22Autodependencia(Programa programa, List<String> errores) {
         for (Calculo c : programa.calculos) {
-            if (!c.deriva()) continue;
             if (c.origenes().contains(c.destino)) {
                 err(errores, c.linea, "autodependencia: '" + c.destino
                     + "' se calcula a partir de si mismo. El resultado se leeria"
@@ -993,7 +1098,9 @@ public class AnalizadorSemantico {
             }
         }
         for (Calculo c : programa.calculos) {
-            usos.merge(c.sensor, c.linea, Math::min);
+            for (String canal : c.canales()) {
+                usos.merge(canal, c.linea, Math::min);
+            }
             if (c.esExpresion()) {
                 for (String v : Expressiones.variables(c.expresion)) {
                     usos.merge(v, c.linea, Math::min);
@@ -1250,6 +1357,14 @@ public class AnalizadorSemantico {
         }
     }
 
+    /**
+     * Señala un conjunto de magnitudes incompatibles dentro de una sola
+     * operación, y devuelve si lo hubo.
+     *
+     * <p>Habla de "señales" y no de "sensores" porque las dos familias cuentan:
+     * una expresión puede mezclar un transductor con una señal derivada, y el
+     * error es el mismo —sumar volts y grados no produce volts.
+     */
     private boolean reportarMagnitudes(List<String> errores, int linea,
                                        String contexto,
                                        Map<TipoSensor, String> vistas) {
@@ -1257,7 +1372,7 @@ public class AnalizadorSemantico {
         Iterator<Map.Entry<TipoSensor, String>> it = vistas.entrySet().iterator();
         Map.Entry<TipoSensor, String> a = it.next();
         Map.Entry<TipoSensor, String> b = it.next();
-        err(errores, linea, contexto + " combina sensores de magnitudes"
+        err(errores, linea, contexto + " combina senales de magnitudes"
             + " incompatibles: '" + a.getValue() + "' (" + a.getKey().etiqueta()
             + ") y '" + b.getValue() + "' (" + b.getKey().etiqueta() + ").");
         return true;

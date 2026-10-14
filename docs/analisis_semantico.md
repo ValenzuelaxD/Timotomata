@@ -75,7 +75,7 @@ Los tres campos de la derecha son los que hacen trabajo real:
 
 ---
 
-## 3. Las 26 reglas
+## 3. Las 27 reglas
 
 | # | Regla | Qué detecta |
 |:-:|:------|:------------|
@@ -103,6 +103,7 @@ Los tres campos de la derecha son los que hacen trabajo real:
 | 24 | Regla inalcanzable | Las reglas anteriores ya cubren toda su región |
 | 25 | Zona sin cubrir | Ninguna regla dispara para ciertos valores |
 | 26 | Señal muerta | Una señal derivada que nadie lee |
+| 27 | Expresión incompatible | Mezcla de magnitudes dentro de una expresión |
 
 Las reglas 9 y 12 están omitidas: la 9 por decisión del proyecto, y la 12 porque
 el lenguaje ya no tiene la sentencia `FIN`.
@@ -136,13 +137,36 @@ comprobaba. Con el tipo declarado, la omisión es un error explícito.
 ```
 si voltaje > voltaje_max entonces ...    // correcto: sensor a la izquierda
 si 250 > voltaje entonces ...            // regla 3: un sensor no es un límite
-calcular(voltaje_max, PROMEDIO(V=5), x); // regla 4: no hay sensor detrás
+calcular(PROMEDIO(CON=voltaje_max, VENTANA=5), x); // regla 4: no hay sensor detrás
 ```
 
 ### Regla 11 — `SUMA` con magnitudes incompatibles
 
 `SUMA(CON=a, CON=b)` exige que `a` y `b` midan lo mismo. Sumar volts y grados no
 produce volts: produce una suma sin unidad.
+
+### Regla 27 — Magnitudes mezcladas dentro de una expresión
+
+La regla 11 aplicada a las expresiones. Una cuenta también tiene que medir en
+una sola magnitud:
+
+```
+calcular(v + t, mezcla);   // 'v' es ELECTRICO y 't' es TERMICO
+```
+```
+Error semantico en linea 15: la expresion combina senales de magnitudes
+incompatibles: 'v' (ELECTRICO) y 't' (TERMICO).
+```
+
+Sin ella, `calcular(v + t, mezcla)` pasaba en silencio: el destino heredaba el
+tipo de la primera variable con tipo —volts— y la suma sin unidad quedaba
+declarada como si significara algo. No es un caso raro: sumar un voltaje con una
+temperatura es exactamente el error que alguien escribe un día creyendo que las
+dos señales comparten escala, y sin tipos declarados que lo impidan solo lo
+detecta quien recuerda la física.
+
+Las constantes y los umbrales quedan fuera: no tienen magnitud propia, la toman
+del otro lado de la operación. Solo se miran sensores y señales derivadas.
 
 ---
 
@@ -245,20 +269,21 @@ regla única:
 | Transformación | De qué depende |
 |:---------------|:---------------|
 | Expresión | De las variables que aparecen en ella |
-| `PROMEDIO`, `MAXIMO` | Del canal de la cabecera — la ventana se aplica sobre él |
+| `PROMEDIO`, `MAXIMO` | De su `CON=` — la ventana se aplica sobre ese canal |
 | `SUMA` | De sus `CON=`, que es su firma |
 | `SENO`, `COSENO`, `CUADRADA` | De nada: dependen del reloj |
 
 Un generador no aporta ninguna arista y por eso ni siquiera aparece en el grafo:
-en `calcular(voltaje, SENO(...), voltaje_onda)` la señal resultante no depende
-de `voltaje`, aunque el nombre esté en la cabecera. Confundirlo agregaría una
-dependencia que el código generado no tiene.
+en `calcular(SENO(CON=voltaje, AMPLITUD=100, FRECUENCIA=0.1), voltaje_onda)` la
+señal resultante no depende de `voltaje`. El `CON=` de un generador **no es una
+dependencia de datos**: declara qué magnitud representa la onda, no de dónde sale
+su valor. Confundirlo agregaría una dependencia que el código generado no tiene.
 
 ### Regla 21 — Orden de definición
 
 ```
 si voltaje_futuro > voltaje_max entonces estado = PICO;   // linea 26
-calcular(voltaje, voltaje + 1, voltaje_futuro);            // linea 27
+calcular(voltaje + 1, voltaje_futuro);              // linea 27
 ```
 ```
 se usa 'voltaje_futuro' antes de calcularlo: la senal se define en la linea 27,
@@ -336,7 +361,7 @@ justo el trabajo que falta para la fase de análisis de estados alcanzables.
 
 | Transformación | Memoria |
 |:---------------|:--------|
-| `PROMEDIO(V=n)`, `MAXIMO(V=n)` | buffer circular de `n` muestras + índice |
+| `PROMEDIO(VENTANA=n)`, `MAXIMO(VENTANA=n)` | buffer circular de `n` muestras + índice |
 | `SENO`, `COSENO`, `CUADRADA` | acumulador de fase |
 | `SUMA`, cualquier expresión | ninguna |
 
@@ -344,18 +369,18 @@ Que la operación exija memoria es la razón de ser de la regla 19.
 
 ### El coste de declarar señales implícitamente
 
-El destino de un `calcular` es su propia declaración. Eso evita tener que escribir el tipo de una señal derivada —lo hereda de su origen— pero tiene un precio: **nada obliga a revisar que el nombre del destino sea el que se quería escribir**.
+El destino de un `calcular` es su propia declaración. Eso evita tener que escribir el tipo de una señal derivada —lo hereda de lo que su transformación lee o declara— pero tiene un precio: **nada obliga a revisar que el nombre del destino sea el que se quería escribir**.
 
 ```
-calcular(v, v * 2, voltage_doble);   // voltage
-si voltaje_doble > 100 ...            // voltaje
+calcular(v * 2, voltage_doble);   // voltage
+si voltaje_doble > 100 ...        // voltaje
 ```
 
 Si la errata se nota, la regla 13 la pilla: falta el nombre correcto. Lo que **no** detectaba nadie era el caso contrario, donde la señal equivocada no la usa nadie:
 
 ```
-calcular(v, v * 2, voltage_doble);   // y no se vuelve a mencionar
-si v > 100 ...                         // voltage_doble queda huerfana
+calcular(v * 2, voltage_doble);   // y no se vuelve a mencionar
+si v > 100 ...                    // voltage_doble queda huerfana
 ```
 
 Ahí no falta nada: la señal existe, tiene tipo, y simplemente se calcula cada tick para que nadie la mire.
@@ -485,23 +510,45 @@ regla13NoDeclarados(...);  regla14TiposIncompatibles(...);
 regla15LlamadasIncorrectas(...);  regla16DivisionPorCero(...);
 reglas17a19Fisica(...);  regla20TiposAusentes(...);
 regla21OrdenDefinicion(...);  regla22Autodependencia(...);  regla23UmbralDeOtraMagnitud(...);
+regla24Inalcanzables(...);  regla25ZonasSinCubrir(programa, avisos);
+regla26SenalesMuertas(programa, avisos);
+regla27MezclaEnExpresion(...);
 ordenarPorLinea(errores);
 ```
 
 ### Herencia de tipos
 
-Una señal derivada se mide en la misma magnitud que su canal de origen, así que
-hereda su tipo. Pero **solo de un canal o de otra señal**:
+Una señal derivada se mide en la misma magnitud que lo que su transformación
+consume, así que hereda su tipo. Pero **solo de un canal o de otra señal**:
 
 ```java
-Simbolo origen = programa.simbolos.buscar(c.sensor);
-if (!esMedible(origen)) continue;
+private TipoSensor tipoDeLectura(Calculo c, Programa programa) {
+    if (c.esExpresion()) {
+        // De la primera variable con tipo, que está en su expresión.
+        for (String v : Expressiones.variables(c.expresion)) { ... }
+        return null;
+    }
+    // De su CON=. Para un generador no es una lectura: declara qué magnitud
+    // representa la onda, y es lo que permite verificar la frecuencia.
+    Simbolo s = programa.simbolos.buscar(c.canal());
+    return esMedible(s) ? s.tipo() : null;
+}
 ```
+
+Antes el tipo venía del argumento posicional del origen, que en la forma de
+expresión **no se usaba**: `calcular(inexistente, v * 2, d)` dejaba a `d` sin
+tipo aunque su expresión solo leyera un sensor perfectamente válido. Buscar en lo
+que la transformación consume de verdad elimina esa clase de fallo.
 
 Un umbral declara un tipo, pero no es un canal físico: no hay transductor
 detrás. La regla 4 ya marca leer de un umbral como error, y si la señal
 heredara su tipo pasaría inadvertida y quedaría sin verificar. Que se quede sin
 tipo hace que la regla 20 la señale por separado.
+
+Las señales de un generador quedan fuera de la regla 20: su tipo depende de que
+traiga su `CON=`, y si no lo trae es la regla 15 —que valida la firma— la que lo
+dice, con un mensaje que explica qué escribir. Anunciarlo dos veces por el mismo
+error solo haría más ruidoso el diagnóstico.
 
 ---
 

@@ -61,32 +61,35 @@ sensor temperatura : TERMICO;
 umbral voltaje_max : ELECTRICO = 220;
 umbral voltaje_min : ELECTRICO = 100;
 umbral temp_max    : TERMICO   = 80;
+umbral desvio_max  : ELECTRICO = 15;
 
 // El reloj del programa: segundos por muestreo. Fija el límite de Nyquist.
 muestreo = 0.01;
 
 estado = NORMAL;
 
-si voltaje > voltaje_max entonces estado = PICO;
+// --- Señales derivadas ------------------------------------------------------
+// El canal físico queda intacto: el resultado va a una señal nueva. El canal
+// de entrada es el parámetro CON= de la operación, no un argumento suelto.
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);
+calcular(abs(voltaje - 220), voltaje_desvio);
+calcular(voltaje * 2, voltaje_x2);
+calcular((voltaje + corriente) / 2, medio);
+
+// --- Reglas ------------------------------------------------------------------
+// Se evalúan en orden y gana la primera que se cumple, así que el orden de
+// escritura es parte del programa.
 si voltaje < voltaje_min entonces estado = CAIDA;
-si temperatura > 80 entonces estado = INESTABLE;
+si voltaje > voltaje_max entonces estado = PICO;
+si voltaje_prom >= voltaje_max entonces estado = INESTABLE;
+si voltaje_desvio > desvio_max o voltaje_desvio < -desvio_max entonces estado = INESTABLE;
+si temperatura > temp_max entonces estado = INESTABLE;
 
-// El cálculo escribe en una señal derivada: el canal físico queda intacto.
-calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);
-si voltaje_prom >= voltaje_max entonces estado = PICO;
-
-si voltaje > voltaje_max y temperatura > temp_max entonces estado = INESTABLE;
-si voltaje < voltaje_min o voltaje < voltaje_min entonces estado = CAIDA;
-si no voltaje > voltaje_max entonces estado = NORMAL;
-si estado == PICO y voltaje < voltaje_min entonces estado = CAIDA;
-si voltaje > voltaje_max entonces estado = PICO sino estado = NORMAL;
-
-// calcular también acepta cualquier expresión, que sustituye a las variables.
-calcular(voltaje, abs(voltaje - 220), voltaje_desvio);
-calcular(voltaje, voltaje * 2, voltaje_x2);
-calcular(voltaje, (voltaje + corriente) / 2, medio);
-
-si voltaje_desvio > 10 entonces estado = INESTABLE;
+// Se pueden encadenar resultados, negar la comparación, leer el estado actual
+// y ramificar con `sino`.
+si voltaje_x2 > voltaje_max * 2 y medio < 150 entonces estado = INESTABLE;
+si no voltaje_prom > voltaje_max y estado == INESTABLE entonces estado = PICO;
+si voltaje_desvio > desvio_max entonces estado = INESTABLE sino estado = PICO;
 
 sino = NORMAL;
 ```

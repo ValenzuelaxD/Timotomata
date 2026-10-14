@@ -940,7 +940,10 @@ public class AppController {
             TreeItem<String> calculos = new TreeItem<>("Calculos (" + programa.calculos.size() + ")");
             calculos.setExpanded(true);
             for (Calculo c : programa.calculos) {
-                TreeItem<String> calcItem = new TreeItem<>("CALCULAR " + c.sensor + " , " + c.operacion);
+                TreeItem<String> calcItem = new TreeItem<>(
+                    c.esExpresion()
+                        ? "CALCULAR (" + c.expresion + ") -> " + c.destino
+                        : "CALCULAR " + c.operacion + " -> " + c.destino);
                 for (Parametro p : c.parametros) {
                     calcItem.getChildren().add(new TreeItem<>("  " + p.nombre + " = " + p.valor));
                 }
@@ -1144,7 +1147,9 @@ public class AppController {
             vars.addAll(r.condicion.variables());
         }
         for (Calculo c : programa.calculos) {
-            vars.add(c.sensor);
+            if (c.esExpresion()) {
+                extraerVariablesDeExpresion(c.expresion, vars);
+            }
             for (Parametro p : c.parametros) {
                 if ("con".equals(p.nombre)) {
                     vars.add(p.valor); // con = identificador

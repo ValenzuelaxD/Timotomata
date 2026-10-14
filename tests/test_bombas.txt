@@ -99,49 +99,48 @@ umbral luz_horaria      : LUMINICO    = 250;   // de noche no se boleh
 // --- Filtrado de la alimentacion ---
 // 20 muestras a 50 Hz = 0.4 s. Suficiente para separar el pico de un corte de
 // red de una sobretension de verdad.
-calcular(tension_motor, PROMEDIO(VENTANA=20), tension_prom);
-calcular(tension_motor, MAXIMO(VENTANA=20), tension_pico);
+calcular(PROMEDIO(CON=tension_motor, VENTANA=20), tension_prom);
+calcular(MAXIMO(CON=tension_motor, VENTANA=20), tension_pico);
 
 // --- Consumo de las dos bombas en paralelo ---
-calcular(corriente_bomba2, SUMA(CON=corriente_motor, CON=corriente_bomba2),
-         corriente_total);
+calcular(SUMA(CON=corriente_motor, CON=corriente_bomba2), corriente_total);
 
 // --- Potencia por dos vias independientes ---
 // Via 1: tension * corriente, normalizada a kW.
-calcular(corriente_total, tension_motor * corriente_total / 1000, potencia_kw);
+calcular(tension_motor * corriente_total / 1000, potencia_kw);
 
 // Via 2: cuanto se aparta del regimen de diseno, que es 7.5 kW.
 // El 7.5 va como umbral con nombre y no como literal suelto en la expresion:
 // si el diseno cambia, se cambia en un sitio y no hay que huntingarlo.
 umbral potencia_nominal  : ELECTRICO   = 7.5;
-calcular(potencia_kw, potencia_kw - potencia_nominal, desvio_potencia);
+calcular(potencia_kw - potencia_nominal, desvio_potencia);
 
 // --- Desviacion instantanea respecto de la media ---
-calcular(tension_motor, abs(tension_motor - tension_prom), desvio_tension);
+calcular(abs(tension_motor - tension_prom), desvio_tension);
 
 // --- Excursion: cuanto se ha alejado la tension de su propia media ---
 // Encadenamiento: la entrada es una senal derivada y hereda su tipo.
-calcular(tension_pico, tension_pico - tension_prom, excursion);
+calcular(tension_pico - tension_prom, excursion);
 
 // --- Temperatura ---
-calcular(temp_rodamiento, PROMEDIO(VENTANA=40), rod_prom);
-calcular(temp_devanado,   PROMEDIO(VENTANA=40), devanado_prom);
+calcular(PROMEDIO(CON=temp_rodamiento, VENTANA=40), rod_prom);
+calcular(PROMEDIO(CON=temp_devanado, VENTANA=40), devanado_prom);
 
 // --- Vibracion ---
-calcular(vibracion, PROMEDIO(VENTANA=5), vibracion_prom);
-calcular(vibracion, MAXIMO(VENTANA=5), vibracion_pico);
+calcular(PROMEDIO(CON=vibracion, VENTANA=5), vibracion_prom);
+calcular(MAXIMO(CON=vibracion, VENTANA=5), vibracion_pico);
 
 // --- Onda de referencia a la frecuencia de giro nominal ---
 // Sirve para distinguir desalineacion (que aparece en una frecuencia
 // concreta) de una falla mecanica general. 20 Hz queda por debajo de la
 // Nyquist del programa, que con muestreo = 0.02 es 25 Hz: es observable.
-calcular(vibracion, SENO(AMPLITUD=15, FRECUENCIA=20), vibracion_ref);
+calcular(SENO(CON=vibracion, AMPLITUD=15, FRECUENCIA=20), vibracion_ref);
 
 // --- Salto de presion a traves de la bomba ---
-calcular(presion_descarga, presion_descarga - presion_succion, salto_presion);
+calcular(presion_descarga - presion_succion, salto_presion);
 
 // --- Fluido ---
-calcular(ph_succion, ph_succion - 7, ph_desvio);
+calcular(ph_succion - 7, ph_desvio);
 
 // ============================================================================
 //  5. MAQUINA DE ESTADOS

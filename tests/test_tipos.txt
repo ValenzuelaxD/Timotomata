@@ -38,10 +38,10 @@ si presion     > presion_max entonces estado = PICO;
 si luz         < luz_min     entonces estado = NORMAL;
 
 // --- 6. Calculos: el canal fisico queda intacto, el resultado va aparte -----
-calcular(voltaje,   PROMEDIO(VENTANA=10), voltaje_prom);
-calcular(vibracion, SENO(AMPLITUD=20, FRECUENCIA=40), vibracion_onda);
-calcular(voltaje,   MAXIMO(VENTANA=10), voltaje_pico);
-calcular(corriente, SUMA(CON=voltaje, CON=corriente), total);
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);
+calcular(SENO(CON=vibracion, AMPLITUD=20, FRECUENCIA=40), vibracion_onda);
+calcular(MAXIMO(CON=voltaje, VENTANA=10), voltaje_pico);
+calcular(SUMA(CON=voltaje, CON=corriente), total);
 
 si voltaje_prom > voltaje_max entonces estado = PICO;
 si voltaje_pico > voltaje_max entonces estado = PICO;

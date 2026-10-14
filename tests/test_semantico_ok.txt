@@ -20,10 +20,10 @@ si temperatura > temp_max entonces estado = INESTABLE;
 si temperatura < temp_min entonces estado = CAIDA;
 
 // Calculos: el canal fisico queda intacto, el resultado va a una senal
-calcular(voltaje,     SENO(AMPLITUD=50, FRECUENCIA=0.1), voltaje_onda);
-calcular(temperatura, PROMEDIO(VENTANA=20), temp_prom);
-calcular(voltaje,     MAXIMO(VENTANA=10), voltaje_pico);
-calcular(corriente,   SUMA(CON=voltaje, CON=corriente), total);
+calcular(SENO(CON=voltaje, AMPLITUD=50, FRECUENCIA=0.1), voltaje_onda);
+calcular(PROMEDIO(CON=temperatura, VENTANA=20), temp_prom);
+calcular(MAXIMO(CON=voltaje, VENTANA=10), voltaje_pico);
+calcular(SUMA(CON=voltaje, CON=corriente), total);
 
 si voltaje_pico > voltaje_max entonces estado = PICO;
 si temp_prom < temp_min entonces estado = CAIDA;

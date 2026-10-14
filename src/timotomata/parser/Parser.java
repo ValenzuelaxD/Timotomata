@@ -123,7 +123,7 @@ public class Parser {
     //  SENTENCIA → SENSOR ID : TIPO_MAGNITUD PUNTO_COMA
     //       | UMBRAL ID = VALOR_UMBRAL PUNTO_COMA
     //            | SI CONDICION ENTONCES ESTADO = ESTADO_SISTEMA PUNTO_COMA
-    //            | CALCULAR ( ID , TIPO_OP , DESTINO_OP ) PUNTO_COMA
+    //            | CALCULAR ( CALCULAR_CUERPO ) PUNTO_COMA
     //            | ESTADO = ESTADO_SISTEMA PUNTO_COMA
     
     private void sentencia(NodoDerivacion nodo) {
@@ -217,30 +217,15 @@ public class Parser {
             case Gramatica.P_SENT_CALCULAR: {
                 Token t1 = consumir(TipoToken.CALCULAR, "Se esperaba CALCULAR");
                 Token t2 = consumir(TipoToken.PAREN_IZQ, "Se esperaba (");
-                Token t3 = consumir(TipoToken.ID, "Se esperaba nombre del sensor");
-                Token t4 = consumir(TipoToken.COMA, "Se esperaba ,");
                 nodo.agregarHijo(t(t1));
                 nodo.agregarHijo(t(t2));
-                nodo.agregarHijo(t(t3));
-                nodo.agregarHijo(t(t4));
 
-                Calculo calculo = new Calculo(t3.lexema, "");
+                Calculo calculo = new Calculo();
                 calculo.linea = t1.linea;
 
-                // El canal de origen también es un uso. Sin esto, una señal que
-                // solo se lee como origen de otro calculo —potencia_kw feeding
-                // desvio_potencia— quedaría marcada como no leída, y la regla
-                // de señales muertas daría un falso positivo.
-                programa.simbolos.registrarUso(calculo.sensor, t3.linea);
-
-                NodoDerivacion nTipoOp = new NodoDerivacion("TIPO_OP");
-                tipoOp(nTipoOp, calculo);
-                nodo.agregarHijo(nTipoOp);
-
-                NodoDerivacion nDest = new NodoDerivacion("DESTINO_OP");
-                nDest.sintetico = true;
-                destinoOp(nDest, calculo);
-                nodo.agregarHijo(nDest);
+                NodoDerivacion nCuerpo = new NodoDerivacion("CALCULAR_CUERPO");
+                calcularCuerpo(nCuerpo, calculo);
+                nodo.agregarHijo(nCuerpo);
 
                 Token t6 = consumir(TipoToken.PAREN_DER, "Se esperaba )");
                 Token t7 = consumir(TipoToken.PUNTO_COMA, "Se esperaba ;");
@@ -249,10 +234,17 @@ public class Parser {
 
                 programa.calculos.add(calculo);
 
-                // Arista del grafo de flujo de datos: el destino depende de
-                // lo que la transformación lee. Para una operación nombrada
-                // son los `CON=`; para una expresión, las variables que
-                // aparecen. Un generador no lee nada y queda sin aristas.
+                // Los canales de entrada también son usos. Sin esto, una señal
+                // que solo se lee como CON= de otro calculo quedaría marcada
+                // como no leída, y la regla 26 daría un falso positivo.
+                for (String canal : calculo.canales()) {
+                    programa.simbolos.registrarUso(canal, t1.linea);
+                }
+
+                // Arista del grafo de flujo de datos: el destino depende de lo
+                // que la transformación lee. Para una operación nombrada son
+                // sus CON=; para una expresión, las variables que aparecen. Un
+                // generador no lee nada y queda sin aristas.
                 programa.simbolos.registrarCalculo(
                     calculo.resultado(), calculo.origenes());
                 break;
@@ -723,33 +715,66 @@ public class Parser {
         return nodo;
     }
 
-    
-    //  NO TERMINAL: TIPO_OP
-    //  TIPO_OP → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER | …
-    //           | EXPRESION
+//  NO TERMINAL: CALCULAR_CUERPO
+    //  CALCULAR_CUERPO → TIPO_OP COMA ID
+    //                  | EXPRESION COMA ID
     //
     //  Dos caminos: una operación nombrada de las seis, o una expresión
     //  arbitraria. Se distinguen por el primer token: las operaciones empiezan
-    //  por su palabra reservada y las expresiones por ABS, ID, NUMERO o MENOS.
-    //  Los conjuntos son disjuntos, así que la decisión es LL(1).
+    //  por su palabra reservada y las expresiones por ABS, ID, NUMERO, MENOS o
+    //  PAREN_IZQ. Los conjuntos son disjuntos, así que la decisión es LL(1).
     //
-    //  Recibe el Calculo para setear la operación y sus parámetros.
+    //  El canal de entrada no aparece aquí: es el parámetro CON= de la
+    //  operación, o las variables de la expresión. Por eso el destino es
+    //  siempre obligatorio.
+
+    private void calcularCuerpo(NodoDerivacion nodo, Calculo calculo) {
+        int prod = Gramatica.obtenerProduccion(Gramatica.CALCULAR_CUERPO, ver().tipo);
+
+        switch (prod) {
+            case Gramatica.P_CALC_OP_EXPR: {
+                NodoDerivacion nOp = new NodoDerivacion("TIPO_OP");
+                tipoOp(nOp, calculo);
+                nodo.agregarHijo(nOp);
+                break;
+            }
+            case Gramatica.P_CALC_EXPR_EXPR: {
+                NodoDerivacion nExpr = expresion();
+                calculo.expresion = (Expresion) ultimoValorSemantico;
+                marcarUso(calculo.expresion);
+                nodo.agregarHijo(nExpr);
+                break;
+            }
+            default:
+                throw error("Se esperaba una operacion (SENO, COSENO, CUADRADA,"
+                    + " PROMEDIO, MAXIMO, SUMA) o una expresion" + contexto());
+        }
+
+        Token coma = consumir(TipoToken.COMA, "Se esperaba , antes del destino");
+        Token destino = consumir(TipoToken.ID,
+            "Se esperaba el nombre de la señal de destino");
+        nodo.agregarHijo(t(coma));
+        nodo.agregarHijo(t(destino));
+        calculo.destino = destino.lexema;
+
+        // El destino ES la declaración de la señal. El tipo se resuelve en la
+        // fase semántica, cuando ya se conoce la firma de la operación y el
+        // tipo del canal de entrada.
+        programa.simbolos.declararSenal(destino.lexema, null, calculo.linea);
+    }
+
+
+    //  NO TERMINAL: TIPO_OP
+    //  TIPO_OP → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER | …
+    //
+    //  Solo operaciones nombradas. Las expresiones van por CALCULAR_CUERPO.
 
     private void tipoOp(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.TIPO_OP, ver().tipo);
 
-        if (prod == Gramatica.P_TIPO_EXPRESION) {
-            NodoDerivacion nExpr = expresion();
-            calculo.expresion = (Expresion) ultimoValorSemantico;
-            marcarUso(calculo.expresion);
-            nodo.agregarHijo(nExpr);
-            ultimoValorSemantico = "expresion";
-            return;
-        }
-
         if (prod == -1) {
             throw error("Se esperaba SENO, COSENO, CUADRADA, PROMEDIO,"
-                + " MAXIMO, SUMA o una expresion" + contexto());
+                + " MAXIMO o SUMA" + contexto());
         }
 
         Token t;
@@ -789,8 +814,6 @@ public class Parser {
         // en la fase semántica (AnalizadorSemantico), como error de llamada.
         ultimoValorSemantico = opStr;
     }
-
-
     //  NO TERMINAL: TIPO_MAGNITUD
     //  TIPO_MAGNITUD → ELECTRICO | TERMICO | LUMINICO
     //               | MECANICO | QUIMICO | HIDRAULICO
@@ -799,36 +822,6 @@ public class Parser {
         int prod = Gramatica.obtenerProduccion(Gramatica.TIPO_MAGNITUD, ver().tipo);
         if (prod == -1) throw error(mensaje + contexto());
         return avanzar();
-    }
-
-
-    //  NO TERMINAL: DESTINO_OP
-    //  DESTINO_OP → COMA ID | ε
-    //
-    //  Cuando hay destino, el resultado del cálculo se guarda en una señal
-    //  derivada y el canal físico del sensor queda intacto.
-
-    private void destinoOp(NodoDerivacion nodo, Calculo calculo) {
-        int prod = Gramatica.obtenerProduccion(Gramatica.DESTINO_OP, ver().tipo);
-
-        switch (prod) {
-            case Gramatica.P_DEST_ID: {
-                Token coma = consumir(TipoToken.COMA, "Se esperaba ,");
-                Token destino = consumir(TipoToken.ID,
-                    "Se esperaba el nombre de la señal de destino");
-                nodo.agregarHijo(t(coma));
-                nodo.agregarHijo(t(destino));
-                calculo.destino = destino.lexema;
-
-                // El tipo de la señal derivada se resuelve en la fase semántica,
-                // cuando ya se conoce el tipo del origen y la firma de la
-                // operación.
-                programa.simbolos.declararSenal(destino.lexema, null, calculo.linea);
-                break;
-            }
-            case Gramatica.P_DEST_EPS:
-                break; // sin destino: el cálculo sobrescribe el canal de origen
-        }
     }
 
 

@@ -286,7 +286,7 @@ PROGRAMA      → SENTENCIA PROGRAMA
 SENTENCIA     → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD PUNTO_COMA
               | UMBRAL ID DOS_PUNTOS TIPO_MAGNITUD ASIGNACION VALOR_UMBRAL PUNTO_COMA
               | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA RAMA_SI_SINO PUNTO_COMA
-              | CALCULAR PAREN_IZQ ID COMA TIPO_OP DESTINO_OP PAREN_DER PUNTO_COMA
+              | CALCULAR PAREN_IZQ CALCULAR_CUERPO PAREN_DER PUNTO_COMA
               | ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
               | SINO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
               | MUESTREO ASIGNACION NUMERO PUNTO_COMA
@@ -294,8 +294,8 @@ SENTENCIA     → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD PUNTO_COMA
 TIPO_MAGNITUD → ELECTRICO | TERMICO | LUMINICO
               | MECANICO | QUIMICO | HIDRAULICO
 
-DESTINO_OP    → COMA ID
-              | ε
+CALCULAR_CUERPO TIPO_OP COMA ID
+              | EXPRESION COMA ID
 
 VALOR_UMBRAL  → MENOS NUMERO
               | NUMERO
@@ -343,12 +343,20 @@ OP_REL        → MAYOR | MENOR | IGUAL_IGUAL
 
 ### Las dos formas de transformar en `calcular`
 
-`TIPO_OP` admite una operación nombrada de las seis, o una expresión arbitraria:
+`CALCULAR_CUERPO` admite una operación nombrada de las seis, o una expresión
+arbitraria:
 
 ```timotomata
-calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);   // operación nombrada
-calcular(voltaje, voltaje * 2, voltaje_x2);              // expresión arbitraria
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);   // operación nombrada
+calcular(voltaje * 2, voltaje_x2);                            // expresión arbitraria
 ```
+
+El canal de entrada **no es un argumento posicional**: es el parámetro `CON=` de
+la operación. Antes lo era, y `calcular(v, v * 2, x)` tenía que repetir `v` dos
+veces. Además, mantener ambas formas a la vez rompía LL(1): `calcular(v, op, d)`
+y `calcular(expr, d)` empiezan igual —`calcular ( v`— y una tabla no puede elegir
+con un único token de anticipo. Con el canal dentro de la operación, las dos
+familias arrancan con tokens distintos.
 
 La segunda forma **sustituye a las variables**: da la misma expresividad sin
 introducir almacenamiento mutable, ámbito ni una cuarta clase de símbolo.
@@ -402,7 +410,7 @@ terminal.
 
 ## 2.2 Símbolos
 
-### No terminales (21) - 65 producciones
+### No terminales (21) - 64 producciones
 
 | ID | Nombre | Significado |
 |:--:|--------|-------------|
@@ -421,7 +429,7 @@ terminal.
 | 12 | `PARAM` | Un parámetro con nombre |
 | 13 | `LISTA_PARAMS_SIG` | Continuación de la lista de parámetros |
 | 14 | `TIPO_MAGNITUD` | Tipo de sensor declarado |
-| 15 | `DESTINO_OP` | Señal de destino del cálculo, o ε |
+| 15 | `CALCULAR_CUERPO` | Lo que se calcula: una operaci髇 nombrada o una expresi髇 |
 
 ### Terminales (48 tokens)
 
@@ -470,7 +478,7 @@ terminal.
 | 2 | `SENTENCIA → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD PUNTO_COMA` |
 | 3 | `SENTENCIA → UMBRAL ID DOS_PUNTOS TIPO_MAGNITUD ASIGNACION VALOR_UMBRAL PUNTO_COMA` |
 | 4 | `SENTENCIA → SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA RAMA_SI_SINO PUNTO_COMA` |
-| 5 | `SENTENCIA → CALCULAR PAREN_IZQ ID COMA TIPO_OP DESTINO_OP PAREN_DER PUNTO_COMA` |
+| 5 | `SENTENCIA → CALCULAR PAREN_IZQ CALCULAR_CUERPO PAREN_DER PUNTO_COMA` |
 | 6 | `VALOR_UMBRAL → MENOS NUMERO` |
 | 7 | `VALOR_UMBRAL → NUMERO` |
 | 8 | `COMPARACION → EXPRESION OP_REL EXPRESION` |
@@ -512,84 +520,23 @@ terminal.
 | 44 | `TIPO_MAGNITUD → MECANICO` |
 | 45 | `TIPO_MAGNITUD → QUIMICO` |
 | 46 | `TIPO_MAGNITUD → HIDRAULICO` |
-| 47 | `DESTINO_OP → COMA ID` |
-| 48 | `DESTINO_OP → ε` |
-| 49 | `SENTENCIA → ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
-| 50 | `SENTENCIA → MUESTREO ASIGNACION NUMERO PUNTO_COMA` |
-| 51 | `SENTENCIA → SINO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
-| 52 | `TIPO_OP → EXPRESION` |
-| 53 | `FACTOR → PAREN_IZQ EXPRESION PAREN_DER` |
-| 54 | `NEGACION → NO NEGACION` |
-| 55 | `NEGACION → ε` |
-| 56 | `CONDICION_SIG → CONECTOR NEGACION COMPARACION CONDICION_SIG` |
-| 57 | `CONDICION_SIG → ε` |
-| 58 | `CONECTOR → Y` |
-| 59 | `CONECTOR → O` |
-| 60 | `RAMA_SI_SINO → SINO ESTADO ASIGNACION ESTADO_SISTEMA` |
-| 61 | `RAMA_SI_SINO → ε` |
-| 62 | `FACTOR → ESTADO` |
-| 63 | `FACTOR → ESTADO_SISTEMA` |
-| 64 | `CONDICION → NEGACION COMPARACION CONDICION_SIG` |
-
-
-
-| ID | Producción |
-|:--:|------------|
-| 0 | `PROGRAMA → SENTENCIA PROGRAMA` |
-| 1 | `PROGRAMA → ε` |
-| 2 | `SENTENCIA → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD PUNTO_COMA` |
-| 3 | `SENTENCIA → UMBRAL ID DOS_PUNTOS TIPO_MAGNITUD ASIGNACION VALOR_UMBRAL PUNTO_COMA` |
-| 4 | `SENTENCIA → SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
-| 5 | `SENTENCIA → CALCULAR PAREN_IZQ ID COMA TIPO_OP DESTINO_OP PAREN_DER PUNTO_COMA` |
-| 6 | `VALOR_UMBRAL → MENOS NUMERO` |
-| 7 | `VALOR_UMBRAL → NUMERO` |
-| 8 | `CONDICION → EXPRESION OP_REL EXPRESION` |
-| 9 | `EXPRESION → TERMINO EXPRESION_SIG` |
-| 10 | `EXPRESION_SIG → MAS TERMINO EXPRESION_SIG` |
-| 11 | `EXPRESION_SIG → MENOS TERMINO EXPRESION_SIG` |
-| 12 | `EXPRESION_SIG → ε` |
-| 13 | `TERMINO → FACTOR TERMINO_SIG` |
-| 14 | `TERMINO_SIG → POR FACTOR TERMINO_SIG` |
-| 15 | `TERMINO_SIG → DIV FACTOR TERMINO_SIG` |
-| 16 | `TERMINO_SIG → ε` |
-| 17 | `FACTOR → NUMERO` |
-| 18 | `FACTOR → ID` |
-| 19 | `FACTOR → ABS PAREN_IZQ EXPRESION PAREN_DER` |
-| 20 | `FACTOR → MENOS FACTOR` |
-| 21 | `OP_REL → MAYOR` |
-| 22 | `OP_REL → MENOR` |
-| 23 | `OP_REL → IGUAL_IGUAL` |
-| 24 | `OP_REL → MAYOR_IGUAL` |
-| 25 | `OP_REL → MENOR_IGUAL` |
-| 26 | `OP_REL → DIFERENTE` |
-| 27 | `TIPO_OP → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER` |
-| 28 | `TIPO_OP → COSENO PAREN_IZQ LISTA_PARAMS PAREN_DER` |
-| 29 | `TIPO_OP → CUADRADA PAREN_IZQ LISTA_PARAMS PAREN_DER` |
-| 30 | `TIPO_OP → PROMEDIO PAREN_IZQ LISTA_PARAMS PAREN_DER` |
-| 31 | `TIPO_OP → MAXIMO PAREN_IZQ LISTA_PARAMS PAREN_DER` |
-| 32 | `TIPO_OP → SUMA PAREN_IZQ LISTA_PARAMS PAREN_DER` |
-| 33 | `LISTA_PARAMS → PARAM LISTA_PARAMS_SIG` |
-| 34 | `LISTA_PARAMS → ε` |
-| 35 | `LISTA_PARAMS_SIG → COMA LISTA_PARAMS` |
-| 36 | `LISTA_PARAMS_SIG → ε` |
-| 37 | `PARAM → AMPLITUD ASIGNACION NUMERO` |
-| 38 | `PARAM → FRECUENCIA ASIGNACION NUMERO` |
-| 39 | `PARAM → VENTANA ASIGNACION NUMERO` |
-| 40 | `PARAM → CON ASIGNACION ID` |
-| 41 | `TIPO_MAGNITUD → ELECTRICO` |
-| 42 | `TIPO_MAGNITUD → TERMICO` |
-| 43 | `TIPO_MAGNITUD → LUMINICO` |
-| 44 | `TIPO_MAGNITUD → MECANICO` |
-| 45 | `TIPO_MAGNITUD → QUIMICO` |
-| 46 | `TIPO_MAGNITUD → HIDRAULICO` |
-| 47 | `DESTINO_OP → COMA ID` |
-| 48 | `DESTINO_OP → ε` |
-| 49 | `SENTENCIA → ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
-| 50 | `SENTENCIA → MUESTREO ASIGNACION NUMERO PUNTO_COMA` |
-| 51 | `SENTENCIA → SINO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
-| 52 | `TIPO_OP → EXPRESION` |
-| 53 | `FACTOR → PAREN_IZQ EXPRESION PAREN_DER` |
-
+| 47 | `SENTENCIA → ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
+| 48 | `SENTENCIA → MUESTREO ASIGNACION NUMERO PUNTO_COMA` |
+| 49 | `SENTENCIA → SINO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
+| 50 | `FACTOR → PAREN_IZQ EXPRESION PAREN_DER` |
+| 51 | `NEGACION → NO NEGACION` |
+| 52 | `NEGACION → ε` |
+| 53 | `CONDICION_SIG → CONECTOR NEGACION COMPARACION CONDICION_SIG` |
+| 54 | `CONDICION_SIG → ε` |
+| 55 | `CONECTOR → Y` |
+| 56 | `CONECTOR → O` |
+| 57 | `RAMA_SI_SINO → SINO ESTADO ASIGNACION ESTADO_SISTEMA` |
+| 58 | `RAMA_SI_SINO → ε` |
+| 59 | `FACTOR → ESTADO` |
+| 60 | `FACTOR → ESTADO_SISTEMA` |
+| 61 | `CONDICION → NEGACION COMPARACION CONDICION_SIG` |
+| 62 | `CALCULAR_CUERPO → TIPO_OP COMA ID` |
+| 63 | `CALCULAR_CUERPO → EXPRESION COMA ID` |
 > Generada desde `Gramatica.PRODUCCIONES`; los identificadores coinciden con
 > las constantes `P_*` del código.
 
@@ -610,17 +557,18 @@ que pueden aparecer inmediatamente después.
 | `TERMINO_SIG` | POR, DIV | si | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, PAREN_DER, COMA, Y, O |
 | `FACTOR` | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ | no | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, POR, DIV, PAREN_DER, COMA, Y, O |
 | `OP_REL` | MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE | no | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ |
-| `TIPO_OP` | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ, SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO, SUMA | no | PAREN_DER, COMA |
+| `TIPO_OP` | SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO, SUMA | no | COMA |
 | `LISTA_PARAMS` | AMPLITUD, FRECUENCIA, VENTANA, CON | si | PAREN_DER |
 | `PARAM` | AMPLITUD, FRECUENCIA, VENTANA, CON | no | PAREN_DER, COMA |
 | `LISTA_PARAMS_SIG` | COMA | si | PAREN_DER |
 | `TIPO_MAGNITUD` | ELECTRICO, TERMICO, LUMINICO, MECANICO, QUIMICO, HIDRAULICO | no | ASIGNACION, PUNTO_COMA |
-| `DESTINO_OP` | COMA | si | PAREN_DER |
+| `CALCULAR_CUERPO` | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ, SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO, SUMA | no | PAREN_DER |
 | `NEGACION` | NO | si | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ |
 | `COMPARACION` | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ | no | ENTONCES, Y, O |
 | `CONDICION_SIG` | Y, O | si | ENTONCES |
 | `CONECTOR` | Y, O | no | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ, NO |
 | `RAMA_SI_SINO` | SINO | si | PUNTO_COMA |
+
 
 
 ## 2.5 Tabla de Parsing LL(1)
@@ -631,26 +579,27 @@ sintáctico). Se lista solo lo no vacío; **toda pareja no listada vale `-1`**.
 | No terminal | Terminal → produccion |
 |:-----------:|:---------------------|
 | `PROGRAMA` | `SENSOR`→0, `UMBRAL`→0, `SI`→0, `ESTADO`→0, `CALCULAR`→0, `SINO`→0, `MUESTREO`→0, `EOF`→1 |
-| `SENTENCIA` | `SENSOR`→2, `UMBRAL`→3, `SI`→4, `ESTADO`→49, `CALCULAR`→5, `SINO`→51, `MUESTREO`→50 |
+| `SENTENCIA` | `SENSOR`→2, `UMBRAL`→3, `SI`→4, `ESTADO`→47, `CALCULAR`→5, `SINO`→49, `MUESTREO`→48 |
 | `VALOR_UMBRAL` | `NUMERO`→7, `MENOS`→6 |
-| `CONDICION` | `ESTADO`→64, `ABS`→64, `ID`→64, `NUMERO`→64, `ESTADO_SISTEMA`→64, `MENOS`→64, `PAREN_IZQ`→64, `NO`→64 |
+| `CONDICION` | `ESTADO`→61, `ABS`→61, `ID`→61, `NUMERO`→61, `ESTADO_SISTEMA`→61, `MENOS`→61, `PAREN_IZQ`→61, `NO`→61 |
 | `EXPRESION` | `ESTADO`→9, `ABS`→9, `ID`→9, `NUMERO`→9, `ESTADO_SISTEMA`→9, `MENOS`→9, `PAREN_IZQ`→9 |
 | `EXPRESION_SIG` | `ENTONCES`→12, `MAYOR`→12, `MENOR`→12, `IGUAL_IGUAL`→12, `MAYOR_IGUAL`→12, `MENOR_IGUAL`→12, `DIFERENTE`→12, `MAS`→10, `MENOS`→11, `PAREN_DER`→12, `COMA`→12, `Y`→12, `O`→12 |
 | `TERMINO` | `ESTADO`→13, `ABS`→13, `ID`→13, `NUMERO`→13, `ESTADO_SISTEMA`→13, `MENOS`→13, `PAREN_IZQ`→13 |
 | `TERMINO_SIG` | `ENTONCES`→16, `MAYOR`→16, `MENOR`→16, `IGUAL_IGUAL`→16, `MAYOR_IGUAL`→16, `MENOR_IGUAL`→16, `DIFERENTE`→16, `MAS`→16, `MENOS`→16, `POR`→14, `DIV`→15, `PAREN_DER`→16, `COMA`→16, `Y`→16, `O`→16 |
-| `FACTOR` | `ESTADO`→62, `ABS`→19, `ID`→18, `NUMERO`→17, `ESTADO_SISTEMA`→63, `MENOS`→20, `PAREN_IZQ`→53 |
+| `FACTOR` | `ESTADO`→59, `ABS`→19, `ID`→18, `NUMERO`→17, `ESTADO_SISTEMA`→60, `MENOS`→20, `PAREN_IZQ`→50 |
 | `OP_REL` | `MAYOR`→21, `MENOR`→22, `IGUAL_IGUAL`→23, `MAYOR_IGUAL`→24, `MENOR_IGUAL`→25, `DIFERENTE`→26 |
-| `TIPO_OP` | `ESTADO`→52, `ABS`→52, `ID`→52, `NUMERO`→52, `ESTADO_SISTEMA`→52, `MENOS`→52, `PAREN_IZQ`→52, `SENO`→27, `COSENO`→28, `CUADRADA`→29, `PROMEDIO`→30, `MAXIMO`→31, `SUMA`→32 |
+| `TIPO_OP` | `SENO`→27, `COSENO`→28, `CUADRADA`→29, `PROMEDIO`→30, `MAXIMO`→31, `SUMA`→32 |
 | `LISTA_PARAMS` | `PAREN_DER`→34, `AMPLITUD`→33, `FRECUENCIA`→33, `VENTANA`→33, `CON`→33 |
 | `PARAM` | `AMPLITUD`→37, `FRECUENCIA`→38, `VENTANA`→39, `CON`→40 |
 | `LISTA_PARAMS_SIG` | `PAREN_DER`→36, `COMA`→35 |
 | `TIPO_MAGNITUD` | `ELECTRICO`→41, `TERMICO`→42, `LUMINICO`→43, `MECANICO`→44, `QUIMICO`→45, `HIDRAULICO`→46 |
-| `DESTINO_OP` | `PAREN_DER`→48, `COMA`→47 |
-| `NEGACION` | `ESTADO`→55, `ABS`→55, `ID`→55, `NUMERO`→55, `ESTADO_SISTEMA`→55, `MENOS`→55, `PAREN_IZQ`→55, `NO`→54 |
+| `CALCULAR_CUERPO` | `ESTADO`→63, `ABS`→63, `ID`→63, `NUMERO`→63, `ESTADO_SISTEMA`→63, `MENOS`→63, `PAREN_IZQ`→63, `SENO`→62, `COSENO`→62, `CUADRADA`→62, `PROMEDIO`→62, `MAXIMO`→62, `SUMA`→62 |
+| `NEGACION` | `ESTADO`→52, `ABS`→52, `ID`→52, `NUMERO`→52, `ESTADO_SISTEMA`→52, `MENOS`→52, `PAREN_IZQ`→52, `NO`→51 |
 | `COMPARACION` | `ESTADO`→8, `ABS`→8, `ID`→8, `NUMERO`→8, `ESTADO_SISTEMA`→8, `MENOS`→8, `PAREN_IZQ`→8 |
-| `CONDICION_SIG` | `ENTONCES`→57, `Y`→56, `O`→56 |
-| `CONECTOR` | `Y`→58, `O`→59 |
-| `RAMA_SI_SINO` | `PUNTO_COMA`→61, `SINO`→60 |
+| `CONDICION_SIG` | `ENTONCES`→54, `Y`→53, `O`→53 |
+| `CONECTOR` | `Y`→55, `O`→56 |
+| `RAMA_SI_SINO` | `PUNTO_COMA`→58, `SINO`→57 |
+
 
 
 No hay ninguna celda con dos producciones para el mismo terminal: **la
@@ -710,19 +659,21 @@ Cada producción construye los nodos correspondientes del Árbol de Sintaxis Abs
 | 2 `SENTENCIA → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD ;` | `new Sensor(nombre, tipo)` + `simbolos.declararSensor(...)` |
 | 3 `SENTENCIA → UMBRAL ID DOS_PUNTOS TIPO_MAGNITUD = VALOR_UMBRAL ;` | `simbolos.declararUmbral(nombre, tipo, valor, línea)` |
 | 4 `SENTENCIA → SI CONDICION ENTONCES ESTADO = ESTADO_SISTEMA ;` | `programa.reglas.add(new Regla(cond, estado, línea))` |
-| 5 `SENTENCIA → CALCULAR ( ID , TIPO_OP DESTINO_OP ) ;` | `new Calculo(origen, …)`, `simbolos.declararSenal(...)` y la arista de flujo de datos |
-| 6 `SENTENCIA → ESTADO = ESTADO_SISTEMA ;` | `programa.estadoInicial` |
-| 8 `CONDICION → EXPRESION OP_REL EXPRESION` | `new Binaria(izq, op, der)` |
+| 5 `SENTENCIA  CALCULAR ( CALCULAR_CUERPO ) ;` | `new Calculo(...)`, `simbolos.declararSenal(destino, …)` y la arista de flujo de datos |
+| 8 `COMPARACION → EXPRESION OP_REL EXPRESION` | `new Comparacion(izq, op, der)` |
 | 10–11 `EXPRESION_SIG → MAS/MENOS TERMINO EXPRESION_SIG` | `new Binaria(izquierda, op, der)` |
 | 14–15 `TERMINO_SIG → POR/DIV FACTOR TERMINO_SIG` | `new Binaria(izquierda, op, der)` |
 | 17 `FACTOR → NUMERO` | `new Numero(valor)` |
 | 18 `FACTOR → ID` | `new Variable(nombre)` + `simbolos.registrarUso(...)` |
 | 19 `FACTOR → ABS ( EXPRESION )` | `new Abs(expr)` |
 | 20 `FACTOR → MENOS FACTOR` | `new Negacion(expr)` |
-| 52 `TIPO_OP → EXPRESION` | `calculo.expresion`; `calculo.operacion` queda en `null` |
-| 53 `FACTOR → ( EXPRESION )` | ninguno: el agrupamiento devuelve la expresión interior sin envolverla |
+| 50 `FACTOR → ( EXPRESION )` | ninguno: el agrupamiento devuelve la expresión interior sin envolverla |
+| 62 `CALCULAR_CUERPO → TIPO_OP COMA ID` | `calculo.operacion` y sus parámetros |
+| 63 `CALCULAR_CUERPO → EXPRESION COMA ID` | `calculo.expresion`; `calculo.operacion` queda en `null` |
 
-La producción 53 no produce un nodo porque `(a + b) / 2` y `a / 2 + b / 2`
+El destino se declara solo: `simbolos.declararSenal()` se llama al leer el segundo argumento, y su tipo lo hereda de lo que la transformación lee o declara.
+
+La producción 50 no produce un nodo porque `(a + b) / 2` y `a / 2 + b / 2`
 comparten la misma forma de árbol; el agrupamiento solo restringe el orden en que
 el parser arma los operandos, y eso ya lo resuelve la precedencia de
 `EXPRESION_SIG` y `TERMINO_SIG`. Un nodo `Agrupamiento` sería información que el

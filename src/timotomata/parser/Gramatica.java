@@ -15,7 +15,7 @@ import timotomata.lexer.TipoToken;
  *   SENTENCIA     → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD PUNTO_COMA
  *                 | UMBRAL ID DOS_PUNTOS TIPO_MAGNITUD ASIGNACION VALOR_UMBRAL PUNTO_COMA
  *                 | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
- *                 | CALCULAR PAREN_IZQ ID COMA TIPO_OP DESTINO_OP PAREN_DER PUNTO_COMA
+ *                 | CALCULAR PAREN_IZQ CALCULAR_CUERPO PAREN_DER PUNTO_COMA
  *                 | ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
  *                 | SINO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
  *                 | MUESTREO ASIGNACION NUMERO PUNTO_COMA
@@ -23,8 +23,8 @@ import timotomata.lexer.TipoToken;
  *   TIPO_MAGNITUD  → ELECTRICO | TERMICO | LUMINICO
  *                 | MECANICO | QUIMICO | HIDRAULICO
  *
- *   DESTINO_OP     → COMA ID
- *                 | ε
+ *   CALCULAR_CUERPO → TIPO_OP COMA ID
+ *                 | EXPRESION COMA ID
  *
  *   VALOR_UMBRAL  → MENOS NUMERO
  *                 | NUMERO
@@ -102,7 +102,11 @@ public class Gramatica {
         PARAM         = 12,
         LISTA_PARAMS_SIG = 13,
         TIPO_MAGNITUD = 14,
-        DESTINO_OP    = 15,
+        //  Cuerpo de un calcular: una operación nombrada o una expresión,
+        //  siempre seguidas del destino. El canal de entrada ya no es un
+        //  argumento posicional: es el parámetro CON= de la operación. Ver
+        //  SENTENCIA para por qué.
+        CALCULAR_CUERPO = 15,
         //  Los cinco no terminales de la capa booleana. COMPARACION es la hoja
         //  y la única que se puede traducir a un intervalo de valores; los
         //  otros cuatro componen sin intervalo.
@@ -119,7 +123,7 @@ public class Gramatica {
         "CONDICION", "EXPRESION", "EXPRESION_SIG",
         "TERMINO", "TERMINO_SIG", "FACTOR", "OP_REL",
         "TIPO_OP", "LISTA_PARAMS", "PARAM", "LISTA_PARAMS_SIG",
-        "TIPO_MAGNITUD", "DESTINO_OP",
+        "TIPO_MAGNITUD", "CALCULAR_CUERPO",
         "NEGACION", "COMPARACION", "CONDICION_SIG", "CONECTOR", "RAMA_SI_SINO"
     };
 
@@ -174,26 +178,25 @@ public class Gramatica {
         P_TIPO_MECANICO   = 44,
         P_TIPO_QUIMICO    = 45,
         P_TIPO_HIDRAULICO = 46,
-        P_DEST_ID         = 47,
-        P_DEST_EPS        = 48,
-        P_SENT_ESTADO     = 49,
-        P_SENT_MUESTREO   = 50,
-        P_SENT_SINO       = 51,
-        P_TIPO_EXPRESION  = 52,
-        P_FACT_PAREN      = 53,
-        P_NEG_NO          = 54,
-        P_NEG_EPS        = 55,
-        P_COND_SIG_CON   = 56,
-        P_COND_SIG_EPS   = 57,
-        P_CON_Y          = 58,
-        P_CON_O          = 59,
-        P_RAMA_SINO      = 60,
-        P_RAMA_EPS       = 61,
-        P_FACT_ESTADO    = 62,
-        P_FACT_LITERAL   = 63,
-        P_COND          = 64;
+        P_SENT_ESTADO     = 47,
+        P_SENT_MUESTREO   = 48,
+        P_SENT_SINO       = 49,
+        P_FACT_PAREN      = 50,
+        P_NEG_NO          = 51,
+        P_NEG_EPS         = 52,
+        P_COND_SIG_CON    = 53,
+        P_COND_SIG_EPS    = 54,
+        P_CON_Y           = 55,
+        P_CON_O           = 56,
+        P_RAMA_SINO       = 57,
+        P_RAMA_EPS        = 58,
+        P_FACT_ESTADO     = 59,
+        P_FACT_LITERAL    = 60,
+        P_COND            = 61,
+        P_CALC_OP_EXPR    = 62,
+        P_CALC_EXPR_EXPR  = 63;
 
-    public static final int NUM_PROD = 65;
+    public static final int NUM_PROD = 64;
 
     
     //  CODIFICACIÓN DE SÍMBOLOS
@@ -225,8 +228,7 @@ public class Gramatica {
                                        T(TipoToken.ASIGNACION),  T(TipoToken.ESTADO_SISTEMA),
                                        NT(RAMA_SI_SINO),         T(TipoToken.PUNTO_COMA) },
         /*  5 */ { NT(SENTENCIA),    T(TipoToken.CALCULAR),     T(TipoToken.PAREN_IZQ),
-                                       T(TipoToken.ID),          T(TipoToken.COMA),
-                                       NT(TIPO_OP),              NT(DESTINO_OP),
+                                       NT(CALCULAR_CUERPO),
                                        T(TipoToken.PAREN_DER),   T(TipoToken.PUNTO_COMA) },
 
         /*  6 */ { NT(VALOR_UMBRAL), T(TipoToken.MENOS),       T(TipoToken.NUMERO) },
@@ -295,47 +297,54 @@ public class Gramatica {
         /* 44 */ { NT(TIPO_MAGNITUD), T(TipoToken.MECANICO) },
         /* 45 */ { NT(TIPO_MAGNITUD), T(TipoToken.QUIMICO) },
         /* 46 */ { NT(TIPO_MAGNITUD), T(TipoToken.HIDRAULICO) },
-
-        /* 47 */ { NT(DESTINO_OP),   T(TipoToken.COMA),  T(TipoToken.ID) },
-        /* 48 */ { NT(DESTINO_OP) },                               // ε
-
-        /* 49 */ { NT(SENTENCIA),    T(TipoToken.ESTADO),      T(TipoToken.ASIGNACION),
+        /* 47 */ { NT(SENTENCIA),    T(TipoToken.ESTADO),      T(TipoToken.ASIGNACION),
                                        T(TipoToken.ESTADO_SISTEMA), T(TipoToken.PUNTO_COMA) },
-        /* 50 */ { NT(SENTENCIA),    T(TipoToken.MUESTREO),    T(TipoToken.ASIGNACION),
+        /* 48 */ { NT(SENTENCIA),    T(TipoToken.MUESTREO),    T(TipoToken.ASIGNACION),
                                        T(TipoToken.NUMERO),        T(TipoToken.PUNTO_COMA) },
-        /* 51 */ { NT(SENTENCIA),    T(TipoToken.SINO),        T(TipoToken.ASIGNACION),
+        /* 49 */ { NT(SENTENCIA),    T(TipoToken.SINO),        T(TipoToken.ASIGNACION),
                                        T(TipoToken.ESTADO_SISTEMA), T(TipoToken.PUNTO_COMA) },
 
-        /* 52 */ { NT(TIPO_OP),      NT(EXPRESION) },
-
-        /* 53 */ { NT(FACTOR),       T(TipoToken.PAREN_IZQ),  NT(EXPRESION),
+        /* 50 */ { NT(FACTOR),       T(TipoToken.PAREN_IZQ),  NT(EXPRESION),
                                        T(TipoToken.PAREN_DER) },
 
         // --- Capa booleana de la condicion -----------------------------------
         //  CONDICION factoriza el NO inicial y la cadena de conectores. NO va
         //  antes de COMPARACION y no antes de CONDICION_SIG: por eso
-        //  `no a > 1 y b < 2` se lee `no(a > 1) y b < 2` y no
-        //  `no(a > 1 y b < 2)`.
+        //  `no a > 10 y b < 2` se lee `no(a > 10) y b < 2`.
 
-        /* 54 */ { NT(NEGACION),      T(TipoToken.NO), NT(NEGACION) },
-        /* 55 */ { NT(NEGACION) },                                  // ε
+        /* 51 */ { NT(NEGACION),      T(TipoToken.NO), NT(NEGACION) },
+        /* 52 */ { NT(NEGACION) },                                  // ε
 
-        /* 56 */ { NT(CONDICION_SIG), NT(CONECTOR),   NT(NEGACION),
+        /* 53 */ { NT(CONDICION_SIG), NT(CONECTOR),    NT(NEGACION),
                                        NT(COMPARACION), NT(CONDICION_SIG) },
-        /* 57 */ { NT(CONDICION_SIG) },                              // ε
+        /* 54 */ { NT(CONDICION_SIG) },                              // ε
 
-        /* 58 */ { NT(CONECTOR),      T(TipoToken.Y) },
-        /* 59 */ { NT(CONECTOR),      T(TipoToken.O) },
+        /* 55 */ { NT(CONECTOR),      T(TipoToken.Y) },
+        /* 56 */ { NT(CONECTOR),      T(TipoToken.O) },
 
-        /* 60 */ { NT(RAMA_SI_SINO),  T(TipoToken.SINO),        T(TipoToken.ESTADO),
+        /* 57 */ { NT(RAMA_SI_SINO),  T(TipoToken.SINO),        T(TipoToken.ESTADO),
                                        T(TipoToken.ASIGNACION), T(TipoToken.ESTADO_SISTEMA) },
-        /* 61 */ { NT(RAMA_SI_SINO) },                              // ε
+        /* 58 */ { NT(RAMA_SI_SINO) },                              // ε
 
-        /* 62 */ { NT(FACTOR),       T(TipoToken.ESTADO) },
-        /* 63 */ { NT(FACTOR),       T(TipoToken.ESTADO_SISTEMA) },
+        /* 59 */ { NT(FACTOR),       T(TipoToken.ESTADO) },
+        /* 60 */ { NT(FACTOR),       T(TipoToken.ESTADO_SISTEMA) },
 
-        /* 64 */ { NT(CONDICION),    NT(NEGACION), NT(COMPARACION),
+        /* 61 */ { NT(CONDICION),    NT(NEGACION), NT(COMPARACION),
                                        NT(CONDICION_SIG) },
+
+        // --- Cuerpo de calcular ------------------------------------------------
+        //  El canal de entrada NO es un argumento posicional: es el parametro
+        //  CON= de la operacion. Hace falta porque `calcular(v, op, d)` y
+        //  `calcular(expr, d)` empezarían con los mismos tokens
+        //  —CALCULAR ( ID— y una tabla LL(1) no podria elegir entre las dos.
+        //  Con el canal dentro de la operacion, las familias arrancan con
+        //  tokens distintos: una palabra reservada, o el inicio de una
+        //  expresion. La decision sigue siendo de un solo token.
+
+        /* 62 */ { NT(CALCULAR_CUERPO), NT(TIPO_OP),   T(TipoToken.COMA),
+                                       T(TipoToken.ID) },
+        /* 63 */ { NT(CALCULAR_CUERPO), NT(EXPRESION), T(TipoToken.COMA),
+                                       T(TipoToken.ID) },
     };
 
     
@@ -349,6 +358,22 @@ public class Gramatica {
     //  TABLA DE PARSING LL(1)
     
     public static final int[][] TABLA = new int[NUM_NT][TipoToken.values().length];
+
+    /**
+     * Celdas donde dos producciones del mismo no terminal reclaman el mismo
+     * token de anticipo.
+     *
+     * <p>La tabla se construye asignando sobre una matriz inicializada a −1, así
+     * que sin esta comprobación un conflicto LL(1) se perdería: la segunda
+     * producción simplemente pisaría a la primera y el parser elegiría una de
+     * las dos sin avisar. La gramática es un dato, y "es LL(1)" es una
+     * propiedad que conviene poder verificar en vez de suponer.
+     *
+     * <p>Se declara antes del bloque estático de abajo a propósito: Java
+     * inicializa los campos estáticos en orden de fuente, y
+     * {@link #construirTabla()} ya lo necesita.
+     */
+    private static final List<String> CONFLICTOS = new ArrayList<>();
 
     static {
         for (int i = 0; i < NUM_NT; i++) {
@@ -469,17 +494,6 @@ public class Gramatica {
     
     //  CONSTRUCCIÓN DE LA TABLA LL(1)
     
-    /**
-     * Celdas donde dos producciones del mismo no terminal reclaman el mismo
-     * token de anticipo.
-     *
-     * <p>La tabla se construye asignando sobre una matriz inicializada a −1,
-     * así que sin esta comprobación un conflicto LL(1) se perdería: la segunda
-     * producción simplemente pisaría a la primera y el parser elegiría una de
-     * las dos sin avisar. La gramática es un dato, y "es LL(1)" es una
-     * propiedad que conviene poder verificar en vez de suponer.
-     */
-    private static final List<String> CONFLICTOS = new ArrayList<>();
 
     static void construirTabla() {
         for (int p = 0; p < PRODUCCIONES.length; p++) {

@@ -294,6 +294,27 @@ Todas las palabras reservadas son **case-insensitive**: no importa si se escribe
 | `VENTANA` | `VENTANA`, `ventana` | Tamaño de ventana |
 | `CON` | `CON`, `con` | Enlace a sensor |
 
+### Firmas de las operaciones
+
+El canal de entrada **siempre** es el parámetro `CON=`, nunca un argumento
+suelto. Cada operación tiene una firma fija:
+
+| Operación | Parámetros | Lee | Escribe |
+|:----------|:-----------|:----|:--------|
+| `PROMEDIO` | `CON`, `VENTANA` | el canal `CON` | un promedio móvil |
+| `MAXIMO` | `CON`, `VENTANA` | el canal `CON` | el máximo de la ventana |
+| `SUMA` | dos o más `CON` | todos sus `CON` | su suma |
+| `SENO` | `CON`, `AMPLITUD`, `FRECUENCIA` | **nada** | una onda |
+| `COSENO` | `CON`, `AMPLITUD`, `FRECUENCIA` | **nada** | una onda |
+| `CUADRADA` | `CON`, `AMPLITUD`, `FRECUENCIA` | **nada** | una onda |
+
+El `CON=` de un generador es la excepción que hay que entender bien: **no es una
+dependencia de datos**. Un `SENO` no lee el canal — produce su valor a partir del
+reloj— y por eso no aparece como arista en el grafo de flujo de datos. Lo que
+declara es *qué magnitud representa la onda*: sin él, la señal no tendría unidad,
+y las reglas que verifican `FRECUENCIA` contra la banda del transductor y contra
+el límite de Nyquist no tendrían contra qué comparar.
+
 ### Tipos de sensor
 
 Cada sensor **debe** declarar su tipo. El tipo aporta la unidad física, el
@@ -410,8 +431,8 @@ PROGRAMA → SENTENCIA PROGRAMA
 ```
 SENTENCIA → SENSOR ID : TIPO_MAGNITUD ;
           | UMBRAL ID : TIPO_MAGNITUD = VALOR_UMBRAL ;
-          | SI CONDICION ENTONCES ESTADO = ESTADO_SISTEMA ;
-          | CALCULAR ( ID , TIPO_OP , DESTINO_OP ) ;
+          | SI CONDICION ENTONCES ESTADO = ESTADO_SISTEMA RAMA_SI_SINO ;
+          | CALCULAR ( CALCULAR_CUERPO ) ;
           | ESTADO = ESTADO_SISTEMA ;
           | SINO = ESTADO_SISTEMA ;
           | MUESTREO = NUMERO ;
@@ -423,13 +444,23 @@ TIPO_MAGNITUD → ELECTRICO | TERMICO | LUMINICO
 ```
 
 ```
-DESTINO_OP → COMA ID
-           | ε
+CALCULAR_CUERPO → TIPO_OP , ID
+                | EXPRESION , ID
 ```
 
-> **Canal y señal.** `calcular(origen, op, destino)` lee del canal `origen` y
-> escribe en la señal derivada `destino`, dejando el canal físico intacto. Si
-> se omite el destino, el cálculo sobrescribe el canal de origen.
+> **Canal y señal.** `calcular(lo que sea, destino)` lee de los `CON=` de la
+> operación —o de las variables de la expresión— y escribe en la señal
+> derivada `destino`, dejando el canal físico intacto. El destino es siempre
+> obligatorio: `calcular` siempre escribe en algún sitio, y ese sitio queda
+> declarado por la propia sentencia.
+>
+> El canal de entrada **no es un argumento suelto**, es el parámetro `CON=` de
+> la operación. Antes lo era, y `calcular(v, v * 2, x)` tenía que repetir `v`
+> dos veces. Además, mantener las dos formas a la vez rompía LL(1): `calcular(v,
+> op, d)` y `calcular(expr, d)` empiezan igual —`calcular ( v`— y una tabla no
+> puede elegir con un token. Con el canal dentro de la operación, una palabra
+> reservada y una expresión arrancan distinto, y la decisión vuelve a ser de un
+> solo token.
 >
 > **`muestreo`.** Declara la duración de un tick, en segundos. Es el reloj del
 > programa: sin ella no se puede generar el kernel de muestreo, y fija el límite
@@ -490,16 +521,15 @@ TIPO_OP → SENO ( LISTA_PARAMS )
         | PROMEDIO ( LISTA_PARAMS )
         | MAXIMO ( LISTA_PARAMS )
         | SUMA ( LISTA_PARAMS )
-        | EXPRESION
 ```
 
-`TIPO_OP` admite **dos cosas distintas**. Las seis operaciones nombradas tienen
-firma fija; `EXPRESION` es una transformación arbitraria:
+`TIPO_OP` solo admite las seis operaciones nombradas, y todas tienen firma fija.
+Las expresiones arbitrarias van por `CALCULAR_CUERPO`, no por `TIPO_OP`:
 
 ```timotomata
-calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);   // operación nombrada
-calcular(voltaje, voltaje * 2, voltaje_x2);              // expresión arbitraria
-calcular(voltaje, (voltaje + corriente) / 2, medio);    // con paréntesis
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);   // operación nombrada
+calcular(voltaje * 2, voltaje_x2);              // expresión arbitraria
+calcular((voltaje + corriente) / 2, medio);    // con paréntesis
 ```
 
 La segunda forma sustituye a las variables: da la misma expresividad sin
@@ -551,13 +581,13 @@ se vuelve cuando **esta** regla no.
 `estado` también se puede leer dentro de una condición, y comparar un literal
 de estado (`PICO`, `CAIDA`, `NORMAL`, `INESTABLE`) con `==` o `!=`.
 
-`TIPO_OP` admite **dos cosas distintas**. Las seis operaciones nombradas tienen
-firma fija; `EXPRESION` es una transformación arbitraria:
+`TIPO_OP` solo admite las seis operaciones nombradas, y todas tienen firma fija.
+Las expresiones arbitrarias van por `CALCULAR_CUERPO`, no por `TIPO_OP`:
 
 ```timotomata
-calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);   // operación nombrada
-calcular(voltaje, voltaje * 2, voltaje_x2);              // expresión arbitraria
-calcular(voltaje, (voltaje + corriente) / 2, medio);    // con paréntesis
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);   // operación nombrada
+calcular(voltaje * 2, voltaje_x2);              // expresión arbitraria
+calcular((voltaje + corriente) / 2, medio);    // con paréntesis
 ```
 
 La segunda forma sustituye a las variables: da la misma expresividad sin
@@ -602,7 +632,7 @@ PARAM → AMPLITUD = NUMERO
 | 12 | `PARAM` | Un parámetro con nombre |
 | 13 | `LISTA_PARAMS_SIG` | Continuación de lista de parámetros |
 | 14 | `TIPO_MAGNITUD` | Tipo de sensor declarado |
-| 15 | `DESTINO_OP` | Señal de destino del cálculo, o ε |
+| 15 | `CALCULAR_CUERPO` | Lo que se calcula: una operación nombrada o una expresión |
 
 ### Tabla de parsing LL(1)
 
@@ -693,11 +723,11 @@ sensor corriente   : ELECTRICO;
 sensor temperatura : TERMICO;
 muestreo = 0.01;
 
-calcular(voltaje,     SENO(AMPLITUD=300, FRECUENCIA=0.1), voltaje_onda);
-calcular(voltaje,     COSENO(AMPLITUD=100, FRECUENCIA=0.05), voltaje_fase);
-calcular(temperatura, PROMEDIO(VENTANA=20), temp_prom);
-calcular(voltaje,     MAXIMO(VENTANA=10), voltaje_pico);
-calcular(corriente,   SUMA(CON=voltaje, CON=corriente), total);
+calcular(SENO(CON=voltaje, AMPLITUD=100, FRECUENCIA=0.1), voltaje_onda);
+calcular(COSENO(CON=voltaje, AMPLITUD=100, FRECUENCIA=0.05), voltaje_fase);
+calcular(PROMEDIO(CON=temperatura, VENTANA=20), temp_prom);
+calcular(MAXIMO(CON=voltaje, VENTANA=10), voltaje_pico);
+calcular(SUMA(CON=voltaje, CON=corriente), total);
 ```
 
 ### Ejemplo 4: Uso de abs() en condiciones
@@ -724,16 +754,16 @@ si voltaje < minVoltaje entonces estado = caida;
 si temperatura > maxTemperatura entonces estado = inestable;
 si abs(voltaje - 220) > 20 entonces estado = pico;
 
-calcular(corriente, PROMEDIO(VENTANA=10), corriente_prom);
-calcular(voltaje,   SENO(AMPLITUD=100, FRECUENCIA=0.1), voltaje_onda);
+calcular(PROMEDIO(CON=corriente, VENTANA=10), corriente_prom);
+calcular(SENO(CON=voltaje, AMPLITUD=100, FRECUENCIA=0.1), voltaje_onda);
 si voltaje_onda > 220 entonces estado = pico;
 
 sino = NORMAL;
 ```
 
-> `PROMEDIO(VENTANA=10)` cumple el mínimo de `ELECTRICO` (5 muestras).
-> `PROMEDIO(VENTANA=20)` cumple el de `TERMICO` (20 muestras).
-> `SENO(AMPLITUD=100, …)` entra dentro del rango de `ELECTRICO` (0–250).
+> `PROMEDIO(CON=voltaje, VENTANA=10)` cumple el mínimo de `ELECTRICO` (5 muestras).
+> `PROMEDIO(CON=temperatura, VENTANA=20)` cumple el de `TERMICO` (20 muestras).
+> `SENO(CON=voltaje, AMPLITUD=100, .)` entra dentro del rango de `ELECTRICO` (0-250).
 
 ### Ejemplo 6: Transformaciones encadenadas
 
@@ -749,10 +779,10 @@ umbral voltaje_max : ELECTRICO = 220;
 muestreo = 0.01;
 estado = NORMAL;
 
-calcular(voltaje, voltaje * 2, voltaje_x2);
-calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);
-calcular(voltaje_prom, voltaje_prom * 1.1, voltaje_prom_ajustado);
-calcular(voltaje, (voltaje + corriente) / 2, par_medio);
+calcular(voltaje * 2, voltaje_x2);
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);
+calcular(voltaje_prom * 1.1, voltaje_prom_ajustado);
+calcular((voltaje + corriente) / 2, par_medio);
 
 si voltaje_prom_ajustado > voltaje_max entonces estado = PICO;
 si par_medio < 100 entonces estado = CAIDA;
@@ -778,7 +808,7 @@ Y la memoria que el futuro generador de código tendría que reservar:
 | Señal | Transformación | Memoria |
 |:------|:---------------|:--------|
 | `voltaje_x2` | expresión | ninguna |
-| `voltaje_prom` | `PROMEDIO(VENTANA=10)` | buffer circular de 10 muestras |
+| `voltaje_prom` | `PROMEDIO(CON=voltaje, VENTANA=10)` | buffer circular de 10 muestras |
 | `voltaje_prom_ajustado` | expresión | ninguna |
 | `par_medio` | expresión | ninguna |
 
