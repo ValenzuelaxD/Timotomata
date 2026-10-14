@@ -1,10 +1,17 @@
 // PROGRAMA VÁLIDO: 0 errores de cualquier fase.
-sensor voltaje;
-sensor temperatura;
-umbral voltaje_min = 100;
-umbral voltaje_max = 220;
-umbral temp_min = 0;
-umbral temp_max = 80;
+sensor voltaje     : ELECTRICO;
+sensor corriente   : ELECTRICO;
+sensor temperatura : TERMICO;
+
+muestreo = 0.01;
+
+umbral voltaje_min : ELECTRICO = 100;
+umbral voltaje_max : ELECTRICO = 220;
+umbral temp_min    : TERMICO   = 0;
+umbral temp_max    : TERMICO   = 80;
+
+// Estado inicial de la maquina
+estado = NORMAL;
 
 // Estados coherentes con los operadores
 si voltaje > voltaje_max entonces estado = PICO;
@@ -12,7 +19,15 @@ si voltaje < voltaje_min entonces estado = CAIDA;
 si temperatura > temp_max entonces estado = INESTABLE;
 si temperatura < temp_min entonces estado = CAIDA;
 
-// Cálculos con parámetros físicamente válidos
-calcular(voltaje, seno(amplitud=50, frecuencia=0.1));
-calcular(temperatura, promedio(ventana=5));
-calcular(voltaje, suma(con=voltaje, con=voltaje));
+// Calculos: el canal fisico queda intacto, el resultado va a una senal
+calcular(SENO(CON=voltaje, AMPLITUD=50, FRECUENCIA=0.1), voltaje_onda);
+calcular(PROMEDIO(CON=temperatura, VENTANA=20), temp_prom);
+calcular(MAXIMO(CON=voltaje, VENTANA=10), voltaje_pico);
+calcular(SUMA(CON=voltaje, CON=corriente), total);
+
+si voltaje_pico > voltaje_max entonces estado = PICO;
+si temp_prom < temp_min entonces estado = CAIDA;
+si total > 300 entonces estado = INESTABLE;
+
+// Si ninguna regla se cumple
+sino = NORMAL;

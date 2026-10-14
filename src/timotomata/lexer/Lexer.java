@@ -17,8 +17,9 @@ public class Lexer {
         ESP = 3,    NL = 4,
         MAS = 5,    MENOS = 6,   POR = 7,      DIV = 8,
         IGUAL = 9,  MAYOR_ = 10, MENOR_ = 11,   EXCL = 12,
-        PUNTOCOMA = 13, PIZQ = 14, PDER = 15, COMA_ = 16, OTRO = 17;
-    public static final int NUM_CLASES = 18;
+        PUNTOCOMA = 13, PIZQ = 14, PDER = 15, COMA_ = 16, OTRO = 17,
+        DOSPUNTOS = 18;
+    public static final int NUM_CLASES = 19;
 
     //  2. ESTADOS DEL AFD 
     public static final int
@@ -69,6 +70,7 @@ public class Lexer {
         TABLA_TRANS[Q0][PIZQ]     = Q0;      // token directo
         TABLA_TRANS[Q0][PDER]     = Q0;      // token directo
         TABLA_TRANS[Q0][COMA_]    = Q0;      // token directo
+        TABLA_TRANS[Q0][DOSPUNTOS]= Q0;      // token directo
         
 
         //  Transiciones desde Q_ID 
@@ -175,6 +177,7 @@ public class Lexer {
             case '(' -> PIZQ;
             case ')' -> PDER;
             case ',' -> COMA_;
+            case ':' -> DOSPUNTOS;
             default -> OTRO;
         };
     }
@@ -321,6 +324,11 @@ public class Lexer {
                 case "umbral"     -> agregar(TipoToken.UMBRAL, lexema, linea, columna);
                 case "si"         -> agregar(TipoToken.SI, lexema, linea, columna);
                 case "entonces"   -> agregar(TipoToken.ENTONCES, lexema, linea, columna);
+                case "sino"       -> agregar(TipoToken.SINO, lexema, linea, columna);
+                case "y"          -> agregar(TipoToken.Y, lexema, linea, columna);
+                case "o"          -> agregar(TipoToken.O, lexema, linea, columna);
+                case "no"         -> agregar(TipoToken.NO, lexema, linea, columna);
+                case "muestreo"   -> agregar(TipoToken.MUESTREO, lexema, linea, columna);
                 case "estado"     -> agregar(TipoToken.ESTADO, lexema, linea, columna);
                 case "abs"        -> agregar(TipoToken.ABS, lexema, linea, columna);
                 case "calcular"   -> agregar(TipoToken.CALCULAR, lexema, linea, columna);
@@ -336,6 +344,12 @@ public class Lexer {
                 case "frecuencia" -> agregar(TipoToken.FRECUENCIA, lexema, linea, columna);
                 case "ventana"    -> agregar(TipoToken.VENTANA, lexema, linea, columna);
                 case "con"        -> agregar(TipoToken.CON, lexema, linea, columna);
+                case "electrico"  -> agregar(TipoToken.ELECTRICO, lexema, linea, columna);
+                case "termico"    -> agregar(TipoToken.TERMICO, lexema, linea, columna);
+                case "luminico"   -> agregar(TipoToken.LUMINICO, lexema, linea, columna);
+                case "mecanico"   -> agregar(TipoToken.MECANICO, lexema, linea, columna);
+                case "quimico"    -> agregar(TipoToken.QUIMICO, lexema, linea, columna);
+                case "hidraulico" -> agregar(TipoToken.HIDRAULICO, lexema, linea, columna);
                 default -> agregar(TipoToken.ID, lexema, linea, columna);
             }
         } else if (estado == Q_NUM || estado == Q_NUM_DEC) {
@@ -352,6 +366,7 @@ public class Lexer {
             case PIZQ -> agregar(TipoToken.PAREN_IZQ, lexema, linea, columna);
             case PDER -> agregar(TipoToken.PAREN_DER, lexema, linea, columna);
             case COMA_ -> agregar(TipoToken.COMA, lexema, linea, columna);
+            case DOSPUNTOS -> agregar(TipoToken.DOS_PUNTOS, lexema, linea, columna);
             case ESP, NL -> {}  // espacios y saltos de línea se ignoran
             default -> { /* no debería ocurrir */ }
         }

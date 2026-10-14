@@ -1,8 +1,10 @@
 // Errores lexicos
-sensor @invalido;
-umbral x = 3.14.15;
+// Esperado: 4 lexicos, 2 sintacticos, 0 semanticos.
+muestreo = 0.01;
+sensor ok : ELECTRICO;
+sensor @invalido : ELECTRICO;
+umbral x : ELECTRICO = 3.14.15;
 si x !y entonces estado = NORMAL;
 // Error: comentario de bloque sin cerrar
-sensor ok;
 /* comentario sin cerrar
-sensor despues_bloque;
+sensor despues_bloque : ELECTRICO;

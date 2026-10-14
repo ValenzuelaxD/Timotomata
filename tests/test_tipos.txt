@@ -1,0 +1,52 @@
+// ============================================================================
+//  DEMOSTRACION — tipos de sensor declarados
+//  Esperado: 0 errores lexicos, 0 sintacticos, 0 semanticos.
+// ============================================================================
+
+// --- 1. Los seis tipos, cada uno con su ficha tecnica -----------------------
+sensor voltaje     : ELECTRICO;   // V,      0 - 250,  100 Hz, banda 50 Hz
+sensor corriente   : ELECTRICO;   // A
+sensor temperatura : TERMICO;     // grados, -40 - 125, 0.1 Hz, banda 0.05 Hz
+sensor vibracion   : MECANICO;    // mm/s,   0 - 50,   2000 Hz, banda 1000 Hz
+sensor luz         : LUMINICO;    // lux,    0 - 10000, 10 Hz, banda 5 Hz
+sensor ph          : QUIMICO;     // pH,     0 - 14,   0.01 Hz, banda 0.005 Hz
+sensor presion     : HIDRAULICO;  // bar,    0 - 400,  1 Hz,   banda 0.5 Hz
+
+// --- 2. El reloj del programa: segundos por tick -----------------------------
+// La Nyquist del programa es 1/0.01/2 = 50 Hz. Ninguna operacion por encima.
+muestreo = 0.01;
+
+// --- 3. Umbrales de seguridad (cada uno declara su tipo) ---------------------
+umbral voltaje_max : ELECTRICO = 220;
+umbral voltaje_min : ELECTRICO = 180;
+umbral temp_max    : TERMICO   = 80;
+umbral temp_min    : TERMICO   = 0;
+umbral luz_min     : LUMINICO  = 200;
+umbral ph_min      : QUIMICO   = 6.5;
+umbral presion_max : HIDRAULICO = 10;
+
+// --- 4. Estado inicial de la maquina ----------------------------------------
+estado = NORMAL;
+
+// --- 5. Reglas: se evaluan en orden y gana la primera que se cumpla ---------
+si voltaje     > voltaje_max entonces estado = PICO;
+si voltaje     < voltaje_min entonces estado = CAIDA;
+si temperatura > temp_max    entonces estado = INESTABLE;
+si temperatura < temp_min    entonces estado = CAIDA;
+si ph          < ph_min      entonces estado = CAIDA;
+si presion     > presion_max entonces estado = PICO;
+si luz         < luz_min     entonces estado = NORMAL;
+
+// --- 6. Calculos: el canal fisico queda intacto, el resultado va aparte -----
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);
+calcular(SENO(CON=vibracion, AMPLITUD=20, FRECUENCIA=40), vibracion_onda);
+calcular(MAXIMO(CON=voltaje, VENTANA=10), voltaje_pico);
+calcular(SUMA(CON=voltaje, CON=corriente), total);
+
+si voltaje_prom > voltaje_max entonces estado = PICO;
+si voltaje_pico > voltaje_max entonces estado = PICO;
+si total > 300 entonces estado = INESTABLE;
+si vibracion_onda > 18 entonces estado = INESTABLE;
+
+// --- 7. Si nada se cumple, se vuelve a NORMAL --------------------------------
+sino = NORMAL;

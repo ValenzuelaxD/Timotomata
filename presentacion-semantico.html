@@ -80,13 +80,35 @@
   <div style="margin:auto">
     <h1>Análisis Semántico</h1>
     <p class="sub" style="font-size:26px;margin-top:18px">Lenguaje Timotomata — tercera fase del compilador</p>
-    <div class="flow" style="margin-top:34px">
-      <span class="tag">15 reglas</span>
-      <span class="tag">2 clases nuevas</span>
-      <span class="tag">sin tocar la gramática</span>
+
+    <div style="margin:30px auto;max-width:960px;padding:20px 26px;border-left:5px solid #d97706;background:rgba(217,119,6,.10);text-align:left">
+      <p style="font-size:19px;margin:0 0 10px"><strong>⚠ Documento superado.</strong></p>
+      <p style="font-size:17px;margin:0 0 10px;line-height:1.55">
+        Esta presentación describe el analizador semántico <em>antes</em> de que los tipos
+        de sensor se declararan en el lenguaje. Tres cosas de aquí ya no son ciertas:
+      </p>
+      <ul style="font-size:17px;margin:0 0 10px 22px;line-height:1.6">
+        <li>La magnitud <strong>ya no se deduce del nombre</strong>: se declara —
+            <code>sensor voltaje : ELECTRICO;</code>. <code>Magnitud.java</code> fue
+            eliminado y sustituido por <code>TipoSensor.java</code>, con unidad, rango y
+            banda por tipo.</li>
+        <li><code>calcular</code> ya no lleva el canal como argumento suelto:
+            <code>calcular(PROMEDIO(CON=voltaje, VENTANA=20), voltaje_prom);</code></li>
+        <li>No son 15 reglas sino <strong>27</strong>: se añadieron alcanzabilidad,
+            zonas sin cubrir, señales muertas y verificación de magnitudes en expresiones.</li>
+      </ul>
+      <p style="font-size:17px;margin:0">
+        Versión vigente y completa: <code>docs/analisis_semantico.md</code>.
+      </p>
+    </div>
+
+    <div class="flow" style="margin-top:30px">
+      <span class="tag">27 reglas</span>
+      <span class="tag">tipos declarados</span>
+      <span class="tag">flujo de datos</span>
     </div>
     <p class="dim" style="font-size:18px;margin-top:30px">
-      <code>src/timotomata/semantic/</code> · AnalizadorSemantico.java · Magnitud.java
+      <code>src/timotomata/semantic/</code> · AnalizadorSemantico.java · TipoSensor.java · Intervalos.java
     </p>
   </div>
   <div id="foot"><span>Timotomata</span><span>1</span></div>
@@ -344,11 +366,12 @@ si contra &lt; 60 entonces estado = CAIDA;</pre>
 
 <!-- 11 -->
 <section class="slide">
-  <h2>Reglas 11 y 14 · Magnitudes</h2>
-  <p class="sub">El lenguaje no tiene sintaxis de unidades, así que la magnitud se deduce del nombre del sensor.</p>
+  <h2>Reglas 11, 14 y 27 · Magnitudes</h2>
+  <p class="sub" style="color:#d97706">⚠ Superado: la magnitud ya no se deduce del nombre, se declara.</p>
+  <p class="sub">Antes, el lenguaje no tenía sintaxis de unidades y la magnitud se deducía del lexema del sensor. Ahora <code>sensor voltaje : ELECTRICO;</code> la declara, y <code>TipoSensor.java</code> guarda por tipo la unidad, el rango y la banda.</p>
   <div class="row">
     <div class="col">
-      <pre>if (contiene(n, "voltaj", "tension", "volt",
+      <pre style="opacity:.45">if (contiene(n, "voltaj", "tension", "volt",
     "corrient", "amper", "potencia", "watt",
     "resistenc", "ohm", "capacit", "energ"))
       return ELECTRICO;
@@ -360,15 +383,14 @@ if (contiene(n, "temper", "temp", "calor",
 return null;   <span style="color:#f38ba8">// desconocido: se ignora</span></pre>
     </div>
     <div class="col">
-      <pre>sensor potencia_watt;
-sensor temperatura;
-calcular(potencia_watt,
-  suma(con=potencia_watt,
-       con=temperatura));</pre>
-      <pre class="err">SUMA combina sensores de magnitudes
+      <pre>sensor potencia_watt : ELECTRICO;
+sensor temperatura   : TERMICO;
+calcular(SUMA(CON=potencia_watt,
+             CON=temperatura), total);</pre>
+      <pre class="err">SUMA combina senales de magnitudes
 incompatibles: 'potencia_watt'
 (ELECTRICO) y 'temperatura' (TERMICO).</pre>
-      <p class="dim" style="font-size:16px;margin-top:8px">Las claves están en inglés: un sensor llamado <code>vatios</code> no matchea <code>watt</code> y queda sin clasificar.</p>
+      <p class="dim" style="font-size:16px;margin-top:8px">La regla 27 es la nueva: cubre la mezcla de magnitudes dentro de una <code>calcular</code> con expresión, que antes pasaba en silencio.</p>
     </div>
   </div>
   <div id="foot"><span>4 · Implementación</span><span>11</span></div>

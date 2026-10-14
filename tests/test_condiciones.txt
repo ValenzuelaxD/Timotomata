@@ -1,0 +1,48 @@
+// ============================================================================
+//  CONDICIONES — conectores, negacion, lectura de estado y rama sino
+//  Esperado: 0 errores lexicos, 0 sintacticos, 0 semanticos.
+// ============================================================================
+
+sensor voltaje     : ELECTRICO;
+sensor corriente   : ELECTRICO;
+sensor temperatura : TERMICO;
+
+umbral voltaje_max : ELECTRICO = 220;
+umbral voltaje_min : ELECTRICO = 180;
+umbral temp_max    : TERMICO   = 80;
+
+muestreo = 0.01;
+estado = NORMAL;
+
+// --- 1. Conjuncion: dos cosas que deben pasar a la vez ----------------------
+si voltaje > voltaje_max y temperatura > temp_max entonces estado = INESTABLE;
+
+// --- 2. Disyuncion: cualquiera de las dos alcanza ----------------------------
+si voltaje < voltaje_min o voltaje > voltaje_max entonces estado = PICO;
+
+// --- 3. Negacion: se aplica solo a la comparacion que sigue ------------------
+si no voltaje > voltaje_max entonces estado = CAIDA;
+si no voltaje < voltaje_min y temperatura < temp_max entonces estado = NORMAL;
+
+// --- 4. Negaciones encadenadas ----------------------------------------------
+si no no voltaje > voltaje_max entonces estado = CAIDA;
+
+// --- 5. Leer el estado actual -----------------------------------------------
+si estado == NORMAL y voltaje > voltaje_max entonces estado = PICO;
+si estado == PICO y voltaje < voltaje_min entonces estado = CAIDA;
+si estado != INESTABLE entonces estado = NORMAL;
+
+// --- 6. Rama sino de la propia regla -----------------------------------------
+// Distinta del `sino = X;` global: esta dice a que se vuelve el sistema
+// cuando ESTA regla no se cumple.
+si voltaje > voltaje_max entonces estado = PICO sino estado = NORMAL;
+si voltaje < voltaje_min entonces estado = CAIDA sino estado = NORMAL;
+si temperatura > temp_max entonces estado = INESTABLE sino estado = NORMAL;
+
+// --- 7. Condiciones con expresiones ------------------------------------------
+si abs(voltaje - 220) > 20 y voltaje * 2 < voltaje_max * 2 entonces estado = NORMAL;
+si (voltaje + corriente) / 2 > 200 y voltaje - voltaje_max > 0 entonces estado = INESTABLE;
+si voltaje / 2 > 100 y voltaje - 200 > 0 entonces estado = INESTABLE;
+
+// --- 8. Global: si ninguna regla se cumple -----------------------------------
+sino = NORMAL;

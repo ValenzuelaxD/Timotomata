@@ -1,0 +1,44 @@
+// ============================================================================
+//  FLUJO DE DATOS — orden, autodependencia y magnitud del umbral
+//  Esperado: 4 errores semanticos (2 en la linea 27, 1 en la 31, 1 en la 37).
+// ============================================================================
+
+sensor voltaje     : ELECTRICO;
+sensor corriente   : ELECTRICO;
+sensor temperatura : TERMICO;
+
+umbral voltaje_max : ELECTRICO = 220;
+umbral temp_max    : TERMICO   = 80;
+
+muestreo = 0.01;
+estado = NORMAL;
+
+// --- 1. Formas validas: primero se calcula la senal, despues se usa ---------
+calcular(voltaje * 2, voltaje_x2);
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);
+calcular(voltaje_prom * 1.1, voltaje_prom_ajustado);
+calcular(voltaje - voltaje_prom, voltaje_desvio);
+
+si voltaje_x2 > voltaje_max entonces estado = PICO;
+
+// --- 2. REGLA 22 — autodependencia ------------------------------------------
+// 2 errores: el destino ya existia (regla 2) y ademas la senal se calcula a
+// partir de si misma (regla 22).
+calcular(voltaje_x2 * 3, voltaje_x2);
+
+// --- 3. REGLA 21 — uso antes de la definicion ------------------------------
+// 1 error: voltaje_futuro no tiene valor hasta la linea siguiente.
+si voltaje_futuro > voltaje_max entonces estado = PICO;
+calcular(voltaje + 1, voltaje_futuro);
+
+// --- 4. REGLA 23 — umbral de otra magnitud ---------------------------------
+// 1 error: los volts no se cruzan nunca con los grados, asi que la condicion
+// nunca se cumple y el estado se queda siempre en el valor por defecto.
+si voltaje_desvio > temp_max entonces estado = PICO;
+
+// --- 5. Usos validos, con todo ya definido ----------------------------------
+si voltaje_futuro < voltaje_max entonces estado = CAIDA;
+si voltaje_prom > voltaje_max entonces estado = INESTABLE;
+si voltaje_prom_ajustado > voltaje_max entonces estado = INESTABLE;
+
+sino = NORMAL;

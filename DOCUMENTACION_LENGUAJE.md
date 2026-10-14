@@ -17,22 +17,27 @@
 
 ## 1. Estructura del compilador
 
-El compilador se divide en 2 fases principales, más una capa de interfaz gráfica:
+El front-end del compilador se divide en **3 fases**, más una capa de interfaz
+gráfica:
 
 ```
 Código fuente
      ↓
-[ LEXER ]  →  genera tokens
+[ LEXER ]     AFD de 13 estados y 19 clases → tokens
      ↓
-[ PARSER ] →  genera AST + Árbol de Derivación
+[ PARSER ]    tabla LL(1) → AST + Árbol de Derivación + Tabla de Símbolos
      ↓
-  Resultado
+[ SEMANTICO ] 20 reglas contra la ficha técnica de cada tipo de sensor
+     ↓
+  Veredicto + AST + Tabla de símbolos
 ```
 
 | Fase | Archivo principal | Función |
 |------|------------------|---------|
 | **Lexer** | `src/timotomata/lexer/Lexer.java` | Convierte texto → tokens |
-| **Parser** | `src/timotomata/parser/Parser.java` | Convierte tokens → AST |
+| **Parser** | `src/timotomata/parser/Parser.java` | Tokens → AST y tabla de símbolos |
+| **Semántico** | `src/timotomata/semantic/AnalizadorSemantico.java` | Verifica tipos, rangos y signos |
+| **Símbolos** | `src/timotomata/simbolos/TablaSimbolos.java` | Registro único de declaraciones |
 | **UI** | `src/timotomata/ui/AppController.java` | Interfaz gráfica JavaFX |
 
 ### Archivos del proyecto
@@ -242,13 +247,26 @@ Todas las palabras reservadas son **case-insensitive**: no importa si se escribe
 
 | Token | Lexemas válidos | Uso |
 |-------|----------------|-----|
-| `SENSOR` | `sensor`, `Sensor`, `SENSOR` | Declara un sensor: `sensor voltaje;` |
+| `SENSOR` | `sensor`, `Sensor`, `SENSOR` | Declara un sensor con su tipo: `sensor voltaje : ELECTRICO;` |
 | `UMBRAL` | `umbral`, `Umbral` | Declara un umbral: `umbral max = 250;` |
 | `SI` | `si`, `SI` | Inicia regla: `si voltaje > 220 entonces ...` |
 | `ENTONCES` | `entonces` | Separa condición de acción |
 | `ESTADO` | `estado` | Asigna estado del sistema |
 | `CALCULAR` | `calcular` | Inicia cálculo funcional |
 | `ABS` | `abs`, `Abs` | Valor absoluto en expresiones |
+
+### Conectores lógicos
+
+| Token | Lexemas válidos | Uso |
+|-------|----------------|-----|
+| `Y` | `y`, `Y` | Conjunction dentro de una condición |
+| `O` | `o`, `O` | Disyunción dentro de una condición |
+| `NO` | `no`, `No`, `NO` | Negación de la comparación que sigue |
+
+> Son palabras reservadas, así que `y`, `o` y `no` dejan de poder usarse como
+> nombres. Es el costo de escribir el lenguaje en castellano: en un programa de
+> este dominio un identificador `y` o `o` sería más natural que casi cualquier
+> otra cosa.
 
 ### Valores de estado del sistema
 
@@ -275,6 +293,48 @@ Todas las palabras reservadas son **case-insensitive**: no importa si se escribe
 | `FRECUENCIA` | `FRECUENCIA`, `frecuencia` | Frecuencia de la onda |
 | `VENTANA` | `VENTANA`, `ventana` | Tamaño de ventana |
 | `CON` | `CON`, `con` | Enlace a sensor |
+
+### Firmas de las operaciones
+
+El canal de entrada **siempre** es el parámetro `CON=`, nunca un argumento
+suelto. Cada operación tiene una firma fija:
+
+| Operación | Parámetros | Lee | Escribe |
+|:----------|:-----------|:----|:--------|
+| `PROMEDIO` | `CON`, `VENTANA` | el canal `CON` | un promedio móvil |
+| `MAXIMO` | `CON`, `VENTANA` | el canal `CON` | el máximo de la ventana |
+| `SUMA` | dos o más `CON` | todos sus `CON` | su suma |
+| `SENO` | `CON`, `AMPLITUD`, `FRECUENCIA` | **nada** | una onda |
+| `COSENO` | `CON`, `AMPLITUD`, `FRECUENCIA` | **nada** | una onda |
+| `CUADRADA` | `CON`, `AMPLITUD`, `FRECUENCIA` | **nada** | una onda |
+
+El `CON=` de un generador es la excepción que hay que entender bien: **no es una
+dependencia de datos**. Un `SENO` no lee el canal — produce su valor a partir del
+reloj— y por eso no aparece como arista en el grafo de flujo de datos. Lo que
+declara es *qué magnitud representa la onda*: sin él, la señal no tendría unidad,
+y las reglas que verifican `FRECUENCIA` contra la banda del transductor y contra
+el límite de Nyquist no tendrían contra qué comparar.
+
+### Tipos de sensor
+
+Cada sensor **debe** declarar su tipo. El tipo aporta la unidad física, el
+rango representable por el transductor, su frecuencia de muestreo y su banda.
+Es lo que permite verificar que un umbral sea medible o que una frecuencia de
+onda sea observable.
+
+| Token | Lexemas válidos | Unidad | Rango | Muestreo | Banda | `PROMEDIO` mín. |
+|-------|----------------|--------|-------|----------|-------|-----------------|
+| `ELECTRICO` | `electrico` | V | 0 – 250 | 100 Hz | 50 Hz | 5 |
+| `TERMICO` | `termico` | °C | −40 – 125 | 0.1 Hz | 0.05 Hz | 20 |
+| `LUMINICO` | `luminico` | lux | 0 – 10 000 | 10 Hz | 5 Hz | 3 |
+| `MECANICO` | `mecanico` | mm/s | 0 – 50 | 2000 Hz | 1000 Hz | 3 |
+| `QUIMICO` | `quimico` | pH | 0 – 14 | 0.01 Hz | 0.005 Hz | 50 |
+| `HIDRAULICO` | `hidraulico` | bar | 0 – 400 | 1 Hz | 0.5 Hz | 10 |
+
+*Una señal derivada —el destino de `calcular`— hereda el tipo de su origen.*
+
+El conjunto es **cerrado**: agregar un tipo obliga a tocar el generador de
+código, que despacha sobre el enum `TipoSensor`.
 
 ---
 
@@ -353,6 +413,7 @@ Los operadores **no son** palabras reservadas en el sentido tradicional — son 
 | `ASIGNACION` | `=` | Asignación de valor |
 | `PUNTO_COMA` | `;` | Fin de sentencia |
 | `COMA` | `,` | Separador de elementos |
+| `DOS_PUNTOS` | `:` | Declara el tipo del sensor |
 | `PAREN_IZQ` | `(` | Apertura de paréntesis |
 | `PAREN_DER` | `)` | Cierre de paréntesis |
 
@@ -368,11 +429,50 @@ PROGRAMA → SENTENCIA PROGRAMA
 ```
 
 ```
-SENTENCIA → SENSOR ID ;
-          | UMBRAL ID = VALOR_UMBRAL ;
-          | SI CONDICION ENTONCES ESTADO = ESTADO_SISTEMA ;
-          | CALCULAR ( ID , TIPO_OP ) ;
+SENTENCIA → SENSOR ID : TIPO_MAGNITUD ;
+          | UMBRAL ID : TIPO_MAGNITUD = VALOR_UMBRAL ;
+          | SI CONDICION ENTONCES ESTADO = ESTADO_SISTEMA RAMA_SI_SINO ;
+          | CALCULAR ( CALCULAR_CUERPO ) ;
+          | ESTADO = ESTADO_SISTEMA ;
+          | SINO = ESTADO_SISTEMA ;
+          | MUESTREO = NUMERO ;
 ```
+
+```
+TIPO_MAGNITUD → ELECTRICO | TERMICO | LUMINICO
+              | MECANICO | QUIMICO | HIDRAULICO
+```
+
+```
+CALCULAR_CUERPO → TIPO_OP , ID
+                | EXPRESION , ID
+```
+
+> **Canal y señal.** `calcular(lo que sea, destino)` lee de los `CON=` de la
+> operación —o de las variables de la expresión— y escribe en la señal
+> derivada `destino`, dejando el canal físico intacto. El destino es siempre
+> obligatorio: `calcular` siempre escribe en algún sitio, y ese sitio queda
+> declarado por la propia sentencia.
+>
+> El canal de entrada **no es un argumento suelto**, es el parámetro `CON=` de
+> la operación. Antes lo era, y `calcular(v, v * 2, x)` tenía que repetir `v`
+> dos veces. Además, mantener las dos formas a la vez rompía LL(1): `calcular(v,
+> op, d)` y `calcular(expr, d)` empiezan igual —`calcular ( v`— y una tabla no
+> puede elegir con un token. Con el canal dentro de la operación, una palabra
+> reservada y una expresión arrancan distinto, y la decisión vuelve a ser de un
+> solo token.
+>
+> **`muestreo`.** Declara la duración de un tick, en segundos. Es el reloj del
+> programa: sin ella no se puede generar el kernel de muestreo, y fija el límite
+> de Nyquist contra el que se valida `FRECUENCIA=`. Se declara exactamente una
+> vez y debe ser positiva.
+>
+> **`estado` y `sino`.** `estado = X;` fija el estado inicial de la máquina.
+> `sino = X;` define la salida cuando ninguna regla se cumple.
+>
+> **Prioridad de las reglas.** Se evalúan en el orden del fuente y **gana la
+> primera que se cumpla**. Si ninguna se cumple, queda el estado de `sino`. Es
+> lo que determina qué reglas son alcanzables y cuáles quedan sombreadas.
 
 ```
 VALOR_UMBRAL → NUMERO
@@ -404,7 +504,11 @@ FACTOR → NUMERO
        | ID
        | ABS ( EXPRESION )
        | - FACTOR
+       | ( EXPRESION )
 ```
+
+Los paréntesis agrupan: `(a + b) / 2` es una expresión válida. No producen un
+nodo propio en el AST, porque la precedencia ya lo resuelve.
 
 ```
 OP_REL → > | < | == | >= | <= | != | <>
@@ -418,6 +522,81 @@ TIPO_OP → SENO ( LISTA_PARAMS )
         | MAXIMO ( LISTA_PARAMS )
         | SUMA ( LISTA_PARAMS )
 ```
+
+`TIPO_OP` solo admite las seis operaciones nombradas, y todas tienen firma fija.
+Las expresiones arbitrarias van por `CALCULAR_CUERPO`, no por `TIPO_OP`:
+
+```timotomata
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);   // operación nombrada
+calcular(voltaje * 2, voltaje_x2);              // expresión arbitraria
+calcular((voltaje + corriente) / 2, medio);    // con paréntesis
+```
+
+La segunda forma sustituye a las variables: da la misma expresividad sin
+introducir almacenamiento mutable, ámbito ni una cuarta clase de símbolo en la
+tabla de símbolos.
+
+Ambas familias se distinguen con un solo token: las operaciones empiezan por su
+palabra reservada (`SENO`…`SUMA`) y las expresiones por `ABS`, `ID`, `NUMERO`,
+`-` o `(`. Los conjuntos son disjuntos, así que la decisión es LL(1).
+
+```
+CONDICION     → NEGACION COMPARACION CONDICION_SIG
+NEGACION      → NO NEGACION
+              | ε
+
+COMPARACION   → EXPRESION OP_REL EXPRESION
+
+CONDICION_SIG → CONECTOR NEGACION COMPARACION CONDICION_SIG
+              | ε
+
+CONECTOR      → Y
+              | O
+
+RAMA_SI_SINO  → SINO ESTADO ASIGNACION ESTADO_SISTEMA
+              | ε
+```
+
+`Y` y `O` tienen la misma precedencia y se asocian a la izquierda, así que
+`a y b o c` se lee `(a y b) o c`. `NO` liga más fuerte y se aplica solo a la
+comparación que sigue; se puede encadenar (`no no a > 10`).
+
+```timotomata
+si voltaje > voltaje_max y temperatura > temp_max entonces estado = INESTABLE;
+si voltaje < voltaje_min o voltaje > voltaje_max entonces estado = PICO;
+si no voltaje > voltaje_max entonces estado = NORMAL;
+si estado == PICO y voltaje < voltaje_min entonces estado = CAIDA;
+si voltaje > voltaje_max entonces estado = PICO sino estado = NORMAL;
+```
+
+**No hay paréntesis en las condiciones.** Un paréntesis podría ser una expresión
+agrupada —`(a + b) / 2`— o una condición agrupada, y los dos empiezan igual;
+separarlos exigiría mirar dos tokens y la gramática dejaría de ser LL(1). Para
+negar una conjunción se escribe su opuesta: `si a <= 10 o b >= 2`.
+
+La rama `sino` de una regla es distinta del `sino = X;` global: aquel dice a qué
+estado se vuelve el sistema cuando **ninguna** regla se cumple, este dice a qué
+se vuelve cuando **esta** regla no.
+
+`estado` también se puede leer dentro de una condición, y comparar un literal
+de estado (`PICO`, `CAIDA`, `NORMAL`, `INESTABLE`) con `==` o `!=`.
+
+`TIPO_OP` solo admite las seis operaciones nombradas, y todas tienen firma fija.
+Las expresiones arbitrarias van por `CALCULAR_CUERPO`, no por `TIPO_OP`:
+
+```timotomata
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);   // operación nombrada
+calcular(voltaje * 2, voltaje_x2);              // expresión arbitraria
+calcular((voltaje + corriente) / 2, medio);    // con paréntesis
+```
+
+La segunda forma sustituye a las variables: da la misma expresividad sin
+introducir almacenamiento mutable, ámbito ni una cuarta clase de símbolo en la
+tabla de símbolos.
+
+Ambas familias se distinguen con un solo token: las operaciones empiezan por su
+palabra reservada (`SENO`…`SUMA`) y las expresiones por `ABS`, `ID`, `NUMERO`,
+`-` o `(`. Los conjuntos son disjuntos, así que la decisión es LL(1).
 
 ```
 LISTA_PARAMS → PARAM LISTA_PARAMS_SIG
@@ -434,7 +613,7 @@ PARAM → AMPLITUD = NUMERO
       | CON = ID
 ```
 
-### No terminales de la gramática (14)
+### No terminales de la gramática (16) — 54 producciones
 
 | # | Nombre | Descripción |
 |---|--------|-------------|
@@ -452,6 +631,8 @@ PARAM → AMPLITUD = NUMERO
 | 11 | `LISTA_PARAMS` | Lista de parámetros |
 | 12 | `PARAM` | Un parámetro con nombre |
 | 13 | `LISTA_PARAMS_SIG` | Continuación de lista de parámetros |
+| 14 | `TIPO_MAGNITUD` | Tipo de sensor declarado |
+| 15 | `CALCULAR_CUERPO` | Lo que se calcula: una operación nombrada o una expresión |
 
 ### Tabla de parsing LL(1)
 
@@ -494,8 +675,13 @@ public static int obtenerProduccion(int noTerminal, TipoToken lookahead) {
 
 El parser construye simultáneamente:
 
-1. **AST (Abstract Syntax Tree)**: estructura de datos para ejecución (en `ast/`)
+1. **AST (Abstract Syntax Tree)**: estructura de datos para las fases siguientes (en `ast/`)
 2. **Árbol de derivación**: árbol visual con todos los pasos de la gramática (clase `NodoDerivacion`)
+3. **Tabla de símbolos** (`TablaSimbolos`): cada declaración con su clase, tipo de sensor, unidad, valor y línea
+
+La tabla de símbolos es la **única fuente de verdad** de lo declarado: el
+analizador semántico y la interfaz leen de ahí, en lugar de re-derivar las
+declaraciones desde la lista de tokens.
 
 El árbol de derivación se muestra en la UI mediante `PanelDerivacion.java`, que usa el algoritmo de layout con colapsado de nodos sintéticos (`EXPRESION_SIG`, `TERMINO_SIG`, `LISTA_PARAMS`, `PARAM`).
 
@@ -503,31 +689,45 @@ El árbol de derivación se muestra en la UI mediante `PanelDerivacion.java`, qu
 
 ## 10. Ejemplos completos
 
-### Ejemplo 1: Sensor y umbral básico
+Todos los ejemplos de esta sección pasan las tres fases con **0 errores**.
+
+### Ejemplo 1: Sensor, umbral y reloj
 
 ```
-sensor voltaje;
-sensor temperatura;
-umbral maxTemp = 250;
+sensor voltaje     : ELECTRICO;
+sensor temperatura : TERMICO;
+umbral maxTemp : TERMICO = 120;
+muestreo = 0.01;
 ```
 
-### Ejemplo 2: Reglas condicionales
+### Ejemplo 2: Estado inicial, reglas y salida por defecto
 
 ```
-si voltaje > 220 entonces estado = pico;
-si voltaje < 180 entonces estado = caida;
-si temperatura >= 100 entonces estado = inestable;
+muestreo = 0.01;
+umbral voltaje_max : ELECTRICO = 220;
+umbral voltaje_min : ELECTRICO = 180;
+
+estado = NORMAL;
+
+si voltaje > voltaje_max entonces estado = pico;
+si voltaje < voltaje_min entonces estado = caida;
+
+sino = NORMAL;
 ```
 
-### Ejemplo 3: Cálculos funcionales
+### Ejemplo 3: Cálculos con señal derivada
 
 ```
-calcular(voltaje, SENO(AMPLITUD=300, FRECUENCIA=0.1));
-calcular(voltaje, COSENO(AMPLITUD=100, FRECUENCIA=0.05));
-calcular(voltaje, CUADRADA(AMPLITUD=5, FRECUENCIA=0.5));
-calcular(temperatura, PROMEDIO(VENTANA=5));
-calcular(voltaje, MAXIMO());
-calcular(mezcla, SUMA(CON=voltaje, CON=temperatura));
+sensor voltaje     : ELECTRICO;
+sensor corriente   : ELECTRICO;
+sensor temperatura : TERMICO;
+muestreo = 0.01;
+
+calcular(SENO(CON=voltaje, AMPLITUD=100, FRECUENCIA=0.1), voltaje_onda);
+calcular(COSENO(CON=voltaje, AMPLITUD=100, FRECUENCIA=0.05), voltaje_fase);
+calcular(PROMEDIO(CON=temperatura, VENTANA=20), temp_prom);
+calcular(MAXIMO(CON=voltaje, VENTANA=10), voltaje_pico);
+calcular(SUMA(CON=voltaje, CON=corriente), total);
 ```
 
 ### Ejemplo 4: Uso de abs() en condiciones
@@ -539,24 +739,106 @@ si abs(voltaje - 220) > 10 entonces estado = pico;
 ### Ejemplo 5: Programa completo
 
 ```
-sensor voltaje;
-sensor corriente;
-sensor temperatura;
+sensor voltaje     : ELECTRICO;
+sensor corriente   : ELECTRICO;
+sensor temperatura : TERMICO;
 
-umbral maxTemperatura = 85;
-umbral minVoltaje = 200;
+muestreo = 0.01;
+
+umbral maxTemperatura : TERMICO   = 85;
+umbral minVoltaje     : ELECTRICO = 200;
+
+estado = NORMAL;
 
 si voltaje < minVoltaje entonces estado = caida;
 si temperatura > maxTemperatura entonces estado = inestable;
 si abs(voltaje - 220) > 20 entonces estado = pico;
 
-calcular(voltaje, SENO(AMPLITUD=300, FRECUENCIA=0.1));
-calcular(corriente, PROMEDIO(VENTANA=10));
-calcular(eficiencia, SUMA(CON=voltaje, CON=corriente));
+calcular(PROMEDIO(CON=corriente, VENTANA=10), corriente_prom);
+calcular(SENO(CON=voltaje, AMPLITUD=100, FRECUENCIA=0.1), voltaje_onda);
+si voltaje_onda > 220 entonces estado = pico;
+
+sino = NORMAL;
 ```
+
+> `PROMEDIO(CON=voltaje, VENTANA=10)` cumple el mínimo de `ELECTRICO` (5 muestras).
+> `PROMEDIO(CON=temperatura, VENTANA=20)` cumple el de `TERMICO` (20 muestras).
+> `SENO(CON=voltaje, AMPLITUD=100, .)` entra dentro del rango de `ELECTRICO` (0-250).
+
+### Ejemplo 6: Transformaciones encadenadas
+
+Las señales derivadas se pueden calcular a partir de otras señales derivadas.
+El tipo se hereda por la cadena, así que no hay que redeclararlo:
+
+```
+sensor voltaje     : ELECTRICO;
+sensor corriente   : ELECTRICO;
+
+umbral voltaje_max : ELECTRICO = 220;
+
+muestreo = 0.01;
+estado = NORMAL;
+
+calcular(voltaje * 2, voltaje_x2);
+calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);
+calcular(voltaje_prom * 1.1, voltaje_prom_ajustado);
+calcular((voltaje + corriente) / 2, par_medio);
+
+si voltaje_prom_ajustado > voltaje_max entonces estado = PICO;
+si par_medio < 100 entonces estado = CAIDA;
+
+sino = NORMAL;
+```
+
+Cada línea lee el resultado de las anteriores, en orden. Una señal no puede
+usarse antes de su `calcular` (regla 21), porque los cálculos corren una vez por
+tick en el orden en que están escritos.
+
+El grafo de flujo de datos que el analizador construye para este programa es:
+
+```
+voltaje_x2           <- [voltaje]
+voltaje_prom         <- [voltaje]
+voltaje_prom_ajustado <- [voltaje_prom]
+par_medio            <- [voltaje, corriente]
+```
+
+Y la memoria que el futuro generador de código tendría que reservar:
+
+| Señal | Transformación | Memoria |
+|:------|:---------------|:--------|
+| `voltaje_x2` | expresión | ninguna |
+| `voltaje_prom` | `PROMEDIO(CON=voltaje, VENTANA=10)` | buffer circular de 10 muestras |
+| `voltaje_prom_ajustado` | expresión | ninguna |
+| `par_medio` | expresión | ninguna |
 
 ---
 
+## Resumen visual: todos los tokens del lenguaje
+
+```
+═══════════════════════════════════════════════════════════════
+  PALABRAS RESERVADAS (case-insensitive)
+═══════════════════════════════════════════════════════════════
+
+  SENTENCIAS:       sensor  umbral  si  entonces  estado
+                    calcular  abs  sino  muestreo
+
+  ESTADOS:          normal  pico  caida  inestable
+
+  OPERACIONES:      seno  coseno  cuadrada  promedio
+                    maximo  suma
+
+  PARÁMETROS:       amplitud  frecuencia  ventana  con
+
+  TIPOS DE SENSOR:  electrico  termico  luminico
+                    mecanico  quimico  hidraulico
+
+═══════════════════════════════════════════════════════════════
+  OPERADORES (símbolos)
+═══════════════════════════════════════════════════════════════
+
+  ARITMÉTICOS:      +   -   *   /
 ## Resumen visual: todos los tokens del lenguaje
 
 ```
@@ -574,13 +856,14 @@ calcular(eficiencia, SUMA(CON=voltaje, CON=corriente));
 
   PARÁMETROS:       amplitud  frecuencia  ventana  con
 
+  TIPOS DE SENSOR:  electrico  termico  luminico
+                    mecanico  quimico  hidraulico
+
 ═══════════════════════════════════════════════════════════════
   OPERADORES (símbolos)
 ═══════════════════════════════════════════════════════════════
 
   ARITMÉTICOS:      +   -   *   /
-
-  RELACIONALES:     >   <   ==   >=   <=   !=   <>
 
   ASIGNACIÓN:       =
 

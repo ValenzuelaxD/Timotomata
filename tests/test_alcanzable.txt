@@ -1,0 +1,53 @@
+// ============================================================================
+//  ALCANZABILIDAD — que codigo no se ejecuta y que valores no disparan nada
+//
+//  Esperado: 9 errores semanticos y 1 aviso.
+//    2 contradicciones + 2 inalcanzables en la seccion 2
+//    1 inalcanzable en la seccion 3
+//    3 contradicciones + 1 umbral cruzado en la seccion 5
+//  Esperado: 0 avisos por zonas sin cubrir en 'voltaje', 1 en 'temperatura'.
+// ============================================================================
+
+sensor voltaje     : ELECTRICO;
+sensor temperatura : TERMICO;
+
+umbral voltaje_max : ELECTRICO = 220;
+umbral voltaje_min : ELECTRICO = 180;
+umbral temp_max    : TERMICO   = 80;
+
+muestreo = 0.01;
+estado = NORMAL;
+
+// --- 1. Reglas alcanzables --------------------------------------------------
+si voltaje > voltaje_max entonces estado = PICO;
+si voltaje < voltaje_min entonces estado = CAIDA;
+si temperatura > temp_max entonces estado = INESTABLE;
+
+// --- 2. REGLA 24 — codigo muerto --------------------------------------------
+// El par de reglas anteriores ya cubre voltaje > 220 y voltaje < 180. Estas
+// dos piden exactamente lo mismo: nunca se cumplen.
+// 2 contradicciones + 2 inalcanzables en las lineas 25 y 26.
+si voltaje > voltaje_max entonces estado = INESTABLE;
+si voltaje > voltaje_max entonces estado = INESTABLE;
+
+// --- 3. Una conjuncion tambien es codigo muerto si AMBAS partes lo estan ---
+// La parte de voltaje ya la cubre la regla de la linea 18, asi que esta nunca
+// llega a evaluarse de verdad.
+// 1 inalcanzable en la linea 31.
+si voltaje < voltaje_min y temperatura > temp_max entonces estado = INESTABLE;
+
+// --- 4. REGLA 24 — una disyuncion si se puede cubrir ------------------------
+// Aqui si hay valores que dejan la conjuncion sin cubrir: voltaje entre 180 y
+// 220. Con voltaje = 200 y temperatura = 90 ninguna regla previa se cumple, asi
+// que esta es alcanzable y no se reporta.
+si voltaje < voltaje_min o voltaje > voltaje_max entonces estado = INESTABLE;
+si voltaje > 200 y voltaje < 210 entonces estado = PICO;
+
+// --- 5. REGLA 23 — umbral de otra magnitud ---------------------------------
+// 1 umbral de otra magnitud + 3 contradicciones en la linea 42.
+si voltaje > temp_max entonces estado = PICO;
+
+// --- 6. REGLA 25 — avisos --------------------------------------------------
+// Con voltaje > temp_max (que vale 80) cubriendo por arriba, ningun valor de
+// voltaje queda sin cubrir. Para temperatura si: el aviso aparece en su linea.
+sino = NORMAL;
