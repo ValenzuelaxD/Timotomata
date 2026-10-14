@@ -1,0 +1,225 @@
+// ===========================================================================
+//  UNA ERROR POR REGLA — cobertura completa del analizador semántico
+//  ===========================================================================
+//
+//  Cada sección dispara al menos una de las 23 reglas. Los números de línea
+//  no importan: lo que se comprueba es que cada mensaje aparezca.
+//
+//  Todas las reglas se ejecutan siempre, en el mismo orden, sobre el programa
+//  entero. Por eso este archivo no puede aislar cada regla: una construcción
+//  puede disparar varias a la vez, y varias reglas comparten el mismo disparador
+//  (por ejemplo, la 3 y la 23 se apoyan en el mismo cruce de magnitudes). Lo que
+//  se verifica abajo es que la cobertura sea completa, no que el recuento sea
+//  una suma de 23.
+//
+//  Detalle no obvio: las reglas 5 y 6Seek un rango a partir del nombre del
+//  sensor, aceptando sensor_min / min_sensor / minsensor. Por eso los umbrales
+//  `roto_min` y `roto_max` tienen que pertenecer a un sensor que se llame
+//  `roto`; sueltos no se comprueban.
+// ===========================================================================
+
+
+// --- Sensores base, usados por casi todas las secciones --------------------
+sensor voltaje     : ELECTRICO;
+sensor temperatura : TERMICO;
+
+umbral voltaje_max : ELECTRICO = 230;
+umbral voltaje_min : ELECTRICO = 190;
+umbral temp_max    : TERMICO   = 80;
+
+muestreo = 0.01;
+
+
+// ===========================================================================
+//  REGLAS 1 Y 2 — colisión de clases y re-declaración
+// ===========================================================================
+
+// REGLA 1: 'doble' se declara como sensor y luego como umbral.
+sensor doble : ELECTRICO;
+umbral doble : ELECTRICO = 100;
+
+// REGLA 2: 'repetido' se declara dos veces como umbral.
+umbral repetido : ELECTRICO = 50;
+umbral repetido : ELECTRICO = 80;
+
+
+// ===========================================================================
+//  REGLAS 5 Y 6 — el rango tiene que existir y ser útil
+// ===========================================================================
+
+// REGLA 5: min >= max. Se busca por nombre, asi que el sensor se llama 'roto'.
+sensor roto : ELECTRICO;
+umbral roto_min : ELECTRICO = 220;
+umbral roto_max : ELECTRICO = 100;
+
+// REGLA 6: la diferencia entre max y min no llega al margen de seguridad (10).
+sensor estrecho : ELECTRICO;
+umbral estrecho_min : ELECTRICO = 100;
+umbral estrecho_max : ELECTRICO = 103;
+
+
+// ===========================================================================
+//  REGLA 7 — el estado no puede estar invertido
+// ===========================================================================
+
+// PICO para una condición de caída: por encima del maximo va PICO, no CAIDA.
+si voltaje > voltaje_max entonces estado = CAIDA;
+
+
+// ===========================================================================
+//  REGLA 9 — magnitudes mezcladas dentro de una expresión
+// ===========================================================================
+
+// REGLA 9: sumar voltios y grados no produce una magnitud con unidad.
+calcular(voltaje + temperatura, mezcla);
+
+
+// ===========================================================================
+//  REGLAS 13, 20 Y 22 — nombres y señales
+// ===========================================================================
+
+// REGLA 13, vía 1: un nombre que aparece en la CONDICIÓN de una regla y no
+// existe. Ojo: la regla no recorre la expresión de un calcular, solo las
+// condiciones, los destinos y los CON=. Esa es una laguna conocida; por eso la
+// sección siguiente la rodea con un CON= y una regla, que sí se revisan.
+si inexistente > voltaje_max entonces estado = PICO;
+
+// REGLA 13, vía 2: un CON= que no corresponde a ningún sensor.
+calcular(PROMEDIO(CON=no_declarado, VENTANA=10), desde_nada);
+
+// LAGUNA DE LA REGLA 13: esto no reporta nada. La expresión se lee, se le saca
+// su tipo, pero nadie mira si sus variables existen. El único síntoma es que
+// el destino 'fantasma' hereda el tipo del voltaje y pasa como si estuviera bien.
+//   calcular(voltaje * fantasma, fantasma_expresion);
+
+// REGLA 20: 'sin_tipo' se usa sin declarar 'sensor sin_tipo : TIPO;'.
+calcular(sin_tipo * 2, sin_declarar);
+
+// REGLA 22: el destino también aparece en su propia expresión.
+calcular(voltaje * 2, voltaje);
+
+
+// ===========================================================================
+//  REGLAS 3, 4, 14 Y 23 — dirección de la lectura y tipos
+// ===========================================================================
+
+// REGLA 3: una comparación no puede usar un sensor como umbral fijo.
+si voltaje > temperatura entonces estado = PICO;
+
+// REGLA 4: un umbral no tiene transductor detrás, no puede alimentar nada.
+calcular(PROMEDIO(CON=temp_max, VENTANA=5), desde_umbral);
+
+// REGLA 14: comparar una expresión que mezcla dos magnitudes.
+si voltaje + temperatura > 100 entonces estado = PICO;
+
+// REGLA 23: voltios contra un umbral en grados.
+si voltaje > temp_max entonces estado = PICO;
+
+
+// ===========================================================================
+//  REGLA 8 — dos reglas que se contradicen
+// ===========================================================================
+
+// Estas dos se cumplen a la vez para voltaje = 250 pero dicen cosas distintas.
+si voltaje > voltaje_max entonces estado = INESTABLE;
+si voltaje > 100 entonces estado = PICO;
+
+
+// ===========================================================================
+//  REGLAS 10, 11, 15, 16, 17, 18 Y 19 — llamadas y física
+// ===========================================================================
+
+// REGLA 10: FRECUENCIA= 0 no es positiva.
+calcular(SENO(CON=voltaje, AMPLITUD=5, FRECUENCIA=0), onda_cero);
+
+// REGLA 11: SUMA exige que sus CON= midan lo mismo.
+calcular(SUMA(CON=voltaje, CON=temperatura), suma_imposible);
+
+// REGLA 15: PROMEDIO exige CON y VENTANA, y solo eso.
+calcular(PROMEDIO(CON=voltaje), promedio_mal);
+
+// REGLA 16: dividir por cero constante. Solo revisa condiciones, no calculos.
+si voltaje / 0 > 100 entonces estado = PICO;
+
+// REGLA 17: un umbral fuera del rango del transductor (ELECTRICO va 0 a 250).
+umbral fuera_de_rango : ELECTRICO = 999;
+
+// REGLA 18: 200 Hz es inobservable en un ELECTRICO, cuya banda es de 50 Hz.
+calcular(SENO(CON=voltaje, AMPLITUD=5, FRECUENCIA=200), onda_rapida);
+
+// REGLA 19: un ELECTRICO necesita 5 muestras para promediar; 2 no alcanzan.
+calcular(PROMEDIO(CON=voltaje, VENTANA=2), promedio_corto);
+
+
+// ===========================================================================
+//  REGLA 21 — orden de definición
+// ===========================================================================
+
+// 'futura' no se calcula hasta despues de la regla que la usa.
+si futura > voltaje_max entonces estado = PICO;
+calcular(voltaje + 1, futura);
+
+
+// ===========================================================================
+//  CIERRE
+// ===========================================================================
+
+estado = NORMAL;
+sino = NORMAL;
+
+
+// ===========================================================================
+//  REFERENCIA — qué dispara cada regla
+//  ===========================================================================
+//
+//  Verificable con el fragmento de PowerShell del reporte de esta sesión. Lo
+//  que importa es que cada fila produzca su mensaje, no que el total de errores
+//  sume 23: las reglas se cruzan entre si.
+//
+//  #   disparador minimo
+//  --  ---------------------------------------------------------------------
+//   1  un nombre declarado como sensor y como umbral
+//   2  un nombre declarado dos veces con la misma clase
+//   3  la derecha de una comparacion es un sensor
+//   4  un CON= apunta a un umbral
+//   5  sensor_min >= sensor_max   (se busca por nombre)
+//   6  sensor_max - sensor_min < 10   (se busca por nombre)
+//   7  estado CAIDA con una condicion por encima del maximo
+//   8  dos reglas solapadas con estados distintos
+//   9  una expresion de calcular suma dos magnitudes
+//  10  FRECUENCIA= o VENTANA= a cero o negativo
+//  11  SUMA con CON= de magnitudes distintas
+//  12  (omitida: el lenguaje no tiene sentencia FIN)
+//  13  un nombre en la condicion, en el destino o en un CON= que no existe
+//  14  una comparacion opera entre dos magnitudes distintas
+//  15  la firma de la llamada no cuadra (PROMEDIO sin VENTANA, etc.)
+//  16  division por una constante cero, en la condicion de una regla
+//  17  un umbral fuera del rango del transductor
+//  18  FRECUENCIA= por encima de la banda del transductor o del Nyquist
+//  19  VENTANA= por debajo del minimo fisico del tipo
+//  20  un canal usado sin 'sensor x : TIPO;'
+//  21  una regla usa una senal que se calcula despues
+//  22  el destino de un calcular aparece en su propia expresion
+//  23  un umbral de otra magnitud en la comparacion
+//
+// ---------------------------------------------------------------------------
+//  TRAMPAS QUE COSTAN ENERGIA
+// ---------------------------------------------------------------------------
+//
+//  · Las reglas 5 y 6 no revisan pares de umbrales sueltos: buscan un sensor
+//    y luego sus _min y _max. Un `umbral roto_min` sin `sensor roto` no se
+//    comprueba nunca.
+//
+//  · La 16 solo recorre las CONDICIONES de las reglas, no los calculos:
+//    `calcular(v / 0, x)` pasa limpio.
+//
+//  · La 13 no recorre la EXPRESION de un calcular, solo las condiciones, los
+//    destinos y los CON=. `calcular(v * fantasma, d)` no se reporta.
+//
+//  · La 5 y la 6 comparten metodo, y la 17, 18 y 19 tambien. Cada una se
+//    dispara por separado, pero el codigo que las ejecuta es el mismo.
+//
+//  · La 3 y la 23 se apoyan en el mismo cruce de magnitudes, y la 9 en la 11.
+//    Una construccion puede Therefore disparar dos reglas que hablan de lo
+//    mismo con palabras distintas.
+// ===========================================================================
