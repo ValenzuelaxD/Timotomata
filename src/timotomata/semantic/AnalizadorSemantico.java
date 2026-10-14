@@ -45,6 +45,19 @@ import timotomata.simbolos.TablaSimbolos;
  *   <li>20. Tipo de sensor ausente en una referencia</li>
  * </ol>
  *
+ * <h2>Reglas de flujo de datos</h2>
+ * <ol start="21">
+ *   <li>21. Orden de definición: una señal usada antes de su {@code calcular}</li>
+ *   <li>22. Autodependencia: {@code calcular(x, op, x)}</li>
+ *   <li>23. Umbral de otra magnitud en la comparación</li>
+ * </ol>
+ *
+ * <p>Las reglas 3, 14, 16 y 23 recorren las comparaciones hoja de la condición
+ * en vez de la condición entera. Desde que existen {@code Y}, {@code O} y
+ * {@code NO} eso no es un detalle: {@code voltaje > vmax y temp > tmax} junta
+ * dos magnitudes en la misma línea sin que haya nada malo en ello, y agrupar
+ * por toda la línea las marcaría como error.
+ *
  * <p>Las reglas 18 y 19 existían solo de forma parcial contra una constante
  * global ({@code FRECUENCIA_MUESTREO = 1.0}) que no pertenecía al lenguaje.
  * Ahora se comparan contra la ficha técnica del tipo declarado, que sí.
@@ -246,14 +259,14 @@ public class AnalizadorSemantico {
     private void regla3SensorComoUmbral(Programa programa, List<String> errores) {
         Set<String> medibles = medibles(programa);
         for (Regla r : programa.reglas) {
-            Binaria cond = condicionRelacional(r);
-            if (cond == null) continue;
-            for (String var : variables(cond.derecha)) {
-                if (!medibles.contains(var)) continue;
-                err(errores, r.linea, "el sensor '" + var
-                    + "' no puede usarse como umbral: la expresion derecha de la"
-                    + " condicion es un limite fijo y un sensor se mide, no fija"
-                    + " limites.");
+            for (Comparacion cond : comparaciones(r.condicion)) {
+                for (String var : Expressiones.variables(cond.derecha)) {
+                    if (!medibles.contains(var)) continue;
+                    err(errores, r.linea, "el sensor '" + var
+                        + "' no puede usarse como umbral: la expresion derecha de la"
+                        + " condicion es un limite fijo y un sensor se mide, no fija"
+                        + " limites.");
+                }
             }
         }
     }
@@ -347,7 +360,7 @@ public class AnalizadorSemantico {
 
     private void regla7EstadoIncompatible(Programa programa, List<String> errores) {
         for (Regla r : programa.reglas) {
-            Binaria cond = condicionRelacional(r);
+            Comparacion cond = condicionRelacional(r);
             if (cond == null || r.estado == null) continue;
             String estado = r.estado.toLowerCase();
             String op = cond.operador;
@@ -368,9 +381,43 @@ public class AnalizadorSemantico {
     //  REGLA 8 — Reglas de sensores contradictorias
     // =============================================================
 
-    private Binaria condicionRelacional(Regla r) {
-        if (r.condicion instanceof Binaria b && esRelacional(b.operador)) return b;
-        return null;
+    /**
+ * Comparación simple de una regla, o {@code null}.
+ *
+ * <p>Solo la devuelve si la condición es exactamente una comparación. Con
+ * conectores o negaciones ya no hay un único intervalo que la describa, y las
+ * reglas que razonan sobre intervalos —la 7 y la 8— no tienen nada que decir.
+ * No es que se las saltee por comodidad: una condición compuesta no se puede
+ * reducir a un intervalo sin.expandirla por De Morgan, que es trabajo de la
+ * fase de análisis de estados alcanzables.
+ */
+    private Comparacion condicionRelacional(Regla r) {
+        return r.condicion instanceof Comparacion c && esRelacional(c.operador)
+            ? c : null;
+    }
+
+    /**
+     * Todas las comparaciones hoja de una condición, en orden de aparición.
+     *
+     * <p>Las reglas que solo necesitan saber qué se lee —la 13, la 14, la 23—
+     * sí pueden trabajar con condiciones compuestas, y lo hacen con esta
+     * lista en lugar de con la condición entera.
+     */
+    private List<Comparacion> comparaciones(Condicion c) {
+        List<Comparacion> r = new ArrayList<>();
+        recogerComparaciones(c, r);
+        return r;
+    }
+
+    private void recogerComparaciones(Condicion c, List<Comparacion> acc) {
+        if (c instanceof Comparacion comp) {
+            acc.add(comp);
+        } else if (c instanceof Conector con) {
+            recogerComparaciones(con.izquierda, acc);
+            recogerComparaciones(con.derecha, acc);
+        } else if (c instanceof Negado neg) {
+            recogerComparaciones(neg.condicion, acc);
+        }
     }
 
     private static boolean esRelacional(String op) {
@@ -394,7 +441,7 @@ public class AnalizadorSemantico {
                                              List<String> errores) {
         List<CondicionReducida> condiciones = new ArrayList<>();
         for (Regla r : programa.reglas) {
-            Binaria cond = condicionRelacional(r);
+            Comparacion cond = condicionRelacional(r);
             if (cond == null || r.estado == null) continue;
             if (!(cond.izquierda instanceof Variable var)) continue;
             Double cte = evaluar(cond.derecha, programa.umbrales);
@@ -491,7 +538,7 @@ public class AnalizadorSemantico {
 
         for (Regla r : programa.reglas) {
             Set<String> yaVistos = new LinkedHashSet<>();
-            for (String var : variables(r.condicion)) {
+            for (String var : r.condicion.variables()) {
                 if (simbolos.declarado(var) || !yaVistos.add(var)) continue;
                 err(errores, r.linea, "identificador '" + var
                     + "' no declarado: se usa en la condicion sin haber sido"
@@ -525,24 +572,49 @@ public class AnalizadorSemantico {
 
     /**
      * En Timotomata la "magnitud física" es el tipo declarado del canal:
-     * operar o comparar un canal ELÉCTRICO con uno TÉRMICO es una
-     * incompatibilidad de tipos. Abarca la aritmética y la comparación, sea
-     * cual sea la posición.
+     * operar entre un canal ELÉCTRICO y uno TÉRMICO es una incompatibilidad de
+     * tipos.
+     *
+     * <p>La comprobación es <b>por lado de cada comparación</b>, no sobre la
+     * condición entera. `voltaje > 220` mezcla cero magnitudes, y
+     * `amp + temp > 10` mezcla dos. Pero `voltaje > max y temp > tempMax`
+     * también junta dos magnitudes en la misma línea, y no hay nada malo en
+     * ello: una conjunction de dos preguntas sobre sensores distintos es
+     * justamente lo que un sistema de monitoreo hace todo el tiempo.
+     *
+     * <p>Antes de los conectores esto no se confundía porque una condición era
+     * una sola comparación. Con `y` hay que separar "mezclar magnitudes" de
+ * "mencionar dos sensores", que es lo que hace esta regla.
      */
     private void regla14TiposIncompatibles(Programa programa,
                                            List<String> errores) {
         Set<String> medibles = medibles(programa);
+
         for (Regla r : programa.reglas) {
-            Map<TipoSensor, String> vistas = new LinkedHashMap<>();
-            for (String var : variables(r.condicion)) {
-                if (!medibles.contains(var)) continue;
-                TipoSensor m = programa.tipoDe(var);
-                if (m == null) continue;
-                vistas.putIfAbsent(m, var);
+            for (Comparacion c : comparaciones(r.condicion)) {
+                Map<TipoSensor, String> izquierda = magnitudesDe(c.izquierda, medibles, programa);
+                Map<TipoSensor, String> derecha = magnitudesDe(c.derecha, medibles, programa);
+
+                if (!reportarMagnitudes(errores, r.linea,
+                        "incompatibilidad de tipos: la operacion", izquierda)) {
+                    reportarMagnitudes(errores, r.linea,
+                        "incompatibilidad de tipos: la operacion", derecha);
+                }
             }
-            reportarMagnitudes(errores, r.linea,
-                               "incompatibilidad de tipos: la operacion", vistas);
         }
+    }
+
+    /** Magnitudes distintas que aparecen dentro de una sola expresión. */
+    private Map<TipoSensor, String> magnitudesDe(Expresion e, Set<String> medibles,
+                                                 Programa programa) {
+        Map<TipoSensor, String> vistas = new LinkedHashMap<>();
+        for (String var : Expressiones.variables(e)) {
+            if (!medibles.contains(var)) continue;
+            TipoSensor m = programa.tipoDe(var);
+            if (m == null) continue;
+            vistas.putIfAbsent(m, var);
+        }
+        return vistas;
     }
 
     // =============================================================
@@ -605,7 +677,10 @@ public class AnalizadorSemantico {
 
     private void regla16DivisionPorCero(Programa programa, List<String> errores) {
         for (Regla r : programa.reglas) {
-            buscarDivisionPorCero(r.condicion, r.linea, programa.umbrales, errores);
+            for (Comparacion c : comparaciones(r.condicion)) {
+                buscarDivisionPorCero(c.izquierda, r.linea, programa.umbrales, errores);
+                buscarDivisionPorCero(c.derecha, r.linea, programa.umbrales, errores);
+            }
         }
     }
 
@@ -813,29 +888,48 @@ public class AnalizadorSemantico {
     private void regla23UmbralDeOtraMagnitud(Programa programa,
                                              List<String> errores) {
         for (Regla r : programa.reglas) {
-            Map<TipoSensor, String> umbrales = new LinkedHashMap<>();
-            Map<TipoSensor, String> canales = new LinkedHashMap<>();
-            for (String var : variables(r.condicion)) {
-                Simbolo s = programa.simbolos.buscar(var);
-                TipoSensor m = programa.tipoDe(var);
-                if (s == null || m == null) continue;
-                if (s.clase() == Simbolo.Clase.UMBRAL) umbrales.putIfAbsent(m, var);
-                else canales.putIfAbsent(m, var);
-            }
-            // Solo se reporta el cruce umbral/canal. Los clashes entre dos
-            // canales los cubre la regla 14, y repetirlos sería ruido.
-            for (Map.Entry<TipoSensor, String> c : canales.entrySet()) {
-                for (Map.Entry<TipoSensor, String> u : umbrales.entrySet()) {
-                    if (c.getKey().equals(u.getKey())) continue;
-                    err(errores, r.linea, "incompatibilidad de tipos: se compara '"
-                        + c.getValue() + "' (" + c.getKey().etiqueta() + ") contra el"
-                        + " umbral '" + u.getValue() + "' (" + u.getKey().etiqueta()
-                        + "), que es de otra magnitud. El umbral nunca se cruza con"
-                        + " este sensor, asi que la condicion nunca se cumple.");
-                    return;
+            // Por comparación, no sobre la condición entera: si no, un
+            // `voltaje > vmax y temperatura > tmax` cruzaría 'voltaje' con
+            // 'tmax' aunque estén en preguntas distintas.
+            for (Comparacion c : comparaciones(r.condicion)) {
+                Map<TipoSensor, String> umbrales = new LinkedHashMap<>();
+                Map<TipoSensor, String> canales = new LinkedHashMap<>();
+
+                for (String var : Expressiones.variables(c.izquierda)) {
+                    agregarPorClase(programa, var, umbrales, canales);
                 }
+                for (String var : Expressiones.variables(c.derecha)) {
+                    agregarPorClase(programa, var, umbrales, canales);
+                }
+
+                // Solo se reporta el cruce umbral/canal. Los clashes entre dos
+                // canales los cubre la regla 14, y repetirlos sería ruido.
+                boolean reportado = false;
+                for (Map.Entry<TipoSensor, String> ca : canales.entrySet()) {
+                    for (Map.Entry<TipoSensor, String> u : umbrales.entrySet()) {
+                        if (ca.getKey().equals(u.getKey())) continue;
+                        err(errores, r.linea, "incompatibilidad de tipos: se compara '"
+                            + ca.getValue() + "' (" + ca.getKey().etiqueta() + ") contra el"
+                            + " umbral '" + u.getValue() + "' (" + u.getKey().etiqueta()
+                            + "), que es de otra magnitud. El umbral nunca se cruza con"
+                            + " este sensor, asi que la condicion nunca se cumple.");
+                        reportado = true;
+                    }
+                }
+                if (reportado) return;
             }
         }
+    }
+
+    /** Clasifica un nombre como umbral o como canal, si tiene tipo declarado. */
+    private void agregarPorClase(Programa programa, String var,
+                                  Map<TipoSensor, String> umbrales,
+                                  Map<TipoSensor, String> canales) {
+        Simbolo s = programa.simbolos.buscar(var);
+        TipoSensor m = programa.tipoDe(var);
+        if (s == null || m == null) return;
+        if (s.clase() == Simbolo.Clase.UMBRAL) umbrales.putIfAbsent(m, var);
+        else canales.putIfAbsent(m, var);
     }
 
     /**
@@ -850,14 +944,14 @@ public class AnalizadorSemantico {
         Map<String, Integer> usos = new LinkedHashMap<>();
 
         for (Regla r : programa.reglas) {
-            for (String v : variables(r.condicion)) {
+            for (String v : r.condicion.variables()) {
                 usos.merge(v, r.linea, Math::min);
             }
         }
         for (Calculo c : programa.calculos) {
             usos.merge(c.sensor, c.linea, Math::min);
             if (c.esExpresion()) {
-                for (String v : variables(c.expresion)) {
+                for (String v : Expressiones.variables(c.expresion)) {
                     usos.merge(v, c.linea, Math::min);
                 }
             }
@@ -870,15 +964,17 @@ public class AnalizadorSemantico {
         return usos;
     }
 
-    private void reportarMagnitudes(List<String> errores, int linea,
-                                    String contexto, Map<TipoSensor, String> vistas) {
-        if (vistas.size() < 2) return;
+    private boolean reportarMagnitudes(List<String> errores, int linea,
+                                       String contexto,
+                                       Map<TipoSensor, String> vistas) {
+        if (vistas.size() < 2) return false;
         Iterator<Map.Entry<TipoSensor, String>> it = vistas.entrySet().iterator();
         Map.Entry<TipoSensor, String> a = it.next();
         Map.Entry<TipoSensor, String> b = it.next();
         err(errores, linea, contexto + " combina sensores de magnitudes"
             + " incompatibles: '" + a.getValue() + "' (" + a.getKey().etiqueta()
             + ") y '" + b.getValue() + "' (" + b.getKey().etiqueta() + ").");
+        return true;
     }
 
     // =============================================================

@@ -31,6 +31,7 @@ responde tres preguntas distintas:
 | ¿Los nombres significan una sola cosa? | Reglas 1–4 |
 | ¿Los números significan algo medible? | Reglas 5–7, 17 |
 | ¿Lo declarado forma un cálculo coherente? | Reglas 8, 11, 14, 21–23 |
+| ¿La condición es una pregunta bien formada? | Reglas 3, 14, 23, 16 (por comparación) |
 
 La tercera es la que da cuerpo al proyecto. Sin ella, declarar
 `umbral temp_max : TERMICO = 80;` al lado de `umbral voltaje_max : ELECTRICO = 220;`
@@ -296,6 +297,34 @@ La regla 14 no la cubría: mira solo los canales y señales medibles, porque
 comparar un umbral contra otro umbral no tiene sentido físico. Pero un umbral
 también lleva tipo declarado, y ahí está el hueco.
 
+### Cómo los conectores cambian el alcance de las reglas 14 y 23
+
+Las dos reglas agrupan por **comparación**, no por línea. Antes no hacía falta
+decirlo porque una condición era una sola comparación; con `y` y `o` hay varias
+en la misma línea y juntarlas daría falsos positivos:
+
+```
+si voltaje > voltaje_max y temperatura > temp_max entonces estado = INESTABLE;
+```
+
+Sin el agrupamiento por comparación, esta línea complainaría dos veces: la 14
+diría que "combina magnitudes incompatibles" y la 23 cruzaría `voltaje` con
+`temp_max`. Las dos serían falsas —son dos preguntas sobre sensores distintos, que
+es lo que un sistema de monitoreo hace todo el tiempo—. Lo que sí es un error
+sigue siendo `amperio + templado > 10`, donde una sola operación suma dos
+magnitudes.
+
+La 3 y la 16 se ajustaron igual: recorren las comparaciones hoja en vez de la
+condición entera, y por eso funcionan con condiciones compuestas.
+
+### Lo que los conectores todavía no cubren
+
+Las reglas 7 y 8 razonan sobre intervalos, y una condición compuesta no se
+reduce a un intervalo sin expandirla por De Morgan. `condicionRelacional()`
+devuelve `null` cuando la condición no es una única comparación, y ambas reglas
+se quedan calladas. No es que se las salte: es que no pueden decir nada. Es
+justo el trabajo que falta para la fase de análisis de estados alcanzables.
+
 ### La memoria que cada cálculo necesita
 
 `Calculo.memoria()` es el contrato con el generador de código:
@@ -432,6 +461,7 @@ automatizable: `compile_and_run_cli.bat || echo FALLO`.
 | `test_calcular.txt` | 0 | Las dos formas de `calcular`, paréntesis, encadenamiento |
 | `test_semantico_ok.txt` | 0 | Programa válido completo |
 | `test_basico.txt`, `test_comentarios.txt`, `test_simulacion.txt` | 0 | Léxico y gramática |
+| `test_condiciones.txt` | 0 | Conectores, negación, lectura de estado, rama `sino` |
 | `test_flujo.txt` | 4 | Reglas 21, 22 y 23 |
 | `test_reglas_tipo.txt` | 9 | Reglas 17 a 20, una por tipo |
 | `test_semantico.txt` | 22 | Reglas 1 a 16 |

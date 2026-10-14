@@ -29,7 +29,14 @@ import timotomata.lexer.TipoToken;
  *   VALOR_UMBRAL  → MENOS NUMERO
  *                 | NUMERO
  *
- *   CONDICION     → EXPRESION OP_REL EXPRESION
+ *   CONDICION     → NEGACION COMPARACION CONDICION_SIG
+ *   NEGACION      → NO NEGACION
+ *                 | ε
+ *   COMPARACION   → EXPRESION OP_REL EXPRESION
+ *   CONDICION_SIG → CONECTOR NEGACION COMPARACION CONDICION_SIG
+ *                 | ε
+ *   CONECTOR      → Y
+ *                 | O
  *
  *   EXPRESION     → TERMINO EXPRESION_SIG
  *   EXPRESION_SIG → MAS TERMINO EXPRESION_SIG
@@ -46,6 +53,11 @@ import timotomata.lexer.TipoToken;
  *                 | ABS PAREN_IZQ EXPRESION PAREN_DER
  *                 | MENOS FACTOR
  *                 | PAREN_IZQ EXPRESION PAREN_DER
+ *                 | ESTADO
+ *                 | ESTADO_SISTEMA
+ *
+ *   RAMA_SI_SINO  → SINO ESTADO ASIGNACION ESTADO_SISTEMA
+ *                 | ε
  *
  *   OP_REL        → MAYOR | MENOR | IGUAL_IGUAL
  *                 | MAYOR_IGUAL | MENOR_IGUAL | DIFERENTE
@@ -90,16 +102,25 @@ public class Gramatica {
         PARAM         = 12,
         LISTA_PARAMS_SIG = 13,
         TIPO_MAGNITUD = 14,
-        DESTINO_OP    = 15;
+        DESTINO_OP    = 15,
+        //  Los cinco no terminales de la capa booleana. COMPARACION es la hoja
+        //  y la única que se puede traducir a un intervalo de valores; los
+        //  otros cuatro componen sin intervalo.
+        NEGACION      = 16,
+        COMPARACION   = 17,
+        CONDICION_SIG = 18,
+        CONECTOR      = 19,
+        RAMA_SI_SINO  = 20;
 
-    public static final int NUM_NT = 16;
+    public static final int NUM_NT = 21;
 
     public static final String[] NOMBRES_NT = {
         "PROGRAMA", "SENTENCIA", "VALOR_UMBRAL",
         "CONDICION", "EXPRESION", "EXPRESION_SIG",
         "TERMINO", "TERMINO_SIG", "FACTOR", "OP_REL",
         "TIPO_OP", "LISTA_PARAMS", "PARAM", "LISTA_PARAMS_SIG",
-        "TIPO_MAGNITUD", "DESTINO_OP"
+        "TIPO_MAGNITUD", "DESTINO_OP",
+        "NEGACION", "COMPARACION", "CONDICION_SIG", "CONECTOR", "RAMA_SI_SINO"
     };
 
     
@@ -114,7 +135,7 @@ public class Gramatica {
         P_SENT_CALCULAR   = 5,
         P_VALOR_NEG       = 6,
         P_VALOR_POS       = 7,
-        P_COND            = 8,
+        P_COMP             = 8,
         P_EXPR            = 9,
         P_EXPR_SIG_MAS    = 10,
         P_EXPR_SIG_MENOS  = 11,
@@ -159,9 +180,20 @@ public class Gramatica {
         P_SENT_MUESTREO   = 50,
         P_SENT_SINO       = 51,
         P_TIPO_EXPRESION  = 52,
-        P_FACT_PAREN      = 53;
+        P_FACT_PAREN      = 53,
+        P_NEG_NO          = 54,
+        P_NEG_EPS        = 55,
+        P_COND_SIG_CON   = 56,
+        P_COND_SIG_EPS   = 57,
+        P_CON_Y          = 58,
+        P_CON_O          = 59,
+        P_RAMA_SINO      = 60,
+        P_RAMA_EPS       = 61,
+        P_FACT_ESTADO    = 62,
+        P_FACT_LITERAL   = 63,
+        P_COND          = 64;
 
-    public static final int NUM_PROD = 54;
+    public static final int NUM_PROD = 65;
 
     
     //  CODIFICACIÓN DE SÍMBOLOS
@@ -191,7 +223,7 @@ public class Gramatica {
         /*  4 */ { NT(SENTENCIA),    T(TipoToken.SI),           NT(CONDICION),
                                        T(TipoToken.ENTONCES),    T(TipoToken.ESTADO),
                                        T(TipoToken.ASIGNACION),  T(TipoToken.ESTADO_SISTEMA),
-                                       T(TipoToken.PUNTO_COMA) },
+                                       NT(RAMA_SI_SINO),         T(TipoToken.PUNTO_COMA) },
         /*  5 */ { NT(SENTENCIA),    T(TipoToken.CALCULAR),     T(TipoToken.PAREN_IZQ),
                                        T(TipoToken.ID),          T(TipoToken.COMA),
                                        NT(TIPO_OP),              NT(DESTINO_OP),
@@ -200,7 +232,7 @@ public class Gramatica {
         /*  6 */ { NT(VALOR_UMBRAL), T(TipoToken.MENOS),       T(TipoToken.NUMERO) },
         /*  7 */ { NT(VALOR_UMBRAL), T(TipoToken.NUMERO) },
 
-        /*  8 */ { NT(CONDICION),    NT(EXPRESION), NT(OP_REL), NT(EXPRESION) },
+        /*  8 */ { NT(COMPARACION),  NT(EXPRESION), NT(OP_REL), NT(EXPRESION) },
 
         /*  9 */ { NT(EXPRESION),    NT(TERMINO), NT(EXPRESION_SIG) },
         /* 10 */ { NT(EXPRESION_SIG), T(TipoToken.MAS),         NT(TERMINO),
@@ -278,6 +310,32 @@ public class Gramatica {
 
         /* 53 */ { NT(FACTOR),       T(TipoToken.PAREN_IZQ),  NT(EXPRESION),
                                        T(TipoToken.PAREN_DER) },
+
+        // --- Capa booleana de la condicion -----------------------------------
+        //  CONDICION factoriza el NO inicial y la cadena de conectores. NO va
+        //  antes de COMPARACION y no antes de CONDICION_SIG: por eso
+        //  `no a > 1 y b < 2` se lee `no(a > 1) y b < 2` y no
+        //  `no(a > 1 y b < 2)`.
+
+        /* 54 */ { NT(NEGACION),      T(TipoToken.NO), NT(NEGACION) },
+        /* 55 */ { NT(NEGACION) },                                  // ε
+
+        /* 56 */ { NT(CONDICION_SIG), NT(CONECTOR),   NT(NEGACION),
+                                       NT(COMPARACION), NT(CONDICION_SIG) },
+        /* 57 */ { NT(CONDICION_SIG) },                              // ε
+
+        /* 58 */ { NT(CONECTOR),      T(TipoToken.Y) },
+        /* 59 */ { NT(CONECTOR),      T(TipoToken.O) },
+
+        /* 60 */ { NT(RAMA_SI_SINO),  T(TipoToken.SINO),        T(TipoToken.ESTADO),
+                                       T(TipoToken.ASIGNACION), T(TipoToken.ESTADO_SISTEMA) },
+        /* 61 */ { NT(RAMA_SI_SINO) },                              // ε
+
+        /* 62 */ { NT(FACTOR),       T(TipoToken.ESTADO) },
+        /* 63 */ { NT(FACTOR),       T(TipoToken.ESTADO_SISTEMA) },
+
+        /* 64 */ { NT(CONDICION),    NT(NEGACION), NT(COMPARACION),
+                                       NT(CONDICION_SIG) },
     };
 
     

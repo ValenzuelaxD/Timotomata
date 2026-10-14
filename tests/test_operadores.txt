@@ -5,13 +5,13 @@
 sensor a     : ELECTRICO;
 sensor b     : ELECTRICO;
 umbral x : ELECTRICO = 10;
-umbral y : ELECTRICO = 20;
+umbral q : ELECTRICO = 20;
 muestreo = 0.01;
 si a > x entonces estado = NORMAL;
-si a < y entonces estado = PICO;
+si a < q entonces estado = PICO;
 si a == x entonces estado = CAIDA;
 si a >= x entonces estado = INESTABLE;
-si a <= y entonces estado = NORMAL;
+si a <= q entonces estado = NORMAL;
 si a != x entonces estado = PICO;
 // Prueba de expresiones aritmeticas con abs
 sensor valor  : MECANICO;

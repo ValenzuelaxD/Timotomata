@@ -325,6 +325,9 @@ public class Lexer {
                 case "si"         -> agregar(TipoToken.SI, lexema, linea, columna);
                 case "entonces"   -> agregar(TipoToken.ENTONCES, lexema, linea, columna);
                 case "sino"       -> agregar(TipoToken.SINO, lexema, linea, columna);
+                case "y"          -> agregar(TipoToken.Y, lexema, linea, columna);
+                case "o"          -> agregar(TipoToken.O, lexema, linea, columna);
+                case "no"         -> agregar(TipoToken.NO, lexema, linea, columna);
                 case "muestreo"   -> agregar(TipoToken.MUESTREO, lexema, linea, columna);
                 case "estado"     -> agregar(TipoToken.ESTADO, lexema, linea, columna);
                 case "abs"        -> agregar(TipoToken.ABS, lexema, linea, columna);

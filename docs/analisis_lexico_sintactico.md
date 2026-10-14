@@ -285,7 +285,7 @@ PROGRAMA      → SENTENCIA PROGRAMA
 
 SENTENCIA     → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD PUNTO_COMA
               | UMBRAL ID DOS_PUNTOS TIPO_MAGNITUD ASIGNACION VALOR_UMBRAL PUNTO_COMA
-              | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
+              | SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA RAMA_SI_SINO PUNTO_COMA
               | CALCULAR PAREN_IZQ ID COMA TIPO_OP DESTINO_OP PAREN_DER PUNTO_COMA
               | ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
               | SINO ASIGNACION ESTADO_SISTEMA PUNTO_COMA
@@ -300,7 +300,16 @@ DESTINO_OP    → COMA ID
 VALOR_UMBRAL  → MENOS NUMERO
               | NUMERO
 
-CONDICION     → EXPRESION OP_REL EXPRESION
+CONDICION     → NEGACION COMPARACION CONDICION_SIG
+NEGACION      → NO NEGACION
+              | ε
+COMPARACION   → EXPRESION OP_REL EXPRESION
+CONDICION_SIG → CONECTOR NEGACION COMPARACION CONDICION_SIG
+              | ε
+CONECTOR      → Y
+              | O
+RAMA_SI_SINO  → SINO ESTADO ASIGNACION ESTADO_SISTEMA
+              | ε
 
 EXPRESION     → TERMINO EXPRESION_SIG
 EXPRESION_SIG → MAS TERMINO EXPRESION_SIG
@@ -317,6 +326,8 @@ FACTOR        → NUMERO
               | ABS PAREN_IZQ EXPRESION PAREN_DER
               | MENOS FACTOR
               | PAREN_IZQ EXPRESION PAREN_DER
+              | ESTADO
+              | ESTADO_SISTEMA
 
 TIPO_OP       → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER
               | COSENO PAREN_IZQ LISTA_PARAMS PAREN_DER
@@ -357,9 +368,41 @@ solo cambia el orden de construcción, que el parser ya respeta por precedencia.
 - **Sin recursión izquierda directa**: `EXPRESION` no deriva en `EXPRESION + ...` — usa `EXPRESION_SIG` para manejar la recursión por la derecha.
 - **LL(1)**: Es posible determinar qué producción usar con solo mirar el siguiente token (lookahead). La propiedad no se supone: `Gramatica.construirTabla()` detecta las celdas donde dos producciones del mismo no terminal reclaman el mismo token y las registra en `Gramatica.conflictos()`, que hoy está vacío.
 
+### La capa booleana de las condiciones
+
+`CONDICION` separa la parte booleana de la numérica. Antes de los conectores
+`Y`, `O` y `NO`, la condición *era* una `EXPRESION` relacional, y cualquier
+análisis tenía que preguntar primero si estaba mirando una comparación.
+
+`NEGACION` factoriza el `NO` inicial, y `CONDICION_SIG` encadena los conectores.
+`NO` va antes de `COMPARACION` y no antes de `CONDICION_SIG`, así que liga más
+fuerte:
+
+```
+si a > 10 y b < 2 o c == 5      →  (a > 10 y b < 2) o c == 5
+si no a > 10 y b < 2           →  no(a > 10) y b < 2
+si no no a > 10                →  a > 10
+```
+
+`Y` y `O` comparten precedencia. `NO` se encadena porque `NEGACION → NO NEGACION`
+es recursión por la derecha, que no es un problema para LL(1).
+
+**No hay paréntesis en las condiciones, y es a propósito.** Un paréntesis podría
+ser una expresión agrupada —`(a + b) / 2`— o una condición agrupada
+—`(a > 1 y b < 2)`—, y los dos empiezan igual: paréntesis seguido de un
+identificador. Separarlos exige mirar dos tokens, con lo que la gramática deja
+de ser LL(1) y `Gramatica.conflictos()` empieza a reportar conflictos. Se
+prefiere perder el agrupamiento antes que la propiedad.
+
+`FACTOR → ESTADO` y `FACTOR → ESTADO_SISTEMA` hacen que `estado` sea legible
+como cualquier otro operando, lo que habilita `si estado == PICO y …`. No
+introducen ninguna ambigüedad: `ESTADO` está en `FIRST(FACTOR)` pero no en
+`FOLLOW(FACTOR)`, que son celdas distintas de las que la tabla separa por no
+terminal.
+
 ## 2.2 Símbolos
 
-### No terminales (16) - 54 producciones
+### No terminales (21) - 65 producciones
 
 | ID | Nombre | Significado |
 |:--:|--------|-------------|
@@ -380,7 +423,7 @@ solo cambia el orden de construcción, que el parser ya respeta por precedencia.
 | 14 | `TIPO_MAGNITUD` | Tipo de sensor declarado |
 | 15 | `DESTINO_OP` | Señal de destino del cálculo, o ε |
 
-### Terminales (45 tokens)
+### Terminales (48 tokens)
 
 | Token | Cómo se escribe |
 |-------|:---------------:|
@@ -426,11 +469,11 @@ solo cambia el orden de construcción, que el parser ya respeta por precedencia.
 | 1 | `PROGRAMA → ε` |
 | 2 | `SENTENCIA → SENSOR ID DOS_PUNTOS TIPO_MAGNITUD PUNTO_COMA` |
 | 3 | `SENTENCIA → UMBRAL ID DOS_PUNTOS TIPO_MAGNITUD ASIGNACION VALOR_UMBRAL PUNTO_COMA` |
-| 4 | `SENTENCIA → SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
+| 4 | `SENTENCIA → SI CONDICION ENTONCES ESTADO ASIGNACION ESTADO_SISTEMA RAMA_SI_SINO PUNTO_COMA` |
 | 5 | `SENTENCIA → CALCULAR PAREN_IZQ ID COMA TIPO_OP DESTINO_OP PAREN_DER PUNTO_COMA` |
 | 6 | `VALOR_UMBRAL → MENOS NUMERO` |
 | 7 | `VALOR_UMBRAL → NUMERO` |
-| 8 | `CONDICION → EXPRESION OP_REL EXPRESION` |
+| 8 | `COMPARACION → EXPRESION OP_REL EXPRESION` |
 | 9 | `EXPRESION → TERMINO EXPRESION_SIG` |
 | 10 | `EXPRESION_SIG → MAS TERMINO EXPRESION_SIG` |
 | 11 | `EXPRESION_SIG → MENOS TERMINO EXPRESION_SIG` |
@@ -476,6 +519,18 @@ solo cambia el orden de construcción, que el parser ya respeta por precedencia.
 | 51 | `SENTENCIA → SINO ASIGNACION ESTADO_SISTEMA PUNTO_COMA` |
 | 52 | `TIPO_OP → EXPRESION` |
 | 53 | `FACTOR → PAREN_IZQ EXPRESION PAREN_DER` |
+| 54 | `NEGACION → NO NEGACION` |
+| 55 | `NEGACION → ε` |
+| 56 | `CONDICION_SIG → CONECTOR NEGACION COMPARACION CONDICION_SIG` |
+| 57 | `CONDICION_SIG → ε` |
+| 58 | `CONECTOR → Y` |
+| 59 | `CONECTOR → O` |
+| 60 | `RAMA_SI_SINO → SINO ESTADO ASIGNACION ESTADO_SISTEMA` |
+| 61 | `RAMA_SI_SINO → ε` |
+| 62 | `FACTOR → ESTADO` |
+| 63 | `FACTOR → ESTADO_SISTEMA` |
+| 64 | `CONDICION → NEGACION COMPARACION CONDICION_SIG` |
+
 
 
 | ID | Producción |
@@ -548,19 +603,25 @@ que pueden aparecer inmediatamente después.
 | `PROGRAMA` | SENSOR, UMBRAL, SI, ESTADO, CALCULAR, SINO, MUESTREO | si | EOF |
 | `SENTENCIA` | SENSOR, UMBRAL, SI, ESTADO, CALCULAR, SINO, MUESTREO | no | SENSOR, UMBRAL, SI, ESTADO, CALCULAR, SINO, MUESTREO, EOF |
 | `VALOR_UMBRAL` | NUMERO, MENOS | no | PUNTO_COMA |
-| `CONDICION` | ABS, ID, NUMERO, MENOS, PAREN_IZQ | no | ENTONCES |
-| `EXPRESION` | ABS, ID, NUMERO, MENOS, PAREN_IZQ | no | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PAREN_DER, COMA |
-| `EXPRESION_SIG` | MAS, MENOS | si | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PAREN_DER, COMA |
-| `TERMINO` | ABS, ID, NUMERO, MENOS, PAREN_IZQ | no | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, PAREN_DER, COMA |
-| `TERMINO_SIG` | POR, DIV | si | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, PAREN_DER, COMA |
-| `FACTOR` | ABS, ID, NUMERO, MENOS, PAREN_IZQ | no | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, POR, DIV, PAREN_DER, COMA |
-| `OP_REL` | MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE | no | ABS, ID, NUMERO, MENOS, PAREN_IZQ |
-| `TIPO_OP` | ABS, ID, NUMERO, MENOS, PAREN_IZQ, SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO, SUMA | no | PAREN_DER, COMA |
+| `CONDICION` | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ, NO | no | ENTONCES |
+| `EXPRESION` | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ | no | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PAREN_DER, COMA, Y, O |
+| `EXPRESION_SIG` | MAS, MENOS | si | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, PAREN_DER, COMA, Y, O |
+| `TERMINO` | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ | no | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, PAREN_DER, COMA, Y, O |
+| `TERMINO_SIG` | POR, DIV | si | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, PAREN_DER, COMA, Y, O |
+| `FACTOR` | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ | no | ENTONCES, MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE, MAS, MENOS, POR, DIV, PAREN_DER, COMA, Y, O |
+| `OP_REL` | MAYOR, MENOR, IGUAL_IGUAL, MAYOR_IGUAL, MENOR_IGUAL, DIFERENTE | no | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ |
+| `TIPO_OP` | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ, SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO, SUMA | no | PAREN_DER, COMA |
 | `LISTA_PARAMS` | AMPLITUD, FRECUENCIA, VENTANA, CON | si | PAREN_DER |
 | `PARAM` | AMPLITUD, FRECUENCIA, VENTANA, CON | no | PAREN_DER, COMA |
 | `LISTA_PARAMS_SIG` | COMA | si | PAREN_DER |
 | `TIPO_MAGNITUD` | ELECTRICO, TERMICO, LUMINICO, MECANICO, QUIMICO, HIDRAULICO | no | ASIGNACION, PUNTO_COMA |
 | `DESTINO_OP` | COMA | si | PAREN_DER |
+| `NEGACION` | NO | si | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ |
+| `COMPARACION` | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ | no | ENTONCES, Y, O |
+| `CONDICION_SIG` | Y, O | si | ENTONCES |
+| `CONECTOR` | Y, O | no | ESTADO, ABS, ID, NUMERO, ESTADO_SISTEMA, MENOS, PAREN_IZQ, NO |
+| `RAMA_SI_SINO` | SINO | si | PUNTO_COMA |
+
 
 ## 2.5 Tabla de Parsing LL(1)
 
@@ -572,19 +633,25 @@ sintáctico). Se lista solo lo no vacío; **toda pareja no listada vale `-1`**.
 | `PROGRAMA` | `SENSOR`→0, `UMBRAL`→0, `SI`→0, `ESTADO`→0, `CALCULAR`→0, `SINO`→0, `MUESTREO`→0, `EOF`→1 |
 | `SENTENCIA` | `SENSOR`→2, `UMBRAL`→3, `SI`→4, `ESTADO`→49, `CALCULAR`→5, `SINO`→51, `MUESTREO`→50 |
 | `VALOR_UMBRAL` | `NUMERO`→7, `MENOS`→6 |
-| `CONDICION` | `ABS`→8, `ID`→8, `NUMERO`→8, `MENOS`→8, `PAREN_IZQ`→8 |
-| `EXPRESION` | `ABS`→9, `ID`→9, `NUMERO`→9, `MENOS`→9, `PAREN_IZQ`→9 |
-| `EXPRESION_SIG` | `ENTONCES`→12, `MAYOR`→12, `MENOR`→12, `IGUAL_IGUAL`→12, `MAYOR_IGUAL`→12, `MENOR_IGUAL`→12, `DIFERENTE`→12, `MAS`→10, `MENOS`→11, `PAREN_DER`→12, `COMA`→12 |
-| `TERMINO` | `ABS`→13, `ID`→13, `NUMERO`→13, `MENOS`→13, `PAREN_IZQ`→13 |
-| `TERMINO_SIG` | `ENTONCES`→16, `MAYOR`→16, `MENOR`→16, `IGUAL_IGUAL`→16, `MAYOR_IGUAL`→16, `MENOR_IGUAL`→16, `DIFERENTE`→16, `MAS`→16, `MENOS`→16, `POR`→14, `DIV`→15, `PAREN_DER`→16, `COMA`→16 |
-| `FACTOR` | `ABS`→19, `ID`→18, `NUMERO`→17, `MENOS`→20, `PAREN_IZQ`→53 |
+| `CONDICION` | `ESTADO`→64, `ABS`→64, `ID`→64, `NUMERO`→64, `ESTADO_SISTEMA`→64, `MENOS`→64, `PAREN_IZQ`→64, `NO`→64 |
+| `EXPRESION` | `ESTADO`→9, `ABS`→9, `ID`→9, `NUMERO`→9, `ESTADO_SISTEMA`→9, `MENOS`→9, `PAREN_IZQ`→9 |
+| `EXPRESION_SIG` | `ENTONCES`→12, `MAYOR`→12, `MENOR`→12, `IGUAL_IGUAL`→12, `MAYOR_IGUAL`→12, `MENOR_IGUAL`→12, `DIFERENTE`→12, `MAS`→10, `MENOS`→11, `PAREN_DER`→12, `COMA`→12, `Y`→12, `O`→12 |
+| `TERMINO` | `ESTADO`→13, `ABS`→13, `ID`→13, `NUMERO`→13, `ESTADO_SISTEMA`→13, `MENOS`→13, `PAREN_IZQ`→13 |
+| `TERMINO_SIG` | `ENTONCES`→16, `MAYOR`→16, `MENOR`→16, `IGUAL_IGUAL`→16, `MAYOR_IGUAL`→16, `MENOR_IGUAL`→16, `DIFERENTE`→16, `MAS`→16, `MENOS`→16, `POR`→14, `DIV`→15, `PAREN_DER`→16, `COMA`→16, `Y`→16, `O`→16 |
+| `FACTOR` | `ESTADO`→62, `ABS`→19, `ID`→18, `NUMERO`→17, `ESTADO_SISTEMA`→63, `MENOS`→20, `PAREN_IZQ`→53 |
 | `OP_REL` | `MAYOR`→21, `MENOR`→22, `IGUAL_IGUAL`→23, `MAYOR_IGUAL`→24, `MENOR_IGUAL`→25, `DIFERENTE`→26 |
-| `TIPO_OP` | `ABS`→52, `ID`→52, `NUMERO`→52, `MENOS`→52, `PAREN_IZQ`→52, `SENO`→27, `COSENO`→28, `CUADRADA`→29, `PROMEDIO`→30, `MAXIMO`→31, `SUMA`→32 |
+| `TIPO_OP` | `ESTADO`→52, `ABS`→52, `ID`→52, `NUMERO`→52, `ESTADO_SISTEMA`→52, `MENOS`→52, `PAREN_IZQ`→52, `SENO`→27, `COSENO`→28, `CUADRADA`→29, `PROMEDIO`→30, `MAXIMO`→31, `SUMA`→32 |
 | `LISTA_PARAMS` | `PAREN_DER`→34, `AMPLITUD`→33, `FRECUENCIA`→33, `VENTANA`→33, `CON`→33 |
 | `PARAM` | `AMPLITUD`→37, `FRECUENCIA`→38, `VENTANA`→39, `CON`→40 |
 | `LISTA_PARAMS_SIG` | `PAREN_DER`→36, `COMA`→35 |
 | `TIPO_MAGNITUD` | `ELECTRICO`→41, `TERMICO`→42, `LUMINICO`→43, `MECANICO`→44, `QUIMICO`→45, `HIDRAULICO`→46 |
 | `DESTINO_OP` | `PAREN_DER`→48, `COMA`→47 |
+| `NEGACION` | `ESTADO`→55, `ABS`→55, `ID`→55, `NUMERO`→55, `ESTADO_SISTEMA`→55, `MENOS`→55, `PAREN_IZQ`→55, `NO`→54 |
+| `COMPARACION` | `ESTADO`→8, `ABS`→8, `ID`→8, `NUMERO`→8, `ESTADO_SISTEMA`→8, `MENOS`→8, `PAREN_IZQ`→8 |
+| `CONDICION_SIG` | `ENTONCES`→57, `Y`→56, `O`→56 |
+| `CONECTOR` | `Y`→58, `O`→59 |
+| `RAMA_SI_SINO` | `PUNTO_COMA`→61, `SINO`→60 |
+
 
 No hay ninguna celda con dos producciones para el mismo terminal: **la
 gramática es LL(1) efectiva.** No es una aserción: `construirTabla()` delega en

@@ -60,6 +60,7 @@ sensor temperatura : TERMICO;
 
 umbral voltaje_max : ELECTRICO = 220;
 umbral voltaje_min : ELECTRICO = 100;
+umbral temp_max    : TERMICO   = 80;
 
 // El reloj del programa: segundos por muestreo. Fija el límite de Nyquist.
 muestreo = 0.01;
@@ -73,6 +74,12 @@ si temperatura > 80 entonces estado = INESTABLE;
 // El cálculo escribe en una señal derivada: el canal físico queda intacto.
 calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);
 si voltaje_prom >= voltaje_max entonces estado = PICO;
+
+si voltaje > voltaje_max y temperatura > temp_max entonces estado = INESTABLE;
+si voltaje < voltaje_min o voltaje < voltaje_min entonces estado = CAIDA;
+si no voltaje > voltaje_max entonces estado = NORMAL;
+si estado == PICO y voltaje < voltaje_min entonces estado = CAIDA;
+si voltaje > voltaje_max entonces estado = PICO sino estado = NORMAL;
 
 // calcular también acepta cualquier expresión, que sustituye a las variables.
 calcular(voltaje, abs(voltaje - 220), voltaje_desvio);
@@ -94,6 +101,7 @@ sino = NORMAL;
 | `si` / `entonces` | Condicional |
 | `estado` | Estado inicial de la máquina |
 | `sino` | Estado cuando ninguna regla se cumple |
+| `y` / `o` / `no` | Conectores lógicos dentro de una condición |
 | `calcular` | Cálculo sobre un sensor, con operación nombrada o expresión |
 | `normal` / `pico` / `caida` / `inestable` | Estados del sistema |
 | `abs()` | Función valor absoluto |
@@ -174,7 +182,7 @@ Timotomata/
 
 **[`docs/analisis_lexico_sintactico.md`](docs/analisis_lexico_sintactico.md)**
 - Diagrama del **AFD del analizador léxico** (13 estados, 19 clases de caracteres)
-- **Gramática BNF** completa (16 no terminales, 54 producciones, 45 tokens)
+- **Gramática BNF** completa (21 no terminales, 65 producciones, 48 tokens)
 - **Tabla de parsing LL(1)** con conjuntos FIRST y FOLLOW
 - Las dos formas de transformar en `calcular`: operación nombrada o expresión
 

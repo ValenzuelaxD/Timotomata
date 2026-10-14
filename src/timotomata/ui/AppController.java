@@ -914,10 +914,13 @@ public class AppController {
             reglas.setExpanded(true);
             for (int i = 0; i < programa.reglas.size(); i++) {
                 Regla r = programa.reglas.get(i);
-                String condStr = expresionToString(r.condicion);
+                String condStr = condicionToString(r.condicion);
                 TreeItem<String> regla = new TreeItem<>(
                     "Regla " + (i + 1) + ": Si " + condStr);
                 regla.getChildren().add(new TreeItem<>("\u2192 Estado: " + r.estado));
+                if (r.tieneRamaSino()) {
+                    regla.getChildren().add(new TreeItem<>("\u2192 Sino: " + r.estadoSino));
+                }
                 reglas.getChildren().add(regla);
             }
             raiz.getChildren().add(reglas);
@@ -1027,6 +1030,8 @@ public class AppController {
     private String expresionToString(Expresion e) {
         if (e instanceof Numero n) return String.valueOf(n.valor);
         if (e instanceof Variable v) return v.nombre;
+        if (e instanceof EstadoActual) return "estado";
+        if (e instanceof LiteralEstado l) return l.nombre;
         if (e instanceof Binaria b) {
             return expresionToString(b.izquierda) + " "
                 + b.operador + " " + expresionToString(b.derecha);
@@ -1034,6 +1039,21 @@ public class AppController {
         if (e instanceof Negacion n) return "-(" + expresionToString(n.expresion) + ")";
         if (e instanceof Abs a) return "abs(" + expresionToString(a.expresion) + ")";
         return "?";
+    }
+
+    /**
+     * Convierte una condición a texto para el árbol del AST.
+     *
+     * <p>Delega en el {@code toString()} de cada nodo, que ya sabe imposing
+     * los paréntesis de los conectores: el árbol del editor tiene que mostrar
+     * el agrupamiento real, o un `a y b o c` se lee como `a y (b o c)`.
+     */
+    private String condicionToString(Condicion c) {
+        if (c instanceof Comparacion comp) {
+            return expresionToString(comp.izquierda) + " "
+                + comp.operador + " " + expresionToString(comp.derecha);
+        }
+        return c == null ? "?" : c.toString();
     }
 
     // ─── Barra de estado ───
@@ -1114,7 +1134,7 @@ public class AppController {
     private Set<String> extraerVariablesReferenciadas(Programa programa) {
         Set<String> vars = new HashSet<>();
         for (Regla r : programa.reglas) {
-            extraerVariablesDeExpresion(r.condicion, vars);
+            vars.addAll(r.condicion.variables());
         }
         for (Calculo c : programa.calculos) {
             vars.add(c.sensor);

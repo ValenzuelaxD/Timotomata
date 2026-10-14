@@ -255,6 +255,19 @@ Todas las palabras reservadas son **case-insensitive**: no importa si se escribe
 | `CALCULAR` | `calcular` | Inicia cálculo funcional |
 | `ABS` | `abs`, `Abs` | Valor absoluto en expresiones |
 
+### Conectores lógicos
+
+| Token | Lexemas válidos | Uso |
+|-------|----------------|-----|
+| `Y` | `y`, `Y` | Conjunction dentro de una condición |
+| `O` | `o`, `O` | Disyunción dentro de una condición |
+| `NO` | `no`, `No`, `NO` | Negación de la comparación que sigue |
+
+> Son palabras reservadas, así que `y`, `o` y `no` dejan de poder usarse como
+> nombres. Es el costo de escribir el lenguaje en castellano: en un programa de
+> este dominio un identificador `y` o `o` sería más natural que casi cualquier
+> otra cosa.
+
 ### Valores de estado del sistema
 
 | Token | Lexemas válidos |
@@ -479,6 +492,64 @@ TIPO_OP → SENO ( LISTA_PARAMS )
         | SUMA ( LISTA_PARAMS )
         | EXPRESION
 ```
+
+`TIPO_OP` admite **dos cosas distintas**. Las seis operaciones nombradas tienen
+firma fija; `EXPRESION` es una transformación arbitraria:
+
+```timotomata
+calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);   // operación nombrada
+calcular(voltaje, voltaje * 2, voltaje_x2);              // expresión arbitraria
+calcular(voltaje, (voltaje + corriente) / 2, medio);    // con paréntesis
+```
+
+La segunda forma sustituye a las variables: da la misma expresividad sin
+introducir almacenamiento mutable, ámbito ni una cuarta clase de símbolo en la
+tabla de símbolos.
+
+Ambas familias se distinguen con un solo token: las operaciones empiezan por su
+palabra reservada (`SENO`…`SUMA`) y las expresiones por `ABS`, `ID`, `NUMERO`,
+`-` o `(`. Los conjuntos son disjuntos, así que la decisión es LL(1).
+
+```
+CONDICION     → NEGACION COMPARACION CONDICION_SIG
+NEGACION      → NO NEGACION
+              | ε
+
+COMPARACION   → EXPRESION OP_REL EXPRESION
+
+CONDICION_SIG → CONECTOR NEGACION COMPARACION CONDICION_SIG
+              | ε
+
+CONECTOR      → Y
+              | O
+
+RAMA_SI_SINO  → SINO ESTADO ASIGNACION ESTADO_SISTEMA
+              | ε
+```
+
+`Y` y `O` tienen la misma precedencia y se asocian a la izquierda, así que
+`a y b o c` se lee `(a y b) o c`. `NO` liga más fuerte y se aplica solo a la
+comparación que sigue; se puede encadenar (`no no a > 10`).
+
+```timotomata
+si voltaje > voltaje_max y temperatura > temp_max entonces estado = INESTABLE;
+si voltaje < voltaje_min o voltaje > voltaje_max entonces estado = PICO;
+si no voltaje > voltaje_max entonces estado = NORMAL;
+si estado == PICO y voltaje < voltaje_min entonces estado = CAIDA;
+si voltaje > voltaje_max entonces estado = PICO sino estado = NORMAL;
+```
+
+**No hay paréntesis en las condiciones.** Un paréntesis podría ser una expresión
+agrupada —`(a + b) / 2`— o una condición agrupada, y los dos empiezan igual;
+separarlos exigiría mirar dos tokens y la gramática dejaría de ser LL(1). Para
+negar una conjunción se escribe su opuesta: `si a <= 10 o b >= 2`.
+
+La rama `sino` de una regla es distinta del `sino = X;` global: aquel dice a qué
+estado se vuelve el sistema cuando **ninguna** regla se cumple, este dice a qué
+se vuelve cuando **esta** regla no.
+
+`estado` también se puede leer dentro de una condición, y comparar un literal
+de estado (`PICO`, `CAIDA`, `NORMAL`, `INESTABLE`) con `==` o `!=`.
 
 `TIPO_OP` admite **dos cosas distintas**. Las seis operaciones nombradas tienen
 firma fija; `EXPRESION` es una transformación arbitraria:
