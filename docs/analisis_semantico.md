@@ -10,7 +10,7 @@
 
 1. [Qué se verifica y por qué](#1-qué-se-verifica-y-por-qué)
 2. [Las fichas de los tipos de sensor](#2-las-fichas-de-los-tipos-de-sensor)
-3. [Las 25 reglas](#3-las-25-reglas)
+3. [Las 23 reglas](#3-las-23-reglas)
 4. [Reglas de coherencia interna](#4-reglas-de-coherencia-interna)
 5. [Reglas de física](#5-reglas-de-física)
 6. [Reglas de flujo de datos](#6-reglas-de-flujo-de-datos)
@@ -24,16 +24,14 @@
 
 Un programa Timotomata declara canales, umbrales, señales derivadas y reglas.
 La gramática garantiza que eso esté bien *escrito*. El análisis semántico
-responde tres preguntas distintas:
+responde cuatro preguntas distintas:
 
 | Pregunta | Qué la responde |
 |:---------|:----------------|
 | ¿Los nombres significan una sola cosa? | Reglas 1–4 |
 | ¿Los números significan algo medible? | Reglas 5–7, 17 |
-| ¿Lo declarado forma un cálculo coherente? | Reglas 8, 11, 14, 21–23 |
-| ¿Qué código no se ejecutará nunca? | Regla 24 |
-| ¿Qué valores dejan el sistema quieto? | Regla 25 (aviso) |
-| ¿La condición es una pregunta bien formada? | Reglas 3, 14, 23, 16 (por comparación) |
+| ¿Lo declarado forma un cálculo coherente? | Reglas 8, 9, 11, 14, 21–23 |
+| ¿La condición es una pregunta bien formada? | Reglas 3, 14, 16, 23 (por comparación) |
 
 La tercera es la que da cuerpo al proyecto. Sin ella, declarar
 `umbral temp_max : TERMICO = 80;` al lado de `umbral voltaje_max : ELECTRICO = 220;`
@@ -47,6 +45,11 @@ no hace nada. **La regla 23 existe para que eso sea un error de compilación.**
 - No conoce el hardware concreto. Usa las fichas de `TipoSensor`, no un
   catálogo de transductores reales.
 - No optimiza. Detecta contradicciones, pero no las reescribe.
+- **No reporta lo que el programa deja deliberadamente fuera.** La banda de
+  operación normal —los valores entre el mínimo y el máximo de un sensor, donde
+  el sistema no dispara nada porque así se le pidió— no se reporta. No es un
+  defecto del código, y quien lo programó lo quiso así. Por eso el analizador
+  tiene una sola salida de mensajes: los errores.
 
 ---
 
@@ -75,7 +78,7 @@ Los tres campos de la derecha son los que hacen trabajo real:
 
 ---
 
-## 3. Las 27 reglas
+## 3. Las 23 reglas
 
 | # | Regla | Qué detecta |
 |:-:|:------|:------------|
@@ -87,6 +90,7 @@ Los tres campos de la derecha son los que hacen trabajo real:
 | 6 | Margen insuficiente | Rango demasiado estrecho para ser útil |
 | 7 | Estado invertido | `PICO` en una condición de caída |
 | 8 | Reglas contradictorias | Dos reglas se solapan con estados distintos |
+| 9 | Expresión incompatible | Mezcla de magnitudes dentro de una expresión |
 | 10 | Parámetros inválidos | Frecuencia, ventana o amplitud físicamente imposibles |
 | 11 | `SUMA` incompatible | Mezcla de magnitudes distintas |
 | 13 | Identificador no declarado | Se usa un nombre que no existe |
@@ -98,15 +102,27 @@ Los tres campos de la derecha son los que hacen trabajo real:
 | 19 | Ventana insuficiente | Por debajo del mínimo físico del tipo |
 | 20 | Tipo ausente | Un canal usado sin `sensor x : TIPO;` |
 | 21 | Orden de definición | Se usa una señal antes de su `calcular` |
-| 22 | Autodependencia | `calcular(x, op, x)` |
+| 22 | Autodependencia | El destino también aparece en la expresión |
 | 23 | Umbral de otra magnitud | Se compara un canal contra el umbral equivocado |
-| 24 | Regla inalcanzable | Las reglas anteriores ya cubren toda su región |
-| 25 | Zona sin cubrir | Ninguna regla dispara para ciertos valores |
-| 26 | Señal muerta | Una señal derivada que nadie lee |
-| 27 | Expresión incompatible | Mezcla de magnitudes dentro de una expresión |
 
-Las reglas 9 y 12 están omitidas: la 9 por decisión del proyecto, y la 12 porque
-el lenguaje ya no tiene la sentencia `FIN`.
+La 12 está omitida porque el lenguaje ya no tiene la sentencia `FIN`.
+
+La 9 es la 11 aplicada a las expresiones: es la única que revisa que una
+expresión de `calcular` mida en una sola magnitud. Se numeraba 27 cuando se
+añadió y ocupa este hueco porque la serie del proyecto se saltaba el 9.
+
+### Reglas que ya no existen
+
+Tres reglas se retiraron del analizador:
+
+| Retirada | Qué hacía | Por qué |
+|:---------|:----------|:--------|
+| 24 — Regla inalcanzable | Las reglas anteriores ya cubren toda su región | Es la misma comprobación que la 8, con otro mensaje. La 8 ya dice que dos reglas se solapan con estados distintos, que es exactamente el síntoma. |
+| 25 — Zona sin cubrir | Ninguna regla dispara para ciertos valores | No señalaba un defecto: la banda normal de operación es justamente donde el sistema no debe disparar. Era información útil, no un problema. |
+| 26 — Señal muerta | Una señal derivada que nadie lee | En este dominio calcular una señal sin leerla es legítimo: puede existir solo para graficarla. |
+
+La 8 conserva la verificación por intervalos que usaban, así que el solapamiento
+sigue detectándose.
 
 ---
 
@@ -145,7 +161,7 @@ calcular(PROMEDIO(CON=voltaje_max, VENTANA=5), x); // regla 4: no hay sensor det
 `SUMA(CON=a, CON=b)` exige que `a` y `b` midan lo mismo. Sumar volts y grados no
 produce volts: produce una suma sin unidad.
 
-### Regla 27 — Magnitudes mezcladas dentro de una expresión
+### Regla 9 — Magnitudes mezcladas dentro de una expresión
 
 La regla 11 aplicada a las expresiones. Una cuenta también tiene que medir en
 una sola magnitud:
@@ -385,7 +401,9 @@ si v > 100 ...                    // voltage_doble queda huerfana
 
 Ahí no falta nada: la señal existe, tiene tipo, y simplemente se calcula cada tick para que nadie la mire.
 
-### Regla 26 — Señales derivadas que nadie lee
+### Regla 26 — retirada: señales derivadas que nadie lee
+
+Hubo una regla que avisaba de eso:
 
 ```
 Aviso semantico en linea 28: la senal derivada 'voltaje_medio_manual' no la lee
@@ -393,20 +411,14 @@ ninguna regla ni ningun calculo. Si existe solo para graficarla, esto es
 esperado; si no, el nombre esta mal escrito o sobra el calculo.
 ```
 
-Es **aviso** y no error porque en este dominio el caso legítimo existe: una
-señal puede calcularse únicamente para graficarla, y eso es una razón de peso
-en un sistema de monitoreo.
+Se retiró porque, en este dominio, calcular una señal sin leerla es una razón
+de peso: puede existir solo para graficarla. Avisar de eso en todos los programas
+bien hechos es ruido, y el caso que sí era un defecto —una errata en el nombre
+del destino— lo pilla la regla 13 en cuanto esa señal se menciona en algún sitio.
 
-Para que la regla no dé falsos positivos hay que marcar **también el canal de
-origen** como uso. Una señal que solo se lee como origen de otro `calcular` no
-aparece en ninguna condición, y sin ese marcado se reportaría como muerta
-cuando es la base de un cálculo encadenado:
-
-```
-calcular(potencia_kw, potencia_kw - potencia_nominal, desvio_potencia);
-           └──────────┘
-           lectura legitima: es el origen de desvio_potencia
-```
+Lo que la regla sí tenía bien resuelto era el marcado de usos, y ese trabajo no
+se perdió: `usosDeSenales` sigue siendo lo que verifica el orden de definición
+de la regla 21, y sigue incluyendo el canal de origen de un `calcular` como uso.
 
 ---
 
@@ -426,19 +438,6 @@ regla contradictoria sobre 'voltaje': se solapa con la regla de la linea 10
 
 Dos reglas se contradicen cuando sus intervalos se solapan y los estados son distintos. La primera que se cumple gana: la segunda no es "incorrecta", es inalcanzable.
 
-### Regla 24 — Qué código no se va a ejecutar nunca
-
-La contrapartida: no solo qué reglas se contradicen, sino cuáles **jamás** se ejecutan. Eso es código muerto que el optimizador puede descartar.
-
-```
-si voltaje > voltaje_min entonces estado = PICO;      // (180, +inf]
-si voltaje > voltaje_max entonces estado = INESTABLE; // (220, +inf] ⊆ la anterior
-```
-```
-regla inalcanzable: las reglas anteriores ya cubren todos los valores de
-'voltaje' = (220, +inf], asi que esta nunca se cumple.
-```
-
 **Por qué solo las reglas de una sola variable pueden probar cobertura.** Para tapar una regla hace falta que *toda* la región donde se cumple esté dentro de la región de alguna regla anterior. Al trabajar por ejes se comparan proyecciones, y proyectar pierde información:
 
 ```
@@ -448,34 +447,24 @@ linea 38:  si voltaje > 220                       ->  estado = PICO
 
 La proyección de la 18 sobre `voltaje` es `(220, +inf]`, igual que la de la 38, así que un análisis ingenuo daría la 38 por muerta. **No lo es**: con `voltaje = 230` y `temperatura = 20` la 18 no dispara y la 38 sí. La correlación entre variables es justo lo que el análisis por ejes destruye.
 
-Por eso la cobertura solo la aportan reglas cuya región tiene **una única variable**: ahí su proyección *es* su región. Con esa salvedad el argumento es sólido —si al menos una variable de la regla está tapada por una regla univariable anterior, cualquier punto donde se cumpla la nueva dispara también esa anterior— y el análisis se limita a lo que puede demostrar.
+Por eso la cobertura solo la aportan reglas cuya región tiene **una única variable**: ahí su proyección *es* su región. Esa salvedad es la que sostiene el argumento de la regla 8, y es también el límite que hizo innecesaria una regla aparte para código muerto: distinguir "se solapa con otra que asigna un estado distinto" (interesante, es un error de diseño) de "quedó totalmente tapada" (variante del mismo hecho) no cambiaba nada para quien programa.
 
-Una conjunción también es código muerto si *sus dos partes* lo son:
+### Reglas 24 y 25 — retiradas: código muerto y zonas sin cubrir
 
-```
-si voltaje < voltaje_min y temperatura > temp_max   ->  inalcanzable
-```
+Hubo dos reglas más que razonaban sobre intervalos y que ya no están:
 
-porque cualquier punto donde se cumpla tiene `voltaje < 180`, y la regla anterior de `voltaje` ya se cumplió antes.
+| Retirada | Qué decía |
+|:---------|:----------|
+| 24 — Regla inalcanzable | *"regla inalcanzable: las reglas anteriores ya cubren todos los valores de 'voltaje' = (220, +inf], asi que esta nunca se cumple."* |
+| 25 — Zona sin cubrir | *"ninguna regla dispara para [-inf, 80] de 'temperatura': en esos valores el estado se queda donde lo dejo la ultima regla que se cumplio."* |
 
-### Regla 25 — Qué valores no disparan nada
+**Por qué se retiraron.**
 
-La otra dirección: no basta con saber qué código no corre, también hay que saber qué valores dejan el sistema como está.
+La 24 era la misma comprobación que la 8 con otro mensaje. Cuando dos reglas se solapan y asignan estados distintos, el programa está mal por una sola razón, y la 8 ya la dice. Emitir además "inalcanzable" duplicaba el diagnóstico sobre el mismo hecho —`test_alcanzable` llegó a reportar las dos para la misma línea—.
 
-```
-Aviso semantico en linea 7: ninguna regla dispara para [-inf, 80] de
-'temperatura': en esos valores el estado se queda donde lo dejo la ultima regla
-que se cumplio, o en el valor de 'sino'.
-```
+La 25 era información, no un defecto. La banda entre el mínimo y el máximo de un sensor es justamente donde el sistema **funciona con normalidad y a propósito no dispara nada**. Lo único que ofrecía era decidir si conviene envolver ese tramo en un `sino = NORMAL;`, y para eso el programador ya tiene el programa delante.
 
-Es un **aviso**, no un error, y la distinción es deliberada. La banda entre el mínimo y el máximo es justamente donde el sistema funciona con normalidad y **a propósito** no dispara nada. Reportarlo como error obligaría a silenciarlo en todos los programas bien hechos.
-
-| | Errores | Avisos |
-|:--|:--------|:-------|
-| cuentan para el código de salida | sí | no |
-| se muestran en la salida | sí | sí |
-
-Solo se reporta sobre variables que todas las reglas que las tocan restringen exactamente; si alguna usa una disyunción, la unión no es confiable y el hueco podría estar cubierto de todos modos.
+**Lo que se conserva.** `Intervalos` no se toca: la regla 8 sigue usándolo, y con él la representación canónica descrita arriba, la normalización `cte op var → var op' cte` que hace que `si 220 < voltaje` se analice igual que `si voltaje > 220`, y el criterio de "exacto o `null`" que decide cuándo el análisis se calla.
 
 ### Regla 7 — Estado invertido
 
@@ -494,25 +483,29 @@ CAIDA corresponde a valores por debajo del minimo ('voltaje < 180.0').
 Las reglas corren en un orden fijo dentro de `AnalizadorSemantico.analizar()`.
 Ese orden importa por dos razones:
 
-1. **Las reglas 3 y 4 necesitan `medibles()`, que depende de la resolución de
-   tipos.** Por eso `resolverTiposDeSenales()` corre antes que cualquier otra.
+1. **La resolución de tipos va primero.** `resolverTiposDeSenales()` corre antes
+   que cualquier regla porque las que dependen del tipo —9, 14, 17 a 20, 23—
+   necesitan que las señales derivadas ya tengan el de su canal.
 2. **Los errores se ordenan por línea al final** (`ordenarPorLinea`), así que el
    orden de las reglas no afecta al orden en que se muestran.
 
+Antes de correr nada hay una guarda: si el programa no declara absolutamente
+nada —documento vacío, solo comentarios— `analizar()` devuelve la lista vacía.
+Ninguna regla debe reportar sobre un documento que el usuario todavía no ha
+escrito.
+
 ```java
+if (esProgramaVacio(programa)) return errores;
+
 resolverTiposDeSenales(programa);        // una señal hereda el tipo de su canal
-reglaMuestreo(programa, errores);
 regla1Colision(...);   regla2Duplicadas(...);
 regla3SensorComoUmbral(...);  regla4UmbralComoSensor(...);
 reglas5y6Rango(...);  regla7EstadoIncompatible(...);  regla8ReglasContradictorias(...);
-regla10ParametrosInvalidos(...);  regla11Magnitudes(...);
+regla10ParametrosInvalidos(...);  regla11Magnitudes(...);  regla9MezclaEnExpresion(...);
 regla13NoDeclarados(...);  regla14TiposIncompatibles(...);
 regla15LlamadasIncorrectas(...);  regla16DivisionPorCero(...);
 reglas17a19Fisica(...);  regla20TiposAusentes(...);
 regla21OrdenDefinicion(...);  regla22Autodependencia(...);  regla23UmbralDeOtraMagnitud(...);
-regla24Inalcanzables(...);  regla25ZonasSinCubrir(programa, avisos);
-regla26SenalesMuertas(programa, avisos);
-regla27MezclaEnExpresion(...);
 ordenarPorLinea(errores);
 ```
 
@@ -565,9 +558,9 @@ compile_and_run_cli.bat -v tests\test_tipos.txt  -> ademas tabla, flujo y memori
 
 ```
 === test_tipos.txt ===
-  260 tokens - lexico 0 - sintactico 0 - semantico 0
+  264 tokens - lexico 0 - sintactico 0 - semantico 0
   -- gramatica --
-     LL(1) sin conflictos: 16 no terminales, 54 producciones, 45 tokens
+     LL(1) sin conflictos: 21 no terminales, 64 producciones, 48 tokens
   -- tabla de simbolos --
      voltaje                SENSOR  ELECTRICO   V    linea 7
      ...
@@ -593,13 +586,13 @@ automatizable: `compile_and_run_cli.bat || echo FALLO`.
 | `test_semantico_ok.txt` | 0 | Programa válido completo |
 | `test_basico.txt`, `test_comentarios.txt`, `test_simulacion.txt` | 0 | Léxico y gramática |
 | `test_condiciones.txt` | 0 | Conectores, negación, lectura de estado, rama `sino` |
-| `test_alcanzable.txt` | 9 + 1 av. | Reglas 24 y 25: código muerto y zonas sin cubrir |
+| `test_alcanzable.txt` | 6 | Regla 8: reglas que se contradicen entre sí |
 | `test_flujo.txt` | 4 | Reglas 21, 22 y 23 |
-| `test_reglas_tipo.txt` | 9 | Reglas 17 a 20, una por tipo |
+| `test_reglas_tipo.txt` | 10 | Reglas 9, 17 a 20, una por tipo |
 | `test_semantico.txt` | 22 | Reglas 1 a 16 |
 | `test_operadores.txt` | 13 | Encadenamiento de operadores y precedencia |
 | `test_case.txt` | 3 | Errores de uso |
-| `test_errores.txt` | 4 léx + 2 sint. | Errores deToken |
+| `test_errores.txt` | 4 léx + 2 sint. | Errores de token |
 
 ---
 

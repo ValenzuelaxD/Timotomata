@@ -159,7 +159,7 @@ Timotomata/
 │   │       ├── Negacion.java
 │   │       └── Abs.java
 │   ├── semantic/                 ← Analizador semántico
-│   │   ├── AnalizadorSemantico.java  ← 25 reglas de verificación
+│   │   ├── AnalizadorSemantico.java  ← Las 23 reglas de verificación
 │   │   └── TipoSensor.java       ← Ficha técnica de cada tipo de sensor
 │   ├── simbolos/                 ← Tabla de símbolos y flujo de datos
 │   │   ├── Simbolo.java          ← Símbolo con sus atributos y orígenes
@@ -190,12 +190,12 @@ Timotomata/
 - Las dos formas de transformar en `calcular`: operación nombrada o expresión
 
 **[`docs/analisis_semantico.md`](docs/analisis_semantico.md)**
-- Las **23 reglas** de verificación, agrupadas por lo que hacen
+- Las **23 reglas** de verificación (1 a 23), agrupadas por lo que hacen
 - **Fichas técnicas** de los seis tipos de sensor y para qué sirve cada campo
 - **Grafo de flujo de datos**: qué señal depende de cuál
-- **Código muerto**: qué reglas nunca se ejecutan, y qué valores no disparan nada
+- **Código muerto**: qué reglas se contradicen entre sí (regla 8)
 - **Memoria** que cada cálculo necesita (buffer, fase, nada)
-- Análisis de reglas por **intervalos**: contradicciones y código muerto
+- Análisis de reglas por **intervalos**: dónde se solapan dos reglas
 
 Las tres tablas de la segunda parte del documento léxico/sintáctico se
 regeneran con `java timotomata.parser.DumpTablas tablas.md`.

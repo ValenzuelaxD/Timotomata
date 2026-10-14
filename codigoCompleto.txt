@@ -1,0 +1,235 @@
+// ===========================================================================
+//  TIMOTOMATA — EJEMPLO COMPLETO DEL LENGUAJE
+//  ===========================================================================
+//
+//  Un solo archivo que ejercita todas las construcciones del lenguaje:
+//
+//    · declaracion de sensores y umbrales CON TIPO
+//    · umbrales con valores positivos y negativos
+//    · el reloj del programa (muestreo) y el estado inicial
+//    · calcular() con expresion aritmetica: + - * / abs() y parentesis
+//    · las 3 operaciones con memoria: PROMEDIO MAXIMO SUMA
+//    · los 3 generadores: SENO COSENO CUADRADA
+//    · los 7 operadores relacionales: > < == >= <= != <>
+//    · los 3 conectores logicos: y o no
+//    · la rama sino de una regla, y el sino global
+//    · los 4 estados: NORMAL PICO CAIDA INESTABLE
+//    · comentarios de linea (//) y de bloque (/* */)
+//
+//  Este ejemplo usa los dos tipos de sensor que el enunciado pide:
+//
+//    tipo        unidad   rango        muestreo   banda    PROMEDIO min.
+//    ELECTRICO   V        0 .. 250     100 Hz     50 Hz    5 muestras
+//    TERMICO     grados  -40 .. 125      0.1 Hz    0.05 Hz  20 muestras
+//
+//  Los tres numeros de la derecha no son decorativos:
+//
+//    · banda      — todo FRECUENCIA= por encima es inobservable (regla 18)
+//    · PROMEDIO min — toda VENTANA= por debajo es imposible (regla 19)
+//    · rango      — todo umbral fuera no existe para ese transductor (17)
+//
+//  Regla de precedencia del lenguaje: las reglas se evaluan en el orden del
+//  fuente y GANA LA PRIMERA QUE SE CUMPLA. Por eso el orden de escritura del
+//  bloque 7 es parte del programa, no un detalle de formato.
+//
+// ===========================================================================
+
+
+// ─── 1. SENSORES ───────────────────────────────────────────────────────────
+// Cada sensor declara su tipo. Eso fija la unidad, el rango que el transductor
+// puede medir y su banda: no se deduce del nombre.
+
+sensor voltaje             : ELECTRICO;
+sensor corriente           : ELECTRICO;
+sensor temperatura         : TERMICO;
+sensor temperatura_ambiente : TERMICO;
+
+
+// ─── 2. UMBRALES ──────────────────────────────────────────────────────────
+// Un umbral es un limite fijo: no hay transductor detras, asi que no puede
+// actuar como canal de lectura ni como CON= de una operacion.
+
+umbral voltaje_max         : ELECTRICO  = 230;
+umbral voltaje_min         : ELECTRICO  = 190;
+
+umbral corriente_max       : ELECTRICO  = 15;
+umbral corriente_min       : ELECTRICO  = 3;
+
+umbral temperatura_max     : TERMICO   = 80;
+umbral temperatura_min     : TERMICO   = 10;
+
+// El valor de un umbral puede ser negativo: lo introduce el signo menos.
+umbral temp_fondo          : TERMICO   = -15;
+
+umbral ambiente_max        : TERMICO   = 35;
+umbral ambiente_min        : TERMICO   = 5;
+
+
+// ─── 3. EL RELOJ Y EL ESTADO INICIAL ───────────────────────────────────────
+// muestreo es la duracion de un tick, en segundos. Define la Nyquist del
+// programa: con 0.001 s el programa muestrea a 1000 Hz, asi que su mitad —el
+// techo de cualquier FRECUENCIA=— queda en 500 Hz.
+
+muestreo = 0.001;
+
+estado = NORMAL;
+
+
+// ─── 4. CALCULAR CON EXPRESION ─────────────────────────────────────────────
+// El canal fisico queda intacto: cada resultado va a una senal nueva. El canal
+// de entrada es el parametro CON= de la operacion, no un argumento suelto.
+//
+// Solo se suman magnitudes del mismo tipo: voltaje + corriente produce voltios,
+// pero voltaje + temperatura produciria un numero sin unidad.
+
+/* Aritmetica sobre magnitud electrica. */
+calcular(voltaje + corriente, carga_total);
+calcular(voltaje - voltaje_max, desvio_voltaje);
+calcular(voltaje * 2, voltaje_doble);
+calcular(voltaje / voltaje_min, voltaje_relativo);
+
+/* Los parentesis cambian el orden de evaluacion. */
+calcular((corriente + voltaje_min) / 2, media_carga);
+
+/* abs(): el valor absoluto, para comparar desvios sin importar el signo. */
+calcular(abs(corriente - corriente_min), corriente_minima_abs);
+calcular(abs(voltaje - voltaje_max), desvio_absoluto);
+calcular(abs(temperatura - temp_fondo), desvio_termico);
+
+/* Constantes a la derecha de la comparacion: el otro extremo de VALOR_UMBRAL.
+   Un ELECTRICO no baja de 0 V, asi que 0 es un limite fisico valido. */
+calcular(corriente / voltaje_max, corriente_relativa);
+
+
+// ─── 5. OPERACIONES CON MEMORIA ────────────────────────────────────────────
+// Estas necesitan una ventana de muestras. VENTANA= tiene un minimo fisico
+// por tipo: un sensor TERMICO necesita 20 muestras, uno ELECTRICO solo 5.
+//
+// El minimo se comprueba contra el transductor, no contra el reloj del
+// programa: un TERMICO tarda segundos en responder, y promediar 5 muestras
+// tomadas cada milisegundo no promedia nada.
+
+calcular(PROMEDIO(CON=voltaje,             VENTANA=10), voltaje_prom);
+calcular(MAXIMO (CON=corriente,           VENTANA=20), corriente_maximo);
+calcular(PROMEDIO(CON=temperatura,        VENTANA=40), temp_prom);
+calcular(MAXIMO (CON=temperatura_ambiente, VENTANA=60), ambiente_maximo);
+
+/* SUMA depende de todos sus CON=, y exige que midan lo mismo. Por eso hay dos
+   SUMA y cada una mezcla solo su familia. */
+calcular(SUMA(CON=voltaje, CON=corriente), suma_electricos);
+calcular(SUMA(CON=temperatura, CON=temperatura_ambiente), suma_termicos);
+
+
+// ─── 6. GENERADORES ────────────────────────────────────────────────────────
+// Un generador produce su valor a partir del reloj, no de una lectura. Por eso
+// su CON= NO se lee: declara que magnitud representa la onda, para poder
+// verificar la FRECUENCIA contra la banda del transductor y la Nyquist.
+//
+//   FRECUENCIA= sobre ELECTRICO -> techo min(50, 500)   = 50 Hz
+//   FRECUENCIA= sobre TERMICO   -> techo min(0.05, 500) = 0.05 Hz
+//
+// La diferencia entre 50 Hz y 0.05 Hz es la misma regla (18) aplicada a dos
+// transductores: uno puede seguir la red, el otro se mueve por grados.
+
+calcular(SENO   (CON=voltaje,     AMPLITUD=10, FRECUENCIA=50),   onda_seno);
+calcular(COSENO (CON=corriente,   AMPLITUD=5,  FRECUENCIA=40),   onda_coseno);
+calcular(CUADRADA(CON=voltaje,    AMPLITUD=8,  FRECUENCIA=25),   onda_cuadrada);
+calcular(SENO   (CON=temperatura, AMPLITUD=5,  FRECUENCIA=0.05), deriva_termica);
+
+
+// ─── 7. REGLAS ─────────────────────────────────────────────────────────────
+// Se evaluan en orden y gana la primera que se cumple. Dos regiones disjuntas
+// pueden llevar al mismo estado sin contradecirse; dos que se solapan con
+// estados distintos, si.
+
+/* --- ELECTRICO: PICO por encima del maximo, CAIDA por debajo del minimo.
+       Los dos umbrales (230 y 190) no se cruzan, asi que las regiones son
+       disjuntas y no hay regla contradictoria. */
+si voltaje > voltaje_max entonces estado = PICO;
+si voltaje < voltaje_min entonces estado = CAIDA;
+
+/* --- El conector `y` exige las dos cosas a la vez. */
+si voltaje > voltaje_min y corriente > corriente_max entonces estado = INESTABLE;
+
+/* --- El conector `o` basta con una de las dos. */
+si voltaje < voltaje_min o voltaje > voltaje_max entonces estado = PICO;
+
+/* --- TERMICO: por encima degrada, por debajo es caida. */
+si temperatura > temperatura_max entonces estado = INESTABLE;
+si temperatura < temperatura_min entonces estado = CAIDA;
+
+/* --- Los dos operadores de igualdad. `!=` y `<>` son el mismo token: la
+       diferencia es solo de escritura, y el analizador los reporta igual. */
+si desvio_voltaje == desvio_absoluto entonces estado = PICO;
+si temp_prom != ambiente_maximo entonces estado = INESTABLE;
+si corriente_minima_abs <> 0 entonces estado = PICO;
+
+/* --- El conector `no`: se lee como no(temp_prom > ambiente_max) y
+       ambiente_max > 30. El `no` solo alcanza a la primera comparacion; el
+       `y` separa la segunda. */
+si no temp_prom > ambiente_max y ambiente_max > 30 entonces estado = PICO;
+
+/* --- Una rama `sino` explicita. Donde no se cumple la condicion no queda el
+       estado como estaba: queda el de la rama. */
+si corriente > corriente_max entonces estado = INESTABLE sino estado = NORMAL;
+
+/* --- Lectura del estado actual: `estado` y las constantes de estado valen
+       como factor, asi que se puede preguntar por el estado ya alcanzado. */
+si estado == CAIDA y voltaje > voltaje_max entonces estado = PICO;
+
+/* --- Agregados de las ventanas. */
+si voltaje_prom > voltaje_max entonces estado = PICO;
+si corriente_maximo > corriente_max entonces estado = INESTABLE;
+si ambiente_maximo > ambiente_max entonces estado = INESTABLE;
+
+/* --- Sobre las ondas: si la senal derivada sale del rango del sensor que
+       representa, el generador no esta describiendo la magnitud real. */
+si onda_seno > voltaje_max entonces estado = INESTABLE;
+si onda_coseno > corriente_max entonces estado = INESTABLE;
+si onda_cuadrada > voltaje_max entonces estado = INESTABLE;
+si deriva_termica > temperatura_max entonces estado = INESTABLE;
+
+/* --- Ultimas reglas: los agregados y las comparaciones de signo. */
+si carga_total > voltaje_max entonces estado = INESTABLE;
+si suma_electricos > voltaje_max entonces estado = INESTABLE;
+si suma_termicos > temperatura_max entonces estado = INESTABLE;
+si voltaje_doble > voltaje_max entonces estado = PICO;
+si voltaje_relativo > 2 entonces estado = INESTABLE;
+si media_carga > voltaje_max entonces estado = INESTABLE;
+si desvio_termico > temperatura_max entonces estado = INESTABLE;
+
+/* Constante negativa a la derecha: el mismo VALOR_UMBRAL con signo menos que
+   admite `umbral temp_fondo = -15`. Un desvio negativo significa que el
+   sensor quedo por debajo de su referencia. */
+si desvio_termico < 0 entonces estado = CAIDA;
+
+si corriente_relativa > 1 entonces estado = INESTABLE;
+
+
+// ─── 8. SINO GLOBAL ────────────────────────────────────────────────────────
+// Cuando ninguna regla se cumple, el estado se queda en este valor. Sin el,
+// el estado observable quedaria indefinido en la banda normal de operacion.
+
+sino = NORMAL;
+
+
+// ===========================================================================
+//  QUE DEBERIA DECIR EL COMPILADOR
+//  ===========================================================================
+//
+//  errores 0 — el programa es correcto.
+//
+//  El analizador solo reporta defectos. Lo que este programa deja
+//  deliberadamente fuera —la banda normal de operacion, entre el minimo y el
+//  maximo de cada sensor— ya no se reporta: el sistema se comporta como se le
+//  pide y no dispara nada, y eso no es un error del codigo.
+//
+//  Que NO deberia aparecer, y conviene comprobar que no aparece:
+//    · errores de tipo, unidad o rango
+//    · reglas contradictorias
+//    · una suma que mezcle voltios con grados
+//    · generadores por encima de la banda del transductor o de la Nyquist
+//    · ventanas por debajo del minimo fisico del tipo
+//    · uso de una senal antes de calcularla
+//    · division por una constante cero
+// ===========================================================================

@@ -19,7 +19,7 @@ import timotomata.semantic.Intervalos.Intervalo;
  * que este construyó. Ya no re-escanea la lista de tokens para deducir las
  * declaraciones: la tabla es la única fuente de verdad.
  *
- * <h2>Reglas del documento "Errores semánticos propios"</h2>
+* <h2>Errores semánticos propios</h2>
  * <ol>
  *   <li>1. Sensor y umbral con el mismo nombre (colisión de tipos)</li>
  *   <li>2. Declaración duplicada de sensor, umbral o señal</li>
@@ -29,6 +29,7 @@ import timotomata.semantic.Intervalos.Intervalo;
  *   <li>6. Diferencia entre máximo y mínimo insuficiente</li>
  *   <li>7. Estado incompatible con el rango (PICO en caída / CAIDA en pico)</li>
  *   <li>8. Reglas contradictorias (se solapan y asignan estados distintos)</li>
+ *   <li>9. Magnitudes mezcladas dentro de una expresión de {@code calcular}</li>
  *   <li>10. Parámetros físicamente inválidos (frecuencia, ventana, amplitud)</li>
  *   <li>11. Combinación de magnitudes incompatibles en SUMA(CON=...)</li>
  * </ol>
@@ -37,11 +38,11 @@ import timotomata.semantic.Intervalos.Intervalo;
  * <ol start="13">
  *   <li>13. Variable o identificador no declarado</li>
  *   <li>14. Incompatibilidad de tipos entre sensores de magnitud distinta</li>
- *   <li>15. Llamada a calcular() con argumentos incorrectos</li>
+ *   <li>15. Firma incorrecta de la llamada a {@code calcular()}</li>
  *   <li>16. División entre cero constante</li>
  * </ol>
  *
- * <h2>Reglas nuevas: tipos de sensor declarados</h2>
+ * <h2>Tipos de sensor declarados</h2>
  * <ol start="17">
  *   <li>17. Umbral fuera del rango representable por el transductor</li>
  *   <li>18. {@code FRECUENCIA=} por encima de la banda del sensor</li>
@@ -52,7 +53,7 @@ import timotomata.semantic.Intervalos.Intervalo;
  * <h2>Reglas de flujo de datos</h2>
  * <ol start="21">
  *   <li>21. Orden de definición: una señal usada antes de su {@code calcular}</li>
- *   <li>22. Autodependencia: {@code calcular(x, op, x)}</li>
+ *   <li>22. Autodependencia: el destino también aparece en la expresión</li>
  *   <li>23. Umbral de otra magnitud en la comparación</li>
  * </ol>
  *
@@ -66,9 +67,18 @@ import timotomata.semantic.Intervalos.Intervalo;
  * global ({@code FRECUENCIA_MUESTREO = 1.0}) que no pertenecía al lenguaje.
  * Ahora se comparan contra la ficha técnica del tipo declarado, que sí.
  *
- * <p>Las reglas 9 ("operación sin historial") y 12 ("programa terminado de
- * forma inválida") quedan omitidas: la 9 por pedido, y la 12 porque el
- * lenguaje ya no tiene sentencia FIN.
+ * <p>La 9 es la 11 aplicada a las expresiones: es la única que revisa que una
+ * expresión de {@code calcular} mida en una sola magnitud. Antes se numeraba 27
+ * y se añadió al margen; ocupa este hueco porque la serie del documento se
+ * saltaba el 9.
+ *
+ * <p>La 12 ("programa terminado de forma inválida") queda omitida porque el
+ * lenguaje ya no tiene sentencia {@code FIN}.
+ *
+ * <p>El analizador solo reporta defectos. Lo que un programa deja
+ * deliberadamente fuera —la banda de operación normal, entre el mínimo y el
+ * máximo de un sensor— no se reporta: el sistema se comporta como se le pide
+ * y no dispara nada, y eso no es un error del código.
  */
 public class AnalizadorSemantico {
 
@@ -79,34 +89,33 @@ public class AnalizadorSemantico {
     //  PUNTO DE ENTRADA
     // =============================================================
 
-    public List<String> analizar(Programa programa, List<Token> tokens) {
-        return analizar(programa, tokens, null);
-    }
-
     /**
-     * Corre todas las reglas y, aparte de los errores, deja los avisos.
+     * Corre todas las reglas y devuelve los errores.
      *
-     * <p>No todo lo que el analizador tiene que decir es un error. Una zona
-     * de valores que ninguna regla cubre —la banda normal de operación, entre
-     * el mínimo y el máximo— es casi siempre intencional: el sistema no
-     * dispara nada y el estado se queda donde estaba. Reportarlo como error
-     * obligaría a silenciarlo en todos los programas bien hechos.
+     * <p>El analizador solo reporta defectos. Lo que el programa deja
+     * deliberadamente fuera —la banda de operación normal, entre el mínimo y
+     * el máximo de un sensor— no se reporta: se comporta como se le pide y no
+     * dispara nada, y eso no es un error del código.
      *
-     * <p>Por eso los avisos van a su propia lista: no cuentan para el código
-     * de salida del compilador, pero se muestran.
-     *
-     * @param avisos lista donde se acumulan los avisos; puede ser {@code null}
+     * @param tokens los tokens del programa; se reserva para las fases
+     *               posteriores y hoy no lo consulta ninguna regla
      */
-    public List<String> analizar(Programa programa, List<Token> tokens,
-                                  List<String> avisos) {
+    public List<String> analizar(Programa programa, List<Token> tokens) {
         List<String> errores = new ArrayList<>();
         if (programa == null) return errores;
+
+        // Un documento vacío, o que solo tiene comentarios, no es un programa:
+        // todavía no hay nada escrito. Se sale antes de correr nada. Hoy ninguna
+        // regla dispararía sobre un programa vacío —todas recorren colecciones
+        // vacías—, así que la guarda no cambia el resultado; lo que evita es que
+        // la siguiente regla que exija una declaración reporte un error sobre un
+        // documento que el usuario acaba de abrir o de vaciar.
+        if (esProgramaVacio(programa)) return errores;
 
         TablaSimbolos simbolos = programa.simbolos;
 
         resolverTiposDeSenales(programa);
 
-        reglaMuestreo(programa, errores);
         regla1Colision(simbolos, errores);
         regla2Duplicadas(simbolos, errores);
         regla3SensorComoUmbral(programa, errores);
@@ -116,6 +125,7 @@ public class AnalizadorSemantico {
         regla8ReglasContradictorias(programa, errores);
         regla10ParametrosInvalidos(programa, errores);
         regla11Magnitudes(programa, errores);
+        regla9MezclaEnExpresion(programa, errores);
         regla13NoDeclarados(programa, errores);
         regla14TiposIncompatibles(programa, errores);
         regla15LlamadasIncorrectas(programa, errores);
@@ -125,29 +135,13 @@ public class AnalizadorSemantico {
         regla21OrdenDefinicion(programa, errores);
         regla22Autodependencia(programa, errores);
         regla23UmbralDeOtraMagnitud(programa, errores);
-        regla24Inalcanzables(programa, errores);
-        regla25ZonasSinCubrir(programa, avisos);
-        regla26SenalesMuertas(programa, avisos);
-        regla27MezclaEnExpresion(programa, errores);
 
         ordenarPorLinea(errores);
-        if (avisos != null) ordenarPorLinea(avisos);
         return errores;
     }
 
     private void err(List<String> errores, int linea, String mensaje) {
         errores.add("Error semantico en linea " + linea + ": " + mensaje);
-    }
-
-    /**
-     * Igual que {@link #err}, pero en la lista de avisos.
-     *
-     * <p>Un aviso describe algo que el analizador sabe y que el programador
-     * probablemente quiera saber, pero que no invalida el programa: la banda de
-     * operación normal, por ejemplo, donde a propósito no dispara ninguna regla.
-     */
-    private void aviso(List<String> avisos, int linea, String mensaje) {
-        avisos.add("Aviso semantico en linea " + linea + ": " + mensaje);
     }
 
     private void ordenarPorLinea(List<String> errores) {
@@ -269,35 +263,36 @@ public class AnalizadorSemantico {
     }
 
     // =============================================================
-    //  MUESTREO — el reloj del programa
+    //  PROGRAMA VACÍO Y RELOJ DEL MUESTREO
     // =============================================================
 
     /**
-     * {@code muestreo = 0.01;} declara la duración de un tick, en segundos.
+     * Si el programa no declara absolutamente nada, todavía no hay programa:
+     * el editor está vacío o solo tiene comentarios. No es un defecto del
+     * código, así que ninguna regla debe reportar sobre él.
      *
-     * <p>Sin ella el programa no es ejecutable: el kernel de muestreo es un
-     * bucle sobre el tiempo, y {@code FRECUENCIA=} no tiene contra qué
-     * validarse. Antes el paso de muestreo era una constante global del
-     * analizador ({@code FRECUENCIA_MUESTREO = 1.0}) que no pertenecía al
-     * lenguaje.
+     * <p>Se mira cada una de las siete cosas que puede contener una sentencia
+     * —sensores, umbrales, reglas, cálculos, el reloj, {@code estado} y
+     * {@code sino}. Basta con que haya una para que el programa se considere
+     * escrito: a partir de ahí, lo que falte sí es un defecto real.
      */
-    private void reglaMuestreo(Programa programa, List<String> errores) {
-        if (programa.muestreo == null) {
-            int linea = programa.sensoresDeclarados.isEmpty()
-                ? 1 : programa.sensoresDeclarados.get(0).linea();
-            err(errores, linea, "falta la declaracion 'muestreo = <segundos>;':"
-                + " define la duracion de un tick y es necesaria para validar"
-                + " la frecuencia de muestreo y las ventanas de promediado.");
-            return;
-        }
-        if (programa.muestreo <= 0) {
-            err(errores, programa.lineaMuestreo, "muestreo invalido ("
-                + programa.muestreo + "): la duracion de un tick debe ser"
-                + " positiva.");
-        }
+    private static boolean esProgramaVacio(Programa programa) {
+        return programa.sensoresDeclarados.isEmpty()
+            && programa.umbrales.isEmpty()
+            && programa.reglas.isEmpty()
+            && programa.calculos.isEmpty()
+            && programa.muestreo == null
+            && programa.estadoInicial == null
+            && programa.estadoPorDefecto == null;
     }
 
-    /** Frecuencia de muestreo efectiva del programa, en Hz. */
+    /**
+     * Frecuencia de muestreo efectiva del programa, en Hz.
+     *
+     * <p>Devuelve 0 cuando el reloj no está declarado o no es positivo: es lo
+     * que las reglas 18 y 19 usan como Nyquist del programa, y sin reloj no hay
+     * contra qué validar una {@code FRECUENCIA=}.
+     */
     private double frecuenciaMuestreo(Programa programa) {
         return programa.muestreo == null || programa.muestreo <= 0
             ? 0.0 : 1.0 / programa.muestreo;
@@ -632,13 +627,13 @@ public class AnalizadorSemantico {
     }
 
     // =============================================================
-    //  REGLA 27 — Magnitudes mezcladas dentro de una expresión
+    //  REGLA 9 — Magnitudes mezcladas dentro de una expresión
     // =============================================================
 
     /**
      * Una expresión de {@code calcular} tiene que medir en una sola magnitud.
      *
-     * <p>Es la regla 11 Applied a las expresiones. {@code SUMA} ya tenía su
+     * <p>Es la regla 11 aplicada a las expresiones. {@code SUMA} ya tenía su
      * comprobación, y la regla 14 cubre cada lado de cada comparación, pero
      * {@code calcular(v + t, mezcla)} se quedaba en silencio: el destino
      * heredaba el tipo de la primera variable con tipo —volts— y la suma sin
@@ -652,7 +647,7 @@ public class AnalizadorSemantico {
      * <p>Las constantes y los umbrales quedan fuera: no tienen magnitud propia,
      * la toman del otro lado. Solo se miran los sensores y las señales derivadas.
      */
-    private void regla27MezclaEnExpresion(Programa programa, List<String> errores) {
+    private void regla9MezclaEnExpresion(Programa programa, List<String> errores) {
         Set<String> medibles = medibles(programa);
         for (Calculo c : programa.calculos) {
             if (!c.esExpresion()) continue;
@@ -1115,249 +1110,7 @@ public class AnalizadorSemantico {
         return usos;
     }
 
-    // =============================================================
-    //  REGLAS 24 y 25 — Qué código no se va a ejecutar nunca
-    // =============================================================
-
-    /**
-     * Restricción que una condición impone sobre cada variable, o
-     * {@code null} si no se puede expresar exactamente.
-     *
-     * <p>Ver la documentación de {@link Intervalos} sobre por qué la
-     * distinción entre "exacto" y "aproximado" es obligatoria. Aquí está el
-     * criterio:
-     *
-     * <ul>
-     *   <li>{@code a > 10} → exacta, una variable.</li>
-     *   <li>{@code a > 10 y b < 3} → exacta, dos restricciones independientes.</li>
-     *   <li>{@code a > 10 o b < 3} → {@code null}. Con {@code b} pequeño,
-     *       {@code a} puede ser cualquier cosa.</li>
-     *   <li>{@code no a > 10} → {@code null}, por la misma razón que la disyunción.</li>
-     *   <li>{@code a > b} → {@code null}. No restringe {@code a} por separado.</li>
-     * </ul>
-     */
-    private Map<String, List<Intervalo>> regionExacta(Condicion c,
-                                                      Map<String, Double> umbrales,
-                                                      Programa programa) {
-        if (c instanceof Comparacion comp) {
-            return regionDeComparacion(comp, umbrales);
-        }
-        if (c instanceof Conector con && con.tipo == Conector.Tipo.Y) {
-            Map<String, List<Intervalo>> izq = regionExacta(con.izquierda, umbrales, programa);
-            Map<String, List<Intervalo>> der = regionExacta(con.derecha, umbrales, programa);
-            if (izq == null || der == null) return null;
-            // Se fusionan por variable: dos restricciones sobre la misma se
-            // intersectan, porque ambas tienen que cumplirse.
-            Map<String, List<Intervalo>> r = new LinkedHashMap<>(izq);
-            for (Map.Entry<String, List<Intervalo>> e : der.entrySet()) {
-                r.merge(e.getKey(), e.getValue(), Intervalos::interseccion);
-            }
-            return r;
-        }
-        return null;
-    }
-
-    /**
-     * ¿Es un canal físico, y por lo tanto consultable en cualquier tick?
-     *
-     * <p>Solo sobre sensores. Una señal derivada tiene un valor que depende del
-     * historial: un {@code PROMEDIO(VENTANA=10)} no vale nada en los primeros
-     * diez ticks, y un buffer a medio llenar da un promedio sesgado. Razonar
-     * sobre su valor como si fuera el del tick completo daría exactamente el
-     * tipo de conclusión equivocada que este análisis pretende evitar.
-     *
-     * <p>El resto del analizador sí razona sobre señales derivadas — la 21
-     * comprueba su orden, la 23 su magnitud — porque esas preguntas no
-     * dependen del valor en un tick concreto.
-     */
-    private boolean esCanalFiable(Programa programa, String nombre) {
-        Simbolo s = programa.simbolos.buscar(nombre);
-        return s != null && s.clase() == Simbolo.Clase.SENSOR;
-    }
-
-    /** Como {@link #regionExacta}, pero descartando lo que no sea canal físico. */
-    private Map<String, List<Intervalo>> regionDeCanales(Regla r, Programa programa) {
-        Map<String, List<Intervalo>> region =
-            regionExacta(r.condicion, programa.umbrales, programa);
-        if (region == null) return null;
-        region.keySet().removeIf(v -> !esCanalFiable(programa, v));
-        return region.isEmpty() ? null : region;
-    }
-
-    private Map<String, List<Intervalo>> regionDeComparacion(Comparacion comp,
-                                                             Map<String, Double> umbrales) {
-        if (comp.izquierda instanceof Variable v) {
-            Double cte = evaluar(comp.derecha, umbrales);
-            if (cte == null) return null;
-            Map<String, List<Intervalo>> r = new LinkedHashMap<>();
-            r.put(v.nombre, intervalo(comp.operador, cte));
-            return r;
-        }
-        if (comp.derecha instanceof Variable v) {
-            Double cte = evaluar(comp.izquierda, umbrales);
-            if (cte == null) return null;
-            // a op b  es  b op' a
-            Map<String, List<Intervalo>> r = new LinkedHashMap<>();
-            r.put(v.nombre, intervalo(Intervalos.invertirOperador(comp.operador), cte));
-            return r;
-        }
-        return null;
-    }
-
-    /**
-     * REGLA 24 — Reglas inalcanzables.
-     *
-     * <p>Las reglas se evalúan en orden y gana la primera que se cumple, así
-     * que una regla alcanzable solo lo es si hay valores que ninguna regla
-     * anterior haya cubierto. Eso es código muerto: el generador de código
-     * puede descartarlo, y el programador probablemente quiere saberlo.
-     *
-     * <p>Solo se reporta cuando la cobertura es <b>exacta</b>: la regla y todas
-     * las anteriores que la cubren tienen que ser traducibles a restricciones
-     * por variable. Con una disyunción o una negación de por medio, la
-     * sobre-aproximación no alcanza y el análisis se calla.
-     */
-    private void regla24Inalcanzables(Programa programa, List<String> errores) {
-        // Solo variables con region de una sola entrada: alli la proyeccion si
-        // coincide con la region completa y no se pierde correlacion.
-        Map<String, List<Intervalo>> cubiertoPor = new LinkedHashMap<>();
-
-        for (Regla r : programa.reglas) {
-            Map<String, List<Intervalo>> region = regionDeCanales(r, programa);
-            if (region == null) continue;
-
-            if (estaCubierta(region, cubiertoPor)) {
-                err(errores, r.linea, "regla inalcanzable: las reglas anteriores"
-                    + " ya cubren todos los valores de " + describe(region)
-                    + ", asi que esta nunca se cumple"
-                    + (r.tieneRamaSino() ? ". Ojo: su rama 'sino' si se ejecuta."
-                                         : "."));
-            }
-
-            if (region.size() == 1) {
-                Map.Entry<String, List<Intervalo>> e = region.entrySet().iterator().next();
-                cubiertoPor.merge(e.getKey(), e.getValue(), Intervalos::unir);
-            }
-        }
-    }
-
-    /**
-     * {@code true} si cada variable de {@code region} está totalmente cubierta
-     * por reglas anteriores univariable.
-     */
-    private boolean estaCubierta(Map<String, List<Intervalo>> region,
-                                 Map<String, List<Intervalo>> cubiertoPor) {
-        boolean algunaPrevia = false;
-        for (Map.Entry<String, List<Intervalo>> e : region.entrySet()) {
-            List<Intervalo> previo = cubiertoPor.get(e.getKey());
-            if (previo == null) return false;
-            algunaPrevia = true;
-            if (!Intervalos.cubre(previo, e.getValue())) return false;
-        }
-        return algunaPrevia;
-    }
-
-    /**
-     * REGLA 25 — Zonas que ninguna regla cubre.
-     *
-     * <p>La contrapartida de la 24: no basta con saber qué código no se
-     * ejecuta, también hay que saber qué valores no disparan nada. Esos valores
-     * dejan el estado donde lo dejó la regla anterior, o en el valor de
-     * {@code sino}.
-     *
-     * <p>Solo se reporta sobre variables que todas las reglas que las tocan
-     * restringen exactamente; si alguna usa una disyunción, la unión no es
-     * confiable y el hueco podría estar cubierto de todos modos.
-     */
-    private void regla25ZonasSinCubrir(Programa programa, List<String> avisos) {
-        if (avisos == null) return;
-        Map<String, List<Intervalo>> cubierto = new LinkedHashMap<>();
-        Set<String> dudosas = new LinkedHashSet<>();
-
-        for (Regla r : programa.reglas) {
-            Map<String, List<Intervalo>> region = regionDeCanales(r, programa);
-            for (String v : r.condicion.variables()) {
-                if (region == null || !region.containsKey(v)) dudosas.add(v);
-            }
-            if (region != null) {
-                for (Map.Entry<String, List<Intervalo>> e : region.entrySet()) {
-                    cubierto.merge(e.getKey(), e.getValue(), Intervalos::unir);
-                }
-            }
-        }
-
-        for (Map.Entry<String, List<Intervalo>> e : cubierto.entrySet()) {
-            String var = e.getKey();
-            if (dudosas.contains(var)) continue;
-
-            List<Intervalo> huecos = Intervalos.complemento(e.getValue());
-            if (huecos.isEmpty()) continue;
-
-            // Se ancla en la declaración del sensor, no en una regla: el hueco
-            // no pertenece a ninguna en particular, es una propiedad de la
-            //variable.
-            Simbolo s = programa.simbolos.buscar(var);
-            aviso(avisos, s == null ? 0 : s.linea(),
-                "ninguna regla dispara para " + describeHuecos(huecos)
-                + " de '" + var + "': en esos valores el estado se queda donde lo"
-                + " dejo la ultima regla que se cumplio, o en el valor de 'sino'.");
-        }
-    }
-
-    private String describe(Map<String, List<Intervalo>> region) {
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<String, List<Intervalo>> e : region.entrySet()) {
-            if (sb.length() > 0) sb.append(" y ");
-            sb.append('\'').append(e.getKey()).append("' = ")
-              .append(Intervalos.texto(e.getValue()));
-        }
-        return sb.toString();
-    }
-
-    private String describeHuecos(List<Intervalo> huecos) {
-        return Intervalos.texto(huecos);
-    }
-
-    /**
-     * Reporta un choque de magnitudes y devuelve si lo hizo.
- *
- * <p>El valor de retorno permite encadenar la comprobación de los dos lados de
- * una comparación sin repetir el recorrido.
- */
-    /**
- * REGLA 26 — Señales derivadas que nadie lee.
- *
- * <p>Como el destino de un {@code calcular} es su propia declaración, una
- * errata en ese nombre crea una señal nueva perfectamente válida que no la
- * usa nadie, y el programa compila limpio:
- *
- * <pre>
- *   calcular(v, v * 2, voltage_doble);   // voltage
- *   si voltaje_doble &gt; 100 ...          // voltaje  -&gt; error de la 13
- * </pre>
- *
- * <p>La 13 pilla el caso en que la errata se nota, porque falta el nombre
- * correcto. Lo que no pilla es cuando la señal equivocada no se usa nunca:
- * ahí no falta nada, simplemente hay una señal que se calcula cada tick y
- * nadie lee.
- *
- * <p>Es <b>aviso</b> y no error porque en este dominio calcular una señal sin
- * leerla es legítimo: puede existir solo para graficarla. Lo que el aviso
- * señala es que, si no es para graficar, es código muerto.
- */
-    private void regla26SenalesMuertas(Programa programa, List<String> avisos) {
-        if (avisos == null) return;
-        for (Simbolo s : programa.simbolos.todos()) {
-            if (s.clase() != Simbolo.Clase.SENAL) continue;
-            if (s.usado()) continue;
-            aviso(avisos, s.linea(), "la senal derivada '" + s.nombre()
-                + "' no la lee ninguna regla ni ningun calculo. Si existe solo"
-                + " para graficarla, esto es esperado; si no, el nombre esta"
-                + " mal escrito o sobra el calculo.");
-        }
-    }
-
-    /**
+/**
      * Señala un conjunto de magnitudes incompatibles dentro de una sola
      * operación, y devuelve si lo hubo.
      *
@@ -1379,28 +1132,8 @@ public class AnalizadorSemantico {
     }
 
     // =============================================================
-    //  EXPRESIONES: variables, evaluación y intervalos
+    //  EXPRESIONES: evaluación e intervalos
     // =============================================================
-
-    private List<String> variables(Expresion e) {
-        List<String> vars = new ArrayList<>();
-        recogerVariables(e, vars);
-        return vars;
-    }
-
-    private void recogerVariables(Expresion e, List<String> vars) {
-        if (e == null) return;
-        if (e instanceof Variable v) {
-            if (!vars.contains(v.nombre)) vars.add(v.nombre);
-        } else if (e instanceof Binaria b) {
-            recogerVariables(b.izquierda, vars);
-            recogerVariables(b.derecha, vars);
-        } else if (e instanceof Negacion n) {
-            recogerVariables(n.expresion, vars);
-        } else if (e instanceof Abs a) {
-            recogerVariables(a.expresion, vars);
-        }
-    }
 
     private Double evaluar(Expresion e, Map<String, Double> umbrales) {
         if (e == null) return null;

@@ -131,8 +131,12 @@ public class AppController {
      *  únicamente para párrafos reales: si el programa tiene 11 líneas, solo
      *  hay 11 números. Para que la columna se vea siempre igual de larga se
      *  rellena el documento con líneas vacías hasta llegar a este mínimo.
-     *  El relleno es solo visual: se recorta al guardar (ver textoAGuardar). */
-    private static final int MIN_LINEAS_GUTTER = 64;
+     *  El relleno es solo visual: se recorta al guardar (ver textoAGuardar).
+     *
+     *  <p>Es un mínimo, no un tope: un programa más largo que esto genera los
+     *  párrafos que haga falta y el gutter crece con él. El valor solo decide
+     *  cuánto hueco se ve por debajo del código antes de empezar a escribir. */
+    private static final int MIN_LINEAS_GUTTER = 100;
 
     /** Cuántas líneas tenía el contenido real la última vez que se cargó.
      *  Todo lo que haya por debajo y esté vacío es relleno. */
@@ -622,26 +626,17 @@ public class AppController {
         ultimoParser = parser;
 
         // ─── Fase 3: Análisis Semántico ───
-        // Reglas del documento "Errores semánticos propios": colisiones de
-        // nombres, duplicados, sensor/umbral confundidos, rangos inválidos,
-        // estados incoherentes, reglas contradictorias, parámetros de
-        // simulación y magnitudes mezcladas. Los
-        // identificadores no declarados NO se reportan (no forman parte del
-        // spec) y la validación de forma de parámetros la hace el parser.
+        // Colisiones de nombres, duplicados, sensor/umbral confundidos, rangos
+        // inválidos, estados incoherentes, reglas contradictorias, parámetros de
+        // simulación, flujo de datos y magnitudes mezcladas.
         construirTablaSimbolos(programa, tokens);
         List<String> erroresSemanticos;
-        List<String> avisosSemanticos = new ArrayList<>();
         try {
-            // Los avisos van a su propia lista: no cuentan como errores, pero
-            // se muestran igual. Antes esta llamada los descartaba.
             erroresSemanticos = new AnalizadorSemantico()
-                .analizar(programa, tokens, avisosSemanticos);
+                .analizar(programa, tokens);
         } catch (Exception e) {
             erroresSemanticos = new ArrayList<>();
             mostrarError("Error en análisis semántico: " + e.getMessage());
-        }
-        for (String a : avisosSemanticos) {
-            System.out.println(a);
         }
 
         // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
@@ -2074,6 +2069,30 @@ public class AppController {
         lineasReales = contarLineas(limpio);
         editor.replaceText(0, editor.getLength(),
             completarConRelleno(limpio, MIN_LINEAS_GUTTER));
+        // replaceText no mueve el cursor: lo deja donde estuviera, y si estaba
+        // al final pasa a apuntar al final del texto nuevo. Como el texto nuevo
+        // son los párrafos reales más el relleno, el cursor aterriza sobre la
+        // última línea de relleno y el usuario empieza a escribir ahí, en la
+        // línea 100. Se devuelve al final del código, que es donde se quiere
+        // seguir escribiendo.
+        editor.getCaretSelectionBind().moveTo(finDelContenido(limpio));
+        // El scroll va en el siguiente pulso: durante la construcción de la
+        // ventana el CodeArea todavía no tiene skin montada y requestFollowCaret
+        // no hace nada, así que el cursor quedaría en su sitio pero la vista
+        // arriba del todo.
+        javafx.application.Platform.runLater(editor::requestFollowCaret);
+    }
+
+    /**
+     * Offset del último carácter con contenido, para dejar el cursor al final
+     * del código y no sobre el relleno. Los saltos de línea y espacios del
+     * final se saltan: si el archivo termina en {@code "sino = NORMAL;\n"}, el
+     * cursor va detrás del punto y coma y no en la línea en blanco de debajo.
+     */
+    private static int finDelContenido(String texto) {
+        int fin = texto.length();
+        while (fin > 0 && Character.isWhitespace(texto.charAt(fin - 1))) fin--;
+        return fin;
     }
 
     /** Texto a escribir en disco: el documento sin el relleno. */

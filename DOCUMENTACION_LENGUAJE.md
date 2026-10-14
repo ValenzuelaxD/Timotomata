@@ -27,7 +27,7 @@ Código fuente
      ↓
 [ PARSER ]    tabla LL(1) → AST + Árbol de Derivación + Tabla de Símbolos
      ↓
-[ SEMANTICO ] 20 reglas contra la ficha técnica de cada tipo de sensor
+[ SEMANTICO ]  23 reglas (1 a 23) contra la ficha técnica de cada tipo de sensor
      ↓
   Veredicto + AST + Tabla de símbolos
 ```

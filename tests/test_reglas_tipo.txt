@@ -36,7 +36,7 @@ calcular(SUMA(CON=v, CON=t), r11);
 umbral sin_tipo : ELECTRICO = 50;
 calcular(MAXIMO(CON=sin_tipo, VENTANA=5), r20);
 
-// REGLA 27 — magnitudes mezcladas dentro de una expresion. La regla 11 cubre
+// REGLA 9 — magnitudes mezcladas dentro de una expresion. La regla 11 cubre
 // la SUMA; esta cubre sumar voltios y grados en la propia cuenta, que antes
 // pasaba en silencio y dejaba al destino con la unidad de la primera variable.
-calcular(v + t, r27a);
+calcular(v + t, mezcla);
