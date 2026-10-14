@@ -55,6 +55,7 @@ Opción 2 — Desde VS Code
 // Cada sensor declara su tipo: fija la unidad, el rango que el transductor
 // puede medir y su banda de frecuencia.
 sensor voltaje     : ELECTRICO;
+sensor corriente   : ELECTRICO;
 sensor temperatura : TERMICO;
 
 umbral voltaje_max : ELECTRICO = 220;
@@ -73,6 +74,13 @@ si temperatura > 80 entonces estado = INESTABLE;
 calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);
 si voltaje_prom >= voltaje_max entonces estado = PICO;
 
+// calcular también acepta cualquier expresión, que sustituye a las variables.
+calcular(voltaje, abs(voltaje - 220), voltaje_desvio);
+calcular(voltaje, voltaje * 2, voltaje_x2);
+calcular(voltaje, (voltaje + corriente) / 2, medio);
+
+si voltaje_desvio > 10 entonces estado = INESTABLE;
+
 sino = NORMAL;
 ```
 
@@ -86,7 +94,7 @@ sino = NORMAL;
 | `si` / `entonces` | Condicional |
 | `estado` | Estado inicial de la máquina |
 | `sino` | Estado cuando ninguna regla se cumple |
-| `calcular` | Cálculo sobre un sensor |
+| `calcular` | Cálculo sobre un sensor, con operación nombrada o expresión |
 | `normal` / `pico` / `caida` / `inestable` | Estados del sistema |
 | `abs()` | Función valor absoluto |
 | `electrico` `termico` `luminico` `mecanico` `quimico` `hidraulico` | Tipos de sensor |
@@ -125,11 +133,14 @@ Timotomata/
 │   │   ├── Token.java
 │   │   └── TipoToken.java
 │   ├── parser/                   ← Analizador sintáctico (LL(1))
-│   │   ├── Gramatica.java        ← Gramática formal + tabla LL(1)
+│   │   ├── Gramatica.java        ← Gramática formal + tabla LL(1) + detección de conflictos
 │   │   ├── Parser.java           ← Parser recursivo descendente
+│   │   ├── DumpTablas.java       ← Vuelca las tablas de la gramática en markdown
 │   │   └── ast/                  ← Nodos del AST
-│   │       ├── Programa.java
+│   │       ├── Programa.java     ← Raíz del AST + tabla de símbolos
+│   │       ├── Sensor.java
 │   │       ├── Regla.java
+│   │       ├── Calculo.java      ← calcular(): operación, expresión, orígenes y memoria
 │   │       ├── Expresion.java
 │   │       ├── Numero.java
 │   │       ├── Variable.java
@@ -137,19 +148,23 @@ Timotomata/
 │   │       ├── Negacion.java
 │   │       └── Abs.java
 │   ├── semantic/                 ← Analizador semántico
-│   │   ├── AnalizadorSemantico.java  ← 20 reglas de verificación
+│   │   ├── AnalizadorSemantico.java  ← 23 reglas de verificación
 │   │   └── TipoSensor.java       ← Ficha técnica de cada tipo de sensor
-│   ├── simbolos/                 ← Tabla de símbolos
-│   │   ├── Simbolo.java          ← Símbolo con sus atributos
+│   ├── simbolos/                 ← Tabla de símbolos y flujo de datos
+│   │   ├── Simbolo.java          ← Símbolo con sus atributos y orígenes
 │   │   └── TablaSimbolos.java    ← Registro único de declaraciones
+│   ├── tools/                    ← Utilidades sin interfaz
+│   │   └── CompiladorCLI.java    ← Corre las 3 fases y devuelve texto plano
 │   └── ui/                       ← Interfaz gráfica (JavaFX)
 │       ├── MainApp.java
 │       ├── AppController.java
 │       └── estilos.css
 ├── docs/                         ← Documentación técnica
-│   └── analisis_lexico_sintactico.md
+│   ├── analisis_lexico_sintactico.md  ← AFD, gramática, FIRST/FOLLOW, tabla LL(1)
+│   └── analisis_semantico.md         ← Las 23 reglas y el grafo de flujo de datos
 ├── tests/                        ← Archivos de prueba
-├── compile_and_run_gui.bat       ← Script para compilar y ejecutar
+├── compile_and_run_gui.bat       ← Compila y abre la interfaz
+├── compile_and_run_cli.bat       ← Compila y analiza sin interfaz
 └── README.md
 ```
 
@@ -157,10 +172,36 @@ Timotomata/
 
 ## 📚 Documentación técnica
 
-Consulta [`docs/analisis_lexico_sintactico.md`](docs/analisis_lexico_sintactico.md) para:
+**[`docs/analisis_lexico_sintactico.md`](docs/analisis_lexico_sintactico.md)**
 - Diagrama del **AFD del analizador léxico** (13 estados, 19 clases de caracteres)
-- **Gramática BNF** completa (16 no terminales, 52 producciones, 45 tokens)
+- **Gramática BNF** completa (16 no terminales, 54 producciones, 45 tokens)
 - **Tabla de parsing LL(1)** con conjuntos FIRST y FOLLOW
+- Las dos formas de transformar en `calcular`: operación nombrada o expresión
+
+**[`docs/analisis_semantico.md`](docs/analisis_semantico.md)**
+- Las **23 reglas** de verificación, agrupadas por lo que hacen
+- **Fichas técnicas** de los seis tipos de sensor y para qué sirve cada campo
+- **Grafo de flujo de datos**: qué señal depende de cuál
+- **Memoria** que cada cálculo necesita (buffer, fase, nada)
+- Análisis de reglas por **intervalos**: contradicciones y código muerto
+
+Las tres tablas de la segunda parte del documento léxico/sintáctico se
+regeneran con `java timotomata.parser.DumpTablas tablas.md`.
+
+---
+
+## ⌨️ Compilador de línea de comandos
+
+Para analizar sin abrir la interfaz:
+
+```
+compile_and_run_cli.bat                          → todos los archivos de tests\
+compile_and_run_cli.bat tests\test_tipos.txt     → un archivo
+compile_and_run_cli.bat -v tests\test_tipos.txt  → además tabla, flujo y memoria
+```
+
+Devuelve 0 si todo compila y 1 si hay errores, así que sirve como comprobación
+automatizable: `compile_and_run_cli.bat || echo FALLO`.
 
 ---
 

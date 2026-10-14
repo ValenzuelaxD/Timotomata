@@ -86,6 +86,9 @@ public class AnalizadorSemantico {
         regla16DivisionPorCero(programa, errores);
         reglas17a19Fisica(programa, errores);
         regla20TiposAusentes(programa, errores);
+        regla21OrdenDefinicion(programa, errores);
+        regla22Autodependencia(programa, errores);
+        regla23UmbralDeOtraMagnitud(programa, errores);
 
         ordenarPorLinea(errores);
         return errores;
@@ -123,14 +126,21 @@ public class AnalizadorSemantico {
      * <p>El parseo no puede resolverlo porque la firma de la operación aún no
      * se conoce cuando se declara el destino; por eso se completa acá, antes
      * de correr cualquier verificación que dependa del tipo.
+     *
+     * <p>Solo se hereda de un canal o de otra señal. Un umbral sí declara un
+     * tipo, pero no es un canal físico: no hay transductor detrás. La regla 4
+     * ya marca leer de un umbral como error, y si la señal heredara su tipo
+     * pasaría inadvertida y quedaría sin verificar. Que se quede sin tipo hace
+     * que la regla 20 la señale por separado.
      */
     private void resolverTiposDeSenales(Programa programa) {
         for (Calculo c : programa.calculos) {
             if (!c.deriva()) continue;
-            TipoSensor origen = programa.tipoDe(c.sensor);
+            Simbolo origen = programa.simbolos.buscar(c.sensor);
+            if (!esMedible(origen)) continue;
             Simbolo destino = programa.simbolos.buscar(c.destino);
             if (destino != null && destino.tipo() == null) {
-                destino.asignarTipo(origen);
+                destino.asignarTipo(origen.tipo());
             }
         }
     }
@@ -730,6 +740,134 @@ public class AnalizadorSemantico {
                 + " declarado: no se pueden verificar unidades, rango ni"
                 + " frecuencia sin el.");
         }
+    }
+
+    // =============================================================
+    //  REGLAS 21 a 23 — Flujo de datos
+    // =============================================================
+
+    /**
+     * REGLA 21 — Orden de definición.
+     *
+     * <p>Los cálculos se ejecutan una vez por tick, en el orden en que están
+     * escritos. Por eso una señal derivada todavía no tiene valor en las
+     * líneas anteriores a su {@code calcular}: leerla ahí no da "el valor del
+     * tick anterior", da nada.
+     *
+     * <p>Esto no es una convención de estilo: es una restricción del modelo de
+     * ejecución, y el generador de código la necesita para saber que puede
+     * asignar cada señal una sola vez por tick, en un solo lugar.
+     *
+     * <p>El uso dentro de la propia línea de definición no se reporta: la
+     * autodependencia tiene su propia regla y produce un mensaje más útil.
+     */
+    private void regla21OrdenDefinicion(Programa programa, List<String> errores) {
+        for (Map.Entry<String, Integer> uso : usosDeSenales(programa).entrySet()) {
+            Simbolo s = programa.simbolos.buscar(uso.getKey());
+            if (s == null || s.clase() != Simbolo.Clase.SENAL) continue;
+            if (uso.getValue() < s.linea()) {
+                err(errores, uso.getValue(), "se usa '" + uso.getKey()
+                    + "' antes de calcularlo: la senal se define en la linea "
+                    + s.linea() + ", y hasta entonces no tiene valor. Los calculos"
+                    + " se ejecutan en el orden en que estan escritos.");
+            }
+        }
+    }
+
+    /**
+     * REGLA 22 — Autodependencia.
+     *
+     * <p>{@code calcular(x, op, x)} leería el valor de {@code x} para escribir
+     * en {@code x}. El resultado sería indefinido o silenciosamente igual al
+     * anterior; en ningún caso es lo que el programador quiso escribir. Lo más
+     * probable es que se haya olvidado el destino.
+     */
+    private void regla22Autodependencia(Programa programa, List<String> errores) {
+        for (Calculo c : programa.calculos) {
+            if (!c.deriva()) continue;
+            if (c.origenes().contains(c.destino)) {
+                err(errores, c.linea, "autodependencia: '" + c.destino
+                    + "' se calcula a partir de si mismo. El resultado se leeria"
+                    + " de donde todavia no se ha escrito.");
+            }
+        }
+    }
+
+    /**
+     * REGLA 23 — Magnitudes incompatibles con un umbral.
+     *
+     * <p>La regla 14 solo mira los canales y señales medibles, porque comparar
+     * un umbral contra un umbral no tiene sentido físico. Pero un umbral sí
+     * lleva tipo declarado, y comparar un canal contra el umbral de otra
+     * magnitud sí lo tiene:
+     *
+     * <pre>
+     *   si voltaje_prom &gt; temp_max entonces estado = PICO;   // volts contra grados
+     * </pre>
+     *
+     * <p>Salta porque el umbral no entra en la colección de medibles, no porque
+     * la comparación sea válida. Los volts nunca superan los 125 grados del
+     * rango térmico, así que la regla nunca se dispara y el estado se queda
+     * siempre en su valor por defecto: un fallo silencioso.
+     */
+    private void regla23UmbralDeOtraMagnitud(Programa programa,
+                                             List<String> errores) {
+        for (Regla r : programa.reglas) {
+            Map<TipoSensor, String> umbrales = new LinkedHashMap<>();
+            Map<TipoSensor, String> canales = new LinkedHashMap<>();
+            for (String var : variables(r.condicion)) {
+                Simbolo s = programa.simbolos.buscar(var);
+                TipoSensor m = programa.tipoDe(var);
+                if (s == null || m == null) continue;
+                if (s.clase() == Simbolo.Clase.UMBRAL) umbrales.putIfAbsent(m, var);
+                else canales.putIfAbsent(m, var);
+            }
+            // Solo se reporta el cruce umbral/canal. Los clashes entre dos
+            // canales los cubre la regla 14, y repetirlos sería ruido.
+            for (Map.Entry<TipoSensor, String> c : canales.entrySet()) {
+                for (Map.Entry<TipoSensor, String> u : umbrales.entrySet()) {
+                    if (c.getKey().equals(u.getKey())) continue;
+                    err(errores, r.linea, "incompatibilidad de tipos: se compara '"
+                        + c.getValue() + "' (" + c.getKey().etiqueta() + ") contra el"
+                        + " umbral '" + u.getValue() + "' (" + u.getKey().etiqueta()
+                        + "), que es de otra magnitud. El umbral nunca se cruza con"
+                        + " este sensor, asi que la condicion nunca se cumple.");
+                    return;
+                }
+            }
+        }
+    }
+
+    /**
+     * Primer uso de cada nombre, con su línea.
+     *
+     * <p>Cubre las tres vías por las que un nombre puede leerse: la condición
+     * de una regla, la expresión de un {@code calcular} y sus parámetros
+     * {@code CON=}. Guarda la línea mínima, que es la que decide si el uso
+     * antecede a la definición.
+     */
+    private Map<String, Integer> usosDeSenales(Programa programa) {
+        Map<String, Integer> usos = new LinkedHashMap<>();
+
+        for (Regla r : programa.reglas) {
+            for (String v : variables(r.condicion)) {
+                usos.merge(v, r.linea, Math::min);
+            }
+        }
+        for (Calculo c : programa.calculos) {
+            usos.merge(c.sensor, c.linea, Math::min);
+            if (c.esExpresion()) {
+                for (String v : variables(c.expresion)) {
+                    usos.merge(v, c.linea, Math::min);
+                }
+            }
+            for (Parametro p : c.parametros) {
+                if (p.nombre != null && p.nombre.equalsIgnoreCase("con")) {
+                    usos.merge(p.valor, c.linea, Math::min);
+                }
+            }
+        }
+        return usos;
     }
 
     private void reportarMagnitudes(List<String> errores, int linea,

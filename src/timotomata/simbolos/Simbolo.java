@@ -1,5 +1,9 @@
 package timotomata.simbolos;
 
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 import timotomata.semantic.TipoSensor;
 
 /**
@@ -28,6 +32,7 @@ public class Simbolo {
     private final Double valor;
     private final int linea;
     private int primerUso = 0;
+    private final Set<String> origenes = new LinkedHashSet<>();
 
     public Simbolo(String nombre, Clase clase, TipoSensor tipo, Double valor, int linea) {
         this.nombre = nombre;
@@ -72,6 +77,21 @@ public class Simbolo {
     /** Línea de la declaración. */
     public int linea() {
         return linea;
+    }
+
+    /**
+     * Nombres de los que este símbolo lee su valor.
+     *
+     * <p>Solo tiene sentido para señales derivadas: cada entrada es una arista
+     * del grafo de flujo de datos. Los sensores tienen el origen físico, que
+     * no es un símbolo del programa, así que la lista queda vacía.
+     */
+    public Set<String> origenes() {
+        return Collections.unmodifiableSet(origenes);
+    }
+
+    public void agregarOrigen(String nombre) {
+        if (nombre != null) origenes.add(nombre);
     }
 
     /** Línea del primer uso en una expresión, o 0 si nunca se usó. */

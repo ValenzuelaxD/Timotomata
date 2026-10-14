@@ -45,6 +45,7 @@ import timotomata.lexer.TipoToken;
  *                 | ID
  *                 | ABS PAREN_IZQ EXPRESION PAREN_DER
  *                 | MENOS FACTOR
+ *                 | PAREN_IZQ EXPRESION PAREN_DER
  *
  *   OP_REL        → MAYOR | MENOR | IGUAL_IGUAL
  *                 | MAYOR_IGUAL | MENOR_IGUAL | DIFERENTE
@@ -55,6 +56,7 @@ import timotomata.lexer.TipoToken;
  *                 | PROMEDIO PAREN_IZQ LISTA_PARAMS PAREN_DER
  *                 | MAXIMO PAREN_IZQ LISTA_PARAMS PAREN_DER
  *                 | SUMA PAREN_IZQ LISTA_PARAMS PAREN_DER
+ *                 | EXPRESION
  *
  *   LISTA_PARAMS  → PARAM LISTA_PARAMS_SIG
  *                 | ε
@@ -155,9 +157,11 @@ public class Gramatica {
         P_DEST_EPS        = 48,
         P_SENT_ESTADO     = 49,
         P_SENT_MUESTREO   = 50,
-        P_SENT_SINO       = 51;
+        P_SENT_SINO       = 51,
+        P_TIPO_EXPRESION  = 52,
+        P_FACT_PAREN      = 53;
 
-    public static final int NUM_PROD = 52;
+    public static final int NUM_PROD = 54;
 
     
     //  CODIFICACIÓN DE SÍMBOLOS
@@ -269,6 +273,11 @@ public class Gramatica {
                                        T(TipoToken.NUMERO),        T(TipoToken.PUNTO_COMA) },
         /* 51 */ { NT(SENTENCIA),    T(TipoToken.SINO),        T(TipoToken.ASIGNACION),
                                        T(TipoToken.ESTADO_SISTEMA), T(TipoToken.PUNTO_COMA) },
+
+        /* 52 */ { NT(TIPO_OP),      NT(EXPRESION) },
+
+        /* 53 */ { NT(FACTOR),       T(TipoToken.PAREN_IZQ),  NT(EXPRESION),
+                                       T(TipoToken.PAREN_DER) },
     };
 
     
@@ -402,6 +411,18 @@ public class Gramatica {
     
     //  CONSTRUCCIÓN DE LA TABLA LL(1)
     
+    /**
+     * Celdas donde dos producciones del mismo no terminal reclaman el mismo
+     * token de anticipo.
+     *
+     * <p>La tabla se construye asignando sobre una matriz inicializada a −1,
+     * así que sin esta comprobación un conflicto LL(1) se perdería: la segunda
+     * producción simplemente pisaría a la primera y el parser elegiría una de
+     * las dos sin avisar. La gramática es un dato, y "es LL(1)" es una
+     * propiedad que conviene poder verificar en vez de suponer.
+     */
+    private static final List<String> CONFLICTOS = new ArrayList<>();
+
     static void construirTabla() {
         for (int p = 0; p < PRODUCCIONES.length; p++) {
             int[] prod = PRODUCCIONES[p];
@@ -430,16 +451,39 @@ public class Gramatica {
 
             for (int t = firstCuerpo.nextSetBit(0); t >= 0;
                     t = firstCuerpo.nextSetBit(t + 1)) {
-                TABLA[cabeza][t] = p;
+                anotar(cabeza, t, p);
             }
 
             if (cuerpoEpsilon) {
                 for (int t = FOLLOW[cabeza].nextSetBit(0); t >= 0;
                         t = FOLLOW[cabeza].nextSetBit(t + 1)) {
-                    TABLA[cabeza][t] = p;
+                    anotar(cabeza, t, p);
                 }
             }
         }
+    }
+
+    /** Reserva una celda de la tabla y registra el conflicto si ya estaba tomada. */
+    private static void anotar(int noTerminal, int token, int prod) {
+        int previa = TABLA[noTerminal][token];
+        if (previa != -1 && previa != prod) {
+            CONFLICTOS.add(NOMBRES_NT[noTerminal] + " con "
+                + TipoToken.values()[token] + ": las producciones "
+                + (previa + 1) + " y " + (prod + 1)
+                + " empiezan con el mismo token; no alcanza un simbolo de anticipo"
+                + " para decidir entre las dos.");
+        }
+        TABLA[noTerminal][token] = prod;
+    }
+
+    /**
+     * Conflictos LL(1) detectados al construir la tabla.
+     *
+     * <p>Debe estar vacío. Si alguna vez no lo está, la gramática necesita una
+     * producción intermedia o un factor común, no un caso especial en el parser.
+     */
+    public static List<String> conflictos() {
+        return Collections.unmodifiableList(CONFLICTOS);
     }
 
     

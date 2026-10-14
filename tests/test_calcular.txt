@@ -1,0 +1,52 @@
+// ============================================================================
+//  CALCULAR — las dos formas de transformar
+//  Esperado: 0 errores lexicos, 0 sintacticos, 0 semanticos.
+// ============================================================================
+
+// --- 1. Canales y reloj ------------------------------------------------------
+sensor voltaje     : ELECTRICO;
+sensor corriente   : ELECTRICO;
+sensor temperatura : TERMICO;
+sensor presion     : HIDRAULICO;
+
+muestreo = 0.01;
+
+umbral voltaje_max : ELECTRICO   = 220;
+umbral temp_max    : TERMICO     = 80;
+umbral presion_max : HIDRAULICO  = 10;
+
+// --- 2. Forma operacionada: una de las seis, con su firma ------------------
+calcular(voltaje,     PROMEDIO(VENTANA=10), voltaje_prom);
+calcular(voltaje,     MAXIMO(VENTANA=10),  voltaje_pico);
+calcular(voltaje,     SUMA(CON=voltaje, CON=corriente), total);
+calcular(temperatura, SENO(AMPLITUD=20, FRECUENCIA=0.01), temp_onda);
+
+// --- 3. Forma por expresion: cualquier transformacion ------------------------
+// Es lo que sustituye a las variables: escalones, desplazamientos, mezclas
+// y desviaciones, sin declarar almacenamiento mutable.
+calcular(voltaje, voltaje * 2, voltaje_x2);
+calcular(voltaje, voltaje / 2, voltaje_medio_manual);
+calcular(voltaje, abs(voltaje - 220), voltaje_desvio);
+calcular(temperatura, temperatura - 5, temp_corregida);
+calcular(presion, presion * 0.9 + 2, presion_nominal);
+calcular(voltaje, (voltaje + corriente) / 2, par_medio);
+calcular(voltaje, (voltaje - voltaje_prom) * 10, voltaje_error);
+calcular(voltaje_x2, voltaje_x2 + voltaje_desvio, combinado);
+
+// --- 4. Encadenamiento: una señal calculada alimenta a otra -----------------
+calcular(voltaje_prom, voltaje_prom * 1.1, voltaje_prom_ajustado);
+
+// --- 5. Reglas que consumen los resultados ----------------------------------
+estado = NORMAL;
+
+si voltaje_prom > voltaje_max entonces estado = PICO;
+si voltaje_pico > voltaje_max entonces estado = PICO;
+si voltaje_error > 10 entonces estado = INESTABLE;
+si total > 300 entonces estado = INESTABLE;
+si temp_corregida > temp_max entonces estado = INESTABLE;
+si presion_nominal > presion_max entonces estado = INESTABLE;
+si par_medio < 100 entonces estado = CAIDA;
+si temp_onda > 18 entonces estado = INESTABLE;
+si voltaje_prom_ajustado > voltaje_max entonces estado = INESTABLE;
+
+sino = NORMAL;

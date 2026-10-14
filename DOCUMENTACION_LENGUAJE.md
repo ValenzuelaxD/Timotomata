@@ -460,7 +460,11 @@ FACTOR → NUMERO
        | ID
        | ABS ( EXPRESION )
        | - FACTOR
+       | ( EXPRESION )
 ```
+
+Los paréntesis agrupan: `(a + b) / 2` es una expresión válida. No producen un
+nodo propio en el AST, porque la precedencia ya lo resuelve.
 
 ```
 OP_REL → > | < | == | >= | <= | != | <>
@@ -473,7 +477,25 @@ TIPO_OP → SENO ( LISTA_PARAMS )
         | PROMEDIO ( LISTA_PARAMS )
         | MAXIMO ( LISTA_PARAMS )
         | SUMA ( LISTA_PARAMS )
+        | EXPRESION
 ```
+
+`TIPO_OP` admite **dos cosas distintas**. Las seis operaciones nombradas tienen
+firma fija; `EXPRESION` es una transformación arbitraria:
+
+```timotomata
+calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);   // operación nombrada
+calcular(voltaje, voltaje * 2, voltaje_x2);              // expresión arbitraria
+calcular(voltaje, (voltaje + corriente) / 2, medio);    // con paréntesis
+```
+
+La segunda forma sustituye a las variables: da la misma expresividad sin
+introducir almacenamiento mutable, ámbito ni una cuarta clase de símbolo en la
+tabla de símbolos.
+
+Ambas familias se distinguen con un solo token: las operaciones empiezan por su
+palabra reservada (`SENO`…`SUMA`) y las expresiones por `ABS`, `ID`, `NUMERO`,
+`-` o `(`. Los conjuntos son disjuntos, así que la decisión es LL(1).
 
 ```
 LISTA_PARAMS → PARAM LISTA_PARAMS_SIG
@@ -490,7 +512,7 @@ PARAM → AMPLITUD = NUMERO
       | CON = ID
 ```
 
-### No terminales de la gramática (16) — 50 producciones
+### No terminales de la gramática (16) — 54 producciones
 
 | # | Nombre | Descripción |
 |---|--------|-------------|
@@ -632,14 +654,62 @@ si temperatura > maxTemperatura entonces estado = inestable;
 si abs(voltaje - 220) > 20 entonces estado = pico;
 
 calcular(corriente, PROMEDIO(VENTANA=10), corriente_prom);
-calcular(voltaje,   SENO(AMPLITUD=300, FRECUENCIA=0.1), voltaje_onda);
-si voltaje_onda > 250 entonces estado = pico;
+calcular(voltaje,   SENO(AMPLITUD=100, FRECUENCIA=0.1), voltaje_onda);
+si voltaje_onda > 220 entonces estado = pico;
 
 sino = NORMAL;
 ```
 
 > `PROMEDIO(VENTANA=10)` cumple el mínimo de `ELECTRICO` (5 muestras).
 > `PROMEDIO(VENTANA=20)` cumple el de `TERMICO` (20 muestras).
+> `SENO(AMPLITUD=100, …)` entra dentro del rango de `ELECTRICO` (0–250).
+
+### Ejemplo 6: Transformaciones encadenadas
+
+Las señales derivadas se pueden calcular a partir de otras señales derivadas.
+El tipo se hereda por la cadena, así que no hay que redeclararlo:
+
+```
+sensor voltaje     : ELECTRICO;
+sensor corriente   : ELECTRICO;
+
+umbral voltaje_max : ELECTRICO = 220;
+
+muestreo = 0.01;
+estado = NORMAL;
+
+calcular(voltaje, voltaje * 2, voltaje_x2);
+calcular(voltaje, PROMEDIO(VENTANA=10), voltaje_prom);
+calcular(voltaje_prom, voltaje_prom * 1.1, voltaje_prom_ajustado);
+calcular(voltaje, (voltaje + corriente) / 2, par_medio);
+
+si voltaje_prom_ajustado > voltaje_max entonces estado = PICO;
+si par_medio < 100 entonces estado = CAIDA;
+
+sino = NORMAL;
+```
+
+Cada línea lee el resultado de las anteriores, en orden. Una señal no puede
+usarse antes de su `calcular` (regla 21), porque los cálculos corren una vez por
+tick en el orden en que están escritos.
+
+El grafo de flujo de datos que el analizador construye para este programa es:
+
+```
+voltaje_x2           <- [voltaje]
+voltaje_prom         <- [voltaje]
+voltaje_prom_ajustado <- [voltaje_prom]
+par_medio            <- [voltaje, corriente]
+```
+
+Y la memoria que el futuro generador de código tendría que reservar:
+
+| Señal | Transformación | Memoria |
+|:------|:---------------|:--------|
+| `voltaje_x2` | expresión | ninguna |
+| `voltaje_prom` | `PROMEDIO(VENTANA=10)` | buffer circular de 10 muestras |
+| `voltaje_prom_ajustado` | expresión | ninguna |
+| `par_medio` | expresión | ninguna |
 
 ---
 

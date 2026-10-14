@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import timotomata.semantic.TipoSensor;
 
@@ -75,11 +76,6 @@ public class TablaSimbolos {
     }
 
     /**
-     * Registra una constante: `umbral voltaje_max = 220;`.
-     *
-     * @return el símbolo creado, o el existente si el nombre ya estaba declarado
-     */
-    /**
      * Registra una constante: {@code umbral voltaje_max : ELECTRICO = 220;}.
      *
      * <p>El umbral declara su propio tipo, de modo que su valor se verifica
@@ -100,6 +96,46 @@ public class TablaSimbolos {
      */
     public Simbolo declararSenal(String nombre, TipoSensor tipo, int linea) {
         return registrar(nombre, Simbolo.Clase.SENAL, tipo, null, linea);
+    }
+
+    // =============================================================
+    //  FLUJO DE DATOS
+    // =============================================================
+
+    /**
+     * Anota que {@code destino} se calcula a partir de {@code origenes}.
+     *
+     * <p>Cada arista del grafo de flujo de datos se registra acá, una sola vez,
+     * en el momento en que el parser termina de leer el {@code calcular}. El
+     * grafo resultante es lo que la fase semántica usa para verificar el orden
+     * de definición y la ausencia de ciclos, y lo que el futuro generador de
+     * código usará como orden de evaluación.
+     *
+     * @param destino  nombre de la señal resultante (o el canal sobrescrito)
+     * @param origenes nombres de los que se lee; vacío para los generadores
+     */
+    public void registrarCalculo(String destino, Collection<String> origenes) {
+        Simbolo s = simbolos.get(destino);
+        if (s == null) return;
+        for (String o : origenes) {
+            s.agregarOrigen(o);
+        }
+    }
+
+    /**
+     * Grafo de flujo de datos: señal derivada → de qué se lee.
+     *
+     * <p>Solo incluye señales con al menos un origen. Los sensores quedan
+     * fuera porque su origen es físico, no un símbolo del programa.
+     */
+    public Map<String, Set<String>> grafoDependencias() {
+        Map<String, Set<String>> g = new LinkedHashMap<>();
+        for (Simbolo s : simbolos.values()) {
+            if (s.clase() == Simbolo.Clase.SENAL && !s.origenes().isEmpty()) {
+                g.put(s.nombre(), s.origenes());
+            }
+        }
+        return Collections.unmodifiableMap(g);
     }
 
     // =============================================================

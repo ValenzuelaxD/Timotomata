@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import timotomata.semantic.TipoSensor;
 import timotomata.simbolos.TablaSimbolos;
 
 /**
@@ -84,8 +85,18 @@ public class Programa {
         return null;
     }
 
-    /** Tipo declarado de un sensor, o {@code null}. */
-    public timotomata.semantic.TipoSensor tipoDe(String nombre) {
+    /**
+     * Tipo declarado de un símbolo medible, o {@code null}.
+     *
+     * <p>Consulta primero la tabla de símbolos, que conoce tanto los canales
+     * declarados como las señales derivadas, y solo después la lista de
+     * sensores como respaldo. Sin ese orden, una señal cuyo canal de origen es
+     * otra señal —{@code calcular(voltaje_prom, voltaje_prom * 1.1, ajustado)}—
+     * resolvería su tipo a {@code null} y quedaría sin verificar para siempre.
+     */
+    public TipoSensor tipoDe(String nombre) {
+        TipoSensor t = simbolos.tipoDe(nombre);
+        if (t != null) return t;
         Sensor s = sensor(nombre);
         return s == null ? null : s.tipo();
     }

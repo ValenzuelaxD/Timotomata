@@ -221,6 +221,13 @@ public class Parser {
                 nodo.agregarHijo(t(t7));
 
                 programa.calculos.add(calculo);
+
+                // Arista del grafo de flujo de datos: el destino depende de
+                // lo que la transformación lee. Para una operación nombrada
+                // son los `CON=`; para una expresión, las variables que
+                // aparecen. Un generador no lee nada y queda sin aristas.
+                programa.simbolos.registrarCalculo(
+                    calculo.resultado(), calculo.origenes());
                 break;
             }
             case Gramatica.P_SENT_ESTADO: {
@@ -508,7 +515,7 @@ public class Parser {
         NodoDerivacion nodo = new NodoDerivacion("FACTOR");
         int prod = Gramatica.obtenerProduccion(Gramatica.FACTOR, ver().tipo);
         if (prod == -1) {
-            throw error("Se esperaba numero, identificador, abs() o -" + contexto());
+            throw error("Se esperaba numero, identificador, abs(), parentesis o -" + contexto());
         }
 
         switch (prod) {
@@ -550,6 +557,19 @@ public class Parser {
                 ((Negacion) ultimoValorSemantico).linea = t.linea;
                 break;
             }
+            case Gramatica.P_FACT_PAREN: {
+                Token tIzq = consumir(TipoToken.PAREN_IZQ, "Se esperaba (");
+                nodo.agregarHijo(t(tIzq));
+                NodoDerivacion nExpr = expresion();
+                Expresion expr = (Expresion) ultimoValorSemantico;
+                nodo.agregarHijo(nExpr);
+                Token tDer = consumir(TipoToken.PAREN_DER, "Se esperaba )");
+                nodo.agregarHijo(t(tDer));
+                // El agrupamiento no produce un nodo propio: la expresión
+                // interior ya expresa exactamente lo mismo.
+                ultimoValorSemantico = expr;
+                break;
+            }
             default:
                 throw error("Error interno en FACTOR"); // no contexto porque es interno
         }
@@ -558,13 +578,31 @@ public class Parser {
 
     
     //  NO TERMINAL: TIPO_OP
-    //  TIPO_OP → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER | ...
-    //  Ahora recibe el Calculo para setear operacion y agregar parametros internamente
-    
+    //  TIPO_OP → SENO PAREN_IZQ LISTA_PARAMS PAREN_DER | …
+    //           | EXPRESION
+    //
+    //  Dos caminos: una operación nombrada de las seis, o una expresión
+    //  arbitraria. Se distinguen por el primer token: las operaciones empiezan
+    //  por su palabra reservada y las expresiones por ABS, ID, NUMERO o MENOS.
+    //  Los conjuntos son disjuntos, así que la decisión es LL(1).
+    //
+    //  Recibe el Calculo para setear la operación y sus parámetros.
+
     private void tipoOp(NodoDerivacion nodo, Calculo calculo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.TIPO_OP, ver().tipo);
+
+        if (prod == Gramatica.P_TIPO_EXPRESION) {
+            NodoDerivacion nExpr = expresion();
+            calculo.expresion = (Expresion) ultimoValorSemantico;
+            marcarUso(calculo.expresion);
+            nodo.agregarHijo(nExpr);
+            ultimoValorSemantico = "expresion";
+            return;
+        }
+
         if (prod == -1) {
-            throw error("Se esperaba SENO, COSENO, CUADRADA, PROMEDIO, MAXIMO o SUMA" + contexto());
+            throw error("Se esperaba SENO, COSENO, CUADRADA, PROMEDIO,"
+                + " MAXIMO, SUMA o una expresion" + contexto());
         }
 
         Token t;
