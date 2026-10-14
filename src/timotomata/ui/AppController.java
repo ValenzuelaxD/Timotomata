@@ -551,11 +551,18 @@ public class AppController {
         // spec) y la validación de forma de parámetros la hace el parser.
         construirTablaSimbolos(programa, tokens);
         List<String> erroresSemanticos;
+        List<String> avisosSemanticos = new ArrayList<>();
         try {
-            erroresSemanticos = new AnalizadorSemantico().analizar(programa, tokens);
+            // Los avisos van a su propia lista: no cuentan como errores, pero
+            // se muestran igual. Antes esta llamada los descartaba.
+            erroresSemanticos = new AnalizadorSemantico()
+                .analizar(programa, tokens, avisosSemanticos);
         } catch (Exception e) {
             erroresSemanticos = new ArrayList<>();
             mostrarError("Error en análisis semántico: " + e.getMessage());
+        }
+        for (String a : avisosSemanticos) {
+            System.out.println(a);
         }
 
         // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───

@@ -110,8 +110,11 @@ calcular(corriente_bomba2, SUMA(CON=corriente_motor, CON=corriente_bomba2),
 // Via 1: tension * corriente, normalizada a kW.
 calcular(corriente_total, tension_motor * corriente_total / 1000, potencia_kw);
 
-// Via 2: el regimen nominal de la estacion son 7.5 kW.
-calcular(potencia_kw, potencia_kw - 7.5, desvio_potencia);
+// Via 2: cuanto se aparta del regimen de diseno, que es 7.5 kW.
+// El 7.5 va como umbral con nombre y no como literal suelto en la expresion:
+// si el diseno cambia, se cambia en un sitio y no hay que huntingarlo.
+umbral potencia_nominal  : ELECTRICO   = 7.5;
+calcular(potencia_kw, potencia_kw - potencia_nominal, desvio_potencia);
 
 // --- Desviacion instantanea respecto de la media ---
 calcular(tension_motor, abs(tension_motor - tension_prom), desvio_tension);

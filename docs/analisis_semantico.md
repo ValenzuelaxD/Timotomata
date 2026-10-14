@@ -75,7 +75,7 @@ Los tres campos de la derecha son los que hacen trabajo real:
 
 ---
 
-## 3. Las 25 reglas
+## 3. Las 26 reglas
 
 | # | Regla | Qué detecta |
 |:-:|:------|:------------|
@@ -102,6 +102,7 @@ Los tres campos de la derecha son los que hacen trabajo real:
 | 23 | Umbral de otra magnitud | Se compara un canal contra el umbral equivocado |
 | 24 | Regla inalcanzable | Las reglas anteriores ya cubren toda su región |
 | 25 | Zona sin cubrir | Ninguna regla dispara para ciertos valores |
+| 26 | Señal muerta | Una señal derivada que nadie lee |
 
 Las reglas 9 y 12 están omitidas: la 9 por decisión del proyecto, y la 12 porque
 el lenguaje ya no tiene la sentencia `FIN`.
@@ -340,6 +341,47 @@ justo el trabajo que falta para la fase de análisis de estados alcanzables.
 | `SUMA`, cualquier expresión | ninguna |
 
 Que la operación exija memoria es la razón de ser de la regla 19.
+
+### El coste de declarar señales implícitamente
+
+El destino de un `calcular` es su propia declaración. Eso evita tener que escribir el tipo de una señal derivada —lo hereda de su origen— pero tiene un precio: **nada obliga a revisar que el nombre del destino sea el que se quería escribir**.
+
+```
+calcular(v, v * 2, voltage_doble);   // voltage
+si voltaje_doble > 100 ...            // voltaje
+```
+
+Si la errata se nota, la regla 13 la pilla: falta el nombre correcto. Lo que **no** detectaba nadie era el caso contrario, donde la señal equivocada no la usa nadie:
+
+```
+calcular(v, v * 2, voltage_doble);   // y no se vuelve a mencionar
+si v > 100 ...                         // voltage_doble queda huerfana
+```
+
+Ahí no falta nada: la señal existe, tiene tipo, y simplemente se calcula cada tick para que nadie la mire.
+
+### Regla 26 — Señales derivadas que nadie lee
+
+```
+Aviso semantico en linea 28: la senal derivada 'voltaje_medio_manual' no la lee
+ninguna regla ni ningun calculo. Si existe solo para graficarla, esto es
+esperado; si no, el nombre esta mal escrito o sobra el calculo.
+```
+
+Es **aviso** y no error porque en este dominio el caso legítimo existe: una
+señal puede calcularse únicamente para graficarla, y eso es una razón de peso
+en un sistema de monitoreo.
+
+Para que la regla no dé falsos positivos hay que marcar **también el canal de
+origen** como uso. Una señal que solo se lee como origen de otro `calcular` no
+aparece en ninguna condición, y sin ese marcado se reportaría como muerta
+cuando es la base de un cálculo encadenado:
+
+```
+calcular(potencia_kw, potencia_kw - potencia_nominal, desvio_potencia);
+           └──────────┘
+           lectura legitima: es el origen de desvio_potencia
+```
 
 ---
 

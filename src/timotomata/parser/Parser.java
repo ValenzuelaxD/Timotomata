@@ -227,6 +227,12 @@ public class Parser {
                 Calculo calculo = new Calculo(t3.lexema, "");
                 calculo.linea = t1.linea;
 
+                // El canal de origen también es un uso. Sin esto, una señal que
+                // solo se lee como origen de otro calculo —potencia_kw feeding
+                // desvio_potencia— quedaría marcada como no leída, y la regla
+                // de señales muertas daría un falso positivo.
+                programa.simbolos.registrarUso(calculo.sensor, t3.linea);
+
                 NodoDerivacion nTipoOp = new NodoDerivacion("TIPO_OP");
                 tipoOp(nTipoOp, calculo);
                 nodo.agregarHijo(nTipoOp);

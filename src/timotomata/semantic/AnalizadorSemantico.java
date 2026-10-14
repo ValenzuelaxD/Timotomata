@@ -127,6 +127,7 @@ public class AnalizadorSemantico {
         regla23UmbralDeOtraMagnitud(programa, errores);
         regla24Inalcanzables(programa, errores);
         regla25ZonasSinCubrir(programa, avisos);
+        regla26SenalesMuertas(programa, avisos);
 
         ordenarPorLinea(errores);
         if (avisos != null) ordenarPorLinea(avisos);
@@ -1216,6 +1217,39 @@ public class AnalizadorSemantico {
  * <p>El valor de retorno permite encadenar la comprobación de los dos lados de
  * una comparación sin repetir el recorrido.
  */
+    /**
+ * REGLA 26 — Señales derivadas que nadie lee.
+ *
+ * <p>Como el destino de un {@code calcular} es su propia declaración, una
+ * errata en ese nombre crea una señal nueva perfectamente válida que no la
+ * usa nadie, y el programa compila limpio:
+ *
+ * <pre>
+ *   calcular(v, v * 2, voltage_doble);   // voltage
+ *   si voltaje_doble &gt; 100 ...          // voltaje  -&gt; error de la 13
+ * </pre>
+ *
+ * <p>La 13 pilla el caso en que la errata se nota, porque falta el nombre
+ * correcto. Lo que no pilla es cuando la señal equivocada no se usa nunca:
+ * ahí no falta nada, simplemente hay una señal que se calcula cada tick y
+ * nadie lee.
+ *
+ * <p>Es <b>aviso</b> y no error porque en este dominio calcular una señal sin
+ * leerla es legítimo: puede existir solo para graficarla. Lo que el aviso
+ * señala es que, si no es para graficar, es código muerto.
+ */
+    private void regla26SenalesMuertas(Programa programa, List<String> avisos) {
+        if (avisos == null) return;
+        for (Simbolo s : programa.simbolos.todos()) {
+            if (s.clase() != Simbolo.Clase.SENAL) continue;
+            if (s.usado()) continue;
+            aviso(avisos, s.linea(), "la senal derivada '" + s.nombre()
+                + "' no la lee ninguna regla ni ningun calculo. Si existe solo"
+                + " para graficarla, esto es esperado; si no, el nombre esta"
+                + " mal escrito o sobra el calculo.");
+        }
+    }
+
     private boolean reportarMagnitudes(List<String> errores, int linea,
                                        String contexto,
                                        Map<TipoSensor, String> vistas) {
