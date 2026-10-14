@@ -97,17 +97,19 @@ public final class CompiladorCLI {
         List<String> erroresSintacticos = parser.getErroresSintacticos();
 
         List<String> erroresSemanticos = new ArrayList<>();
+        List<String> avisos = new ArrayList<>();
         if (erroresSintacticos.isEmpty()) {
-            erroresSemanticos = new AnalizadorSemantico().analizar(programa, tokens);
+            erroresSemanticos = new AnalizadorSemantico().analizar(programa, tokens, avisos);
         }
 
-        System.out.printf("  %d tokens - lexico %d - sintactico %d - semantico %d%n",
+        System.out.printf("  %d tokens - lexico %d - sintactico %d - semantico %d - avisos %d%n",
             tokens.size(), erroresLexicos.size(), erroresSintacticos.size(),
-            erroresSemanticos.size());
+            erroresSemanticos.size(), avisos.size());
 
         for (String e : erroresLexicos) System.out.println("  [LEX] " + e);
         for (String e : erroresSintacticos) System.out.println("  [SIN] " + e);
         for (String e : erroresSemanticos) System.out.println("  [SEM] " + e);
+        for (String a : avisos) System.out.println("  " + a);
 
         if (verbose && erroresSintacticos.isEmpty()) {
             volcar(programa);

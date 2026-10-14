@@ -1,7 +1,10 @@
 // Prueba de todos los operadores relacionales.
 // Las reglas se solapan a proposito: se espera que la 8 las marque como
-// contradictorias (gana la primera que se cumple).
-// Esperado: 0 lexicos, 0 sintacticos, 13 semanticos.
+// contradictorias (gana la primera que se cumple) y que la 24 demuestre que
+// las cuatro ultimas son inalcanzables.
+// Con x=10 y q=20, las lineas 10 y 11 ya cubren (-inf, +inf]: todo lo que
+// viene despues es codigo muerto.
+// Esperado: 0 lexicos, 0 sintacticos, 17 semanticos.
 sensor a     : ELECTRICO;
 sensor b     : ELECTRICO;
 umbral x : ELECTRICO = 10;

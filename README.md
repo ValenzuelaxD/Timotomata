@@ -156,7 +156,7 @@ Timotomata/
 │   │       ├── Negacion.java
 │   │       └── Abs.java
 │   ├── semantic/                 ← Analizador semántico
-│   │   ├── AnalizadorSemantico.java  ← 23 reglas de verificación
+│   │   ├── AnalizadorSemantico.java  ← 25 reglas de verificación
 │   │   └── TipoSensor.java       ← Ficha técnica de cada tipo de sensor
 │   ├── simbolos/                 ← Tabla de símbolos y flujo de datos
 │   │   ├── Simbolo.java          ← Símbolo con sus atributos y orígenes
@@ -190,6 +190,7 @@ Timotomata/
 - Las **23 reglas** de verificación, agrupadas por lo que hacen
 - **Fichas técnicas** de los seis tipos de sensor y para qué sirve cada campo
 - **Grafo de flujo de datos**: qué señal depende de cuál
+- **Código muerto**: qué reglas nunca se ejecutan, y qué valores no disparan nada
 - **Memoria** que cada cálculo necesita (buffer, fase, nada)
 - Análisis de reglas por **intervalos**: contradicciones y código muerto
 

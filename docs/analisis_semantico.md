@@ -10,7 +10,7 @@
 
 1. [Qué se verifica y por qué](#1-qué-se-verifica-y-por-qué)
 2. [Las fichas de los tipos de sensor](#2-las-fichas-de-los-tipos-de-sensor)
-3. [Las 23 reglas](#3-las-23-reglas)
+3. [Las 25 reglas](#3-las-25-reglas)
 4. [Reglas de coherencia interna](#4-reglas-de-coherencia-interna)
 5. [Reglas de física](#5-reglas-de-física)
 6. [Reglas de flujo de datos](#6-reglas-de-flujo-de-datos)
@@ -31,6 +31,8 @@ responde tres preguntas distintas:
 | ¿Los nombres significan una sola cosa? | Reglas 1–4 |
 | ¿Los números significan algo medible? | Reglas 5–7, 17 |
 | ¿Lo declarado forma un cálculo coherente? | Reglas 8, 11, 14, 21–23 |
+| ¿Qué código no se ejecutará nunca? | Regla 24 |
+| ¿Qué valores dejan el sistema quieto? | Regla 25 (aviso) |
 | ¿La condición es una pregunta bien formada? | Reglas 3, 14, 23, 16 (por comparación) |
 
 La tercera es la que da cuerpo al proyecto. Sin ella, declarar
@@ -73,7 +75,7 @@ Los tres campos de la derecha son los que hacen trabajo real:
 
 ---
 
-## 3. Las 23 reglas
+## 3. Las 25 reglas
 
 | # | Regla | Qué detecta |
 |:-:|:------|:------------|
@@ -98,6 +100,8 @@ Los tres campos de la derecha son los que hacen trabajo real:
 | 21 | Orden de definición | Se usa una señal antes de su `calcular` |
 | 22 | Autodependencia | `calcular(x, op, x)` |
 | 23 | Umbral de otra magnitud | Se compara un canal contra el umbral equivocado |
+| 24 | Regla inalcanzable | Las reglas anteriores ya cubren toda su región |
+| 25 | Zona sin cubrir | Ninguna regla dispara para ciertos valores |
 
 Las reglas 9 y 12 están omitidas: la 9 por decisión del proyecto, y la 12 porque
 el lenguaje ya no tiene la sentencia `FIN`.
@@ -339,11 +343,13 @@ Que la operación exija memoria es la razón de ser de la regla 19.
 
 ---
 
-## 7. Los intervalos y el análisis de reglas
+## 7. Intervalos, alcanzabilidad y zonas sin cubrir
 
-`intervalo(operador, constante)` traduce una condición a un conjunto de
-intervalos reales. Con eso, la regla 8 puede razonar sobre el **espacio de
-valores**:
+`Intervalos` traduce cada comparación al conjunto de valores que la cumplen —`voltaje > 220` es `(220, +inf]`— y con esa representación se puede preguntar si una regla se ejecuta, si dos se contradicen, o qué valores dejan sin cubrir ninguna.
+
+Los conjuntos se mantienen en **forma canónica**: ordenados, sin solapamientos y sin extremos compartidos. No es cosmético: sin ella, unir `[0,5)` con `[5,10]` daría dos intervalos en lugar de `[0,10]`, y la pregunta "¿queda algo sin cubrir?" respondería que sí cuando no queda nada.
+
+### Regla 8 — Reglas contradictorias
 
 ```
 regla contradictoria sobre 'voltaje': se solapa con la regla de la linea 10
@@ -351,22 +357,58 @@ regla contradictoria sobre 'voltaje': se solapa con la regla de la linea 10
 ('PICO' y 'CAIDA').
 ```
 
-Dos reglas se contradicen cuando sus intervalos se solapan y los estados
-distintos. Nótese que la primera que se cumple gana: la segunda no es
-"incorrecta", es inalcanzable.
+Dos reglas se contradicen cuando sus intervalos se solapan y los estados son distintos. La primera que se cumple gana: la segunda no es "incorrecta", es inalcanzable.
 
-> **Lo que falta.** Con la misma maquinaria se puede demostrar mucho más, y es
-> el paso natural siguiente:
->
-> | Pregunta | Cómo se respondería |
-> |:---------|:-------------------|
-> | ¿Qué reglas son código muerto? | Intervalo totalmente cubierto por reglas anteriores |
-> | ¿Hay zonas sin cubrir? | Valores que ninguna regla captura → queda el `sino` |
-> | ¿Qué estados son alcanzables? | Unión de los intervalos que disparan |
->
-> Las reglas inalcanzables son exactamente el material que el optimizador
-> necesitará para eliminar código, y las zonas sin cubren son los valores por
-> defecto del código generado.
+### Regla 24 — Qué código no se va a ejecutar nunca
+
+La contrapartida: no solo qué reglas se contradicen, sino cuáles **jamás** se ejecutan. Eso es código muerto que el optimizador puede descartar.
+
+```
+si voltaje > voltaje_min entonces estado = PICO;      // (180, +inf]
+si voltaje > voltaje_max entonces estado = INESTABLE; // (220, +inf] ⊆ la anterior
+```
+```
+regla inalcanzable: las reglas anteriores ya cubren todos los valores de
+'voltaje' = (220, +inf], asi que esta nunca se cumple.
+```
+
+**Por qué solo las reglas de una sola variable pueden probar cobertura.** Para tapar una regla hace falta que *toda* la región donde se cumple esté dentro de la región de alguna regla anterior. Al trabajar por ejes se comparan proyecciones, y proyectar pierde información:
+
+```
+linea 18:  si voltaje > 220 y temperatura > 80   ->  estado = INESTABLE
+linea 38:  si voltaje > 220                       ->  estado = PICO
+```
+
+La proyección de la 18 sobre `voltaje` es `(220, +inf]`, igual que la de la 38, así que un análisis ingenuo daría la 38 por muerta. **No lo es**: con `voltaje = 230` y `temperatura = 20` la 18 no dispara y la 38 sí. La correlación entre variables es justo lo que el análisis por ejes destruye.
+
+Por eso la cobertura solo la aportan reglas cuya región tiene **una única variable**: ahí su proyección *es* su región. Con esa salvedad el argumento es sólido —si al menos una variable de la regla está tapada por una regla univariable anterior, cualquier punto donde se cumpla la nueva dispara también esa anterior— y el análisis se limita a lo que puede demostrar.
+
+Una conjunción también es código muerto si *sus dos partes* lo son:
+
+```
+si voltaje < voltaje_min y temperatura > temp_max   ->  inalcanzable
+```
+
+porque cualquier punto donde se cumpla tiene `voltaje < 180`, y la regla anterior de `voltaje` ya se cumplió antes.
+
+### Regla 25 — Qué valores no disparan nada
+
+La otra dirección: no basta con saber qué código no corre, también hay que saber qué valores dejan el sistema como está.
+
+```
+Aviso semantico en linea 7: ninguna regla dispara para [-inf, 80] de
+'temperatura': en esos valores el estado se queda donde lo dejo la ultima regla
+que se cumplio, o en el valor de 'sino'.
+```
+
+Es un **aviso**, no un error, y la distinción es deliberada. La banda entre el mínimo y el máximo es justamente donde el sistema funciona con normalidad y **a propósito** no dispara nada. Reportarlo como error obligaría a silenciarlo en todos los programas bien hechos.
+
+| | Errores | Avisos |
+|:--|:--------|:-------|
+| cuentan para el código de salida | sí | no |
+| se muestran en la salida | sí | sí |
+
+Solo se reporta sobre variables que todas las reglas que las tocan restringen exactamente; si alguna usa una disyunción, la unión no es confiable y el hueco podría estar cubierto de todos modos.
 
 ### Regla 7 — Estado invertido
 
@@ -462,6 +504,7 @@ automatizable: `compile_and_run_cli.bat || echo FALLO`.
 | `test_semantico_ok.txt` | 0 | Programa válido completo |
 | `test_basico.txt`, `test_comentarios.txt`, `test_simulacion.txt` | 0 | Léxico y gramática |
 | `test_condiciones.txt` | 0 | Conectores, negación, lectura de estado, rama `sino` |
+| `test_alcanzable.txt` | 9 + 1 av. | Reglas 24 y 25: código muerto y zonas sin cubrir |
 | `test_flujo.txt` | 4 | Reglas 21, 22 y 23 |
 | `test_reglas_tipo.txt` | 9 | Reglas 17 a 20, una por tipo |
 | `test_semantico.txt` | 22 | Reglas 1 a 16 |

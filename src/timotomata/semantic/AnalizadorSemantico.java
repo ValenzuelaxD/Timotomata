@@ -7,6 +7,10 @@ import timotomata.parser.ast.*;
 import timotomata.simbolos.Simbolo;
 import timotomata.simbolos.TablaSimbolos;
 
+// Intervalo es un record anidado dentro de Intervalos; el analizador vive en
+// el mismo paquete, asi que alcanza con importar el record.
+import timotomata.semantic.Intervalos.Intervalo;
+
 /**
  * ANÁLISIS SEMÁNTICO DEL LENGUAJE TIMOTOMATA
  * ==========================================
@@ -76,6 +80,25 @@ public class AnalizadorSemantico {
     // =============================================================
 
     public List<String> analizar(Programa programa, List<Token> tokens) {
+        return analizar(programa, tokens, null);
+    }
+
+    /**
+     * Corre todas las reglas y, aparte de los errores, deja los avisos.
+     *
+     * <p>No todo lo que el analizador tiene que decir es un error. Una zona
+     * de valores que ninguna regla cubre —la banda normal de operación, entre
+     * el mínimo y el máximo— es casi siempre intencional: el sistema no
+     * dispara nada y el estado se queda donde estaba. Reportarlo como error
+     * obligaría a silenciarlo en todos los programas bien hechos.
+     *
+     * <p>Por eso los avisos van a su propia lista: no cuentan para el código
+     * de salida del compilador, pero se muestran.
+     *
+     * @param avisos lista donde se acumulan los avisos; puede ser {@code null}
+     */
+    public List<String> analizar(Programa programa, List<Token> tokens,
+                                  List<String> avisos) {
         List<String> errores = new ArrayList<>();
         if (programa == null) return errores;
 
@@ -102,13 +125,27 @@ public class AnalizadorSemantico {
         regla21OrdenDefinicion(programa, errores);
         regla22Autodependencia(programa, errores);
         regla23UmbralDeOtraMagnitud(programa, errores);
+        regla24Inalcanzables(programa, errores);
+        regla25ZonasSinCubrir(programa, avisos);
 
         ordenarPorLinea(errores);
+        if (avisos != null) ordenarPorLinea(avisos);
         return errores;
     }
 
     private void err(List<String> errores, int linea, String mensaje) {
         errores.add("Error semantico en linea " + linea + ": " + mensaje);
+    }
+
+    /**
+     * Igual que {@link #err}, pero en la lista de avisos.
+     *
+     * <p>Un aviso describe algo que el analizador sabe y que el programador
+     * probablemente quiera saber, pero que no invalida el programa: la banda de
+     * operación normal, por ejemplo, donde a propósito no dispara ninguna regla.
+     */
+    private void aviso(List<String> avisos, int linea, String mensaje) {
+        avisos.add("Aviso semantico en linea " + linea + ": " + mensaje);
     }
 
     private void ordenarPorLinea(List<String> errores) {
@@ -964,6 +1001,215 @@ public class AnalizadorSemantico {
         return usos;
     }
 
+    // =============================================================
+    //  REGLAS 24 y 25 — Qué código no se va a ejecutar nunca
+    // =============================================================
+
+    /**
+     * Restricción que una condición impone sobre cada variable, o
+     * {@code null} si no se puede expresar exactamente.
+     *
+     * <p>Ver la documentación de {@link Intervalos} sobre por qué la
+     * distinción entre "exacto" y "aproximado" es obligatoria. Aquí está el
+     * criterio:
+     *
+     * <ul>
+     *   <li>{@code a > 10} → exacta, una variable.</li>
+     *   <li>{@code a > 10 y b < 3} → exacta, dos restricciones independientes.</li>
+     *   <li>{@code a > 10 o b < 3} → {@code null}. Con {@code b} pequeño,
+     *       {@code a} puede ser cualquier cosa.</li>
+     *   <li>{@code no a > 10} → {@code null}, por la misma razón que la disyunción.</li>
+     *   <li>{@code a > b} → {@code null}. No restringe {@code a} por separado.</li>
+     * </ul>
+     */
+    private Map<String, List<Intervalo>> regionExacta(Condicion c,
+                                                      Map<String, Double> umbrales,
+                                                      Programa programa) {
+        if (c instanceof Comparacion comp) {
+            return regionDeComparacion(comp, umbrales);
+        }
+        if (c instanceof Conector con && con.tipo == Conector.Tipo.Y) {
+            Map<String, List<Intervalo>> izq = regionExacta(con.izquierda, umbrales, programa);
+            Map<String, List<Intervalo>> der = regionExacta(con.derecha, umbrales, programa);
+            if (izq == null || der == null) return null;
+            // Se fusionan por variable: dos restricciones sobre la misma se
+            // intersectan, porque ambas tienen que cumplirse.
+            Map<String, List<Intervalo>> r = new LinkedHashMap<>(izq);
+            for (Map.Entry<String, List<Intervalo>> e : der.entrySet()) {
+                r.merge(e.getKey(), e.getValue(), Intervalos::interseccion);
+            }
+            return r;
+        }
+        return null;
+    }
+
+    /**
+     * ¿Es un canal físico, y por lo tanto consultable en cualquier tick?
+     *
+     * <p>Solo sobre sensores. Una señal derivada tiene un valor que depende del
+     * historial: un {@code PROMEDIO(VENTANA=10)} no vale nada en los primeros
+     * diez ticks, y un buffer a medio llenar da un promedio sesgado. Razonar
+     * sobre su valor como si fuera el del tick completo daría exactamente el
+     * tipo de conclusión equivocada que este análisis pretende evitar.
+     *
+     * <p>El resto del analizador sí razona sobre señales derivadas — la 21
+     * comprueba su orden, la 23 su magnitud — porque esas preguntas no
+     * dependen del valor en un tick concreto.
+     */
+    private boolean esCanalFiable(Programa programa, String nombre) {
+        Simbolo s = programa.simbolos.buscar(nombre);
+        return s != null && s.clase() == Simbolo.Clase.SENSOR;
+    }
+
+    /** Como {@link #regionExacta}, pero descartando lo que no sea canal físico. */
+    private Map<String, List<Intervalo>> regionDeCanales(Regla r, Programa programa) {
+        Map<String, List<Intervalo>> region =
+            regionExacta(r.condicion, programa.umbrales, programa);
+        if (region == null) return null;
+        region.keySet().removeIf(v -> !esCanalFiable(programa, v));
+        return region.isEmpty() ? null : region;
+    }
+
+    private Map<String, List<Intervalo>> regionDeComparacion(Comparacion comp,
+                                                             Map<String, Double> umbrales) {
+        if (comp.izquierda instanceof Variable v) {
+            Double cte = evaluar(comp.derecha, umbrales);
+            if (cte == null) return null;
+            Map<String, List<Intervalo>> r = new LinkedHashMap<>();
+            r.put(v.nombre, intervalo(comp.operador, cte));
+            return r;
+        }
+        if (comp.derecha instanceof Variable v) {
+            Double cte = evaluar(comp.izquierda, umbrales);
+            if (cte == null) return null;
+            // a op b  es  b op' a
+            Map<String, List<Intervalo>> r = new LinkedHashMap<>();
+            r.put(v.nombre, intervalo(Intervalos.invertirOperador(comp.operador), cte));
+            return r;
+        }
+        return null;
+    }
+
+    /**
+     * REGLA 24 — Reglas inalcanzables.
+     *
+     * <p>Las reglas se evalúan en orden y gana la primera que se cumple, así
+     * que una regla alcanzable solo lo es si hay valores que ninguna regla
+     * anterior haya cubierto. Eso es código muerto: el generador de código
+     * puede descartarlo, y el programador probablemente quiere saberlo.
+     *
+     * <p>Solo se reporta cuando la cobertura es <b>exacta</b>: la regla y todas
+     * las anteriores que la cubren tienen que ser traducibles a restricciones
+     * por variable. Con una disyunción o una negación de por medio, la
+     * sobre-aproximación no alcanza y el análisis se calla.
+     */
+    private void regla24Inalcanzables(Programa programa, List<String> errores) {
+        // Solo variables con region de una sola entrada: alli la proyeccion si
+        // coincide con la region completa y no se pierde correlacion.
+        Map<String, List<Intervalo>> cubiertoPor = new LinkedHashMap<>();
+
+        for (Regla r : programa.reglas) {
+            Map<String, List<Intervalo>> region = regionDeCanales(r, programa);
+            if (region == null) continue;
+
+            if (estaCubierta(region, cubiertoPor)) {
+                err(errores, r.linea, "regla inalcanzable: las reglas anteriores"
+                    + " ya cubren todos los valores de " + describe(region)
+                    + ", asi que esta nunca se cumple"
+                    + (r.tieneRamaSino() ? ". Ojo: su rama 'sino' si se ejecuta."
+                                         : "."));
+            }
+
+            if (region.size() == 1) {
+                Map.Entry<String, List<Intervalo>> e = region.entrySet().iterator().next();
+                cubiertoPor.merge(e.getKey(), e.getValue(), Intervalos::unir);
+            }
+        }
+    }
+
+    /**
+     * {@code true} si cada variable de {@code region} está totalmente cubierta
+     * por reglas anteriores univariable.
+     */
+    private boolean estaCubierta(Map<String, List<Intervalo>> region,
+                                 Map<String, List<Intervalo>> cubiertoPor) {
+        boolean algunaPrevia = false;
+        for (Map.Entry<String, List<Intervalo>> e : region.entrySet()) {
+            List<Intervalo> previo = cubiertoPor.get(e.getKey());
+            if (previo == null) return false;
+            algunaPrevia = true;
+            if (!Intervalos.cubre(previo, e.getValue())) return false;
+        }
+        return algunaPrevia;
+    }
+
+    /**
+     * REGLA 25 — Zonas que ninguna regla cubre.
+     *
+     * <p>La contrapartida de la 24: no basta con saber qué código no se
+     * ejecuta, también hay que saber qué valores no disparan nada. Esos valores
+     * dejan el estado donde lo dejó la regla anterior, o en el valor de
+     * {@code sino}.
+     *
+     * <p>Solo se reporta sobre variables que todas las reglas que las tocan
+     * restringen exactamente; si alguna usa una disyunción, la unión no es
+     * confiable y el hueco podría estar cubierto de todos modos.
+     */
+    private void regla25ZonasSinCubrir(Programa programa, List<String> avisos) {
+        if (avisos == null) return;
+        Map<String, List<Intervalo>> cubierto = new LinkedHashMap<>();
+        Set<String> dudosas = new LinkedHashSet<>();
+
+        for (Regla r : programa.reglas) {
+            Map<String, List<Intervalo>> region = regionDeCanales(r, programa);
+            for (String v : r.condicion.variables()) {
+                if (region == null || !region.containsKey(v)) dudosas.add(v);
+            }
+            if (region != null) {
+                for (Map.Entry<String, List<Intervalo>> e : region.entrySet()) {
+                    cubierto.merge(e.getKey(), e.getValue(), Intervalos::unir);
+                }
+            }
+        }
+
+        for (Map.Entry<String, List<Intervalo>> e : cubierto.entrySet()) {
+            String var = e.getKey();
+            if (dudosas.contains(var)) continue;
+
+            List<Intervalo> huecos = Intervalos.complemento(e.getValue());
+            if (huecos.isEmpty()) continue;
+
+            // Se ancla en la declaración del sensor, no en una regla: el hueco
+            // no pertenece a ninguna en particular, es una propiedad de la
+            //variable.
+            Simbolo s = programa.simbolos.buscar(var);
+            aviso(avisos, s == null ? 0 : s.linea(),
+                "ninguna regla dispara para " + describeHuecos(huecos)
+                + " de '" + var + "': en esos valores el estado se queda donde lo"
+                + " dejo la ultima regla que se cumplio, o en el valor de 'sino'.");
+        }
+    }
+
+    private String describe(Map<String, List<Intervalo>> region) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, List<Intervalo>> e : region.entrySet()) {
+            if (sb.length() > 0) sb.append(" y ");
+            sb.append('\'').append(e.getKey()).append("' = ")
+              .append(Intervalos.texto(e.getValue()));
+        }
+        return sb.toString();
+    }
+
+    private String describeHuecos(List<Intervalo> huecos) {
+        return Intervalos.texto(huecos);
+    }
+
+    /**
+     * Reporta un choque de magnitudes y devuelve si lo hizo.
+ *
+ * <p>El valor de retorno permite encadenar la comprobación de los dos lados de
+ * una comparación sin repetir el recorrido.
+ */
     private boolean reportarMagnitudes(List<String> errores, int linea,
                                        String contexto,
                                        Map<TipoSensor, String> vistas) {
@@ -1029,53 +1275,19 @@ public class AnalizadorSemantico {
         return null;
     }
 
-    /** Intervalo de valores de una variable para el que la condición se cumple. */
-    private static class Intervalo {
-        final double lo, hi;
-        final boolean loInc, hiInc;
-        Intervalo(double lo, boolean loInc, double hi, boolean hiInc) {
-            this.lo = lo; this.loInc = loInc; this.hi = hi; this.hiInc = hiInc;
-        }
-    }
-
+    /**
+     * Traduce una comparación contra una constante al conjunto de valores que
+     * la cumplen.
+     *
+     * <p>Delegado en {@link Intervalos}; queda aquí porque las reglas lo usan
+     * con demasiada frecuencia como para calificar el nombre cada vez.
+     */
     private List<Intervalo> intervalo(String op, double c) {
-        List<Intervalo> ivs = new ArrayList<>();
-        switch (op) {
-            case ">"  -> ivs.add(new Intervalo(c, false, Double.POSITIVE_INFINITY, true));
-            case ">=" -> ivs.add(new Intervalo(c, true,  Double.POSITIVE_INFINITY, true));
-            case "<"  -> ivs.add(new Intervalo(Double.NEGATIVE_INFINITY, true, c, false));
-            case "<=" -> ivs.add(new Intervalo(Double.NEGATIVE_INFINITY, true, c, true));
-            case "==" -> ivs.add(new Intervalo(c, true, c, true));
-            case "!=" -> {
-                ivs.add(new Intervalo(Double.NEGATIVE_INFINITY, true, c, false));
-                ivs.add(new Intervalo(c, false, Double.POSITIVE_INFINITY, true));
-            }
-            default -> { }
-        }
-        return ivs;
+        return Intervalos.deOperador(op, c);
     }
 
     private boolean solapan(List<Intervalo> a, List<Intervalo> b) {
-        for (Intervalo x : a) {
-            for (Intervalo y : b) {
-                if (solapan(x, y)) return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean solapan(Intervalo a, Intervalo b) {
-        double lo = Math.max(a.lo, b.lo);
-        boolean loInc;
-        if (a.lo == b.lo) loInc = a.loInc && b.loInc;
-        else loInc = (a.lo > b.lo) ? a.loInc : b.loInc;
-
-        double hi = Math.min(a.hi, b.hi);
-        boolean hiInc;
-        if (a.hi == b.hi) hiInc = a.hiInc && b.hiInc;
-        else hiInc = (a.hi < b.hi) ? a.hiInc : b.hiInc;
-
-        return lo < hi || (lo == hi && loInc && hiInc);
+        return Intervalos.solapan(a, b);
     }
 
     private static Double numero(String lexema) {
