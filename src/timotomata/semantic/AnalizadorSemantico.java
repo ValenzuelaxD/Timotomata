@@ -294,14 +294,20 @@ public class AnalizadorSemantico {
      * símbolo.
      */
     private void regla3SensorComoUmbral(Programa programa, List<String> errores) {
-        Set<String> medibles = medibles(programa);
         for (Regla r : programa.reglas) {
             for (Comparacion cond : comparaciones(r.condicion)) {
                 for (String var : Expressiones.variables(cond.derecha)) {
-                    if (!medibles.contains(var)) continue;
+                    // Solo los canales físicos. Una señal derivada sí puede
+                    // fijar un límite: `vibracion > referencia * 1.5` compara
+                    // contra una forma de onda conocida, y es exactamente el
+                    // tipo de comparación que un sistema de monitoreo quiere
+                    // hacer. Lo que no tiene sentido es poner un transductor
+                    // a la derecha, porque no se mide, se lee.
+                    Simbolo s = programa.simbolos.buscar(var);
+                    if (s == null || s.clase() != Simbolo.Clase.SENSOR) continue;
                     err(errores, r.linea, "el sensor '" + var
                         + "' no puede usarse como umbral: la expresion derecha de la"
-                        + " condicion es un limite fijo y un sensor se mide, no fija"
+                        + " condicion es un limite fijo y un sensor se lee, no fija"
                         + " limites.");
                 }
             }

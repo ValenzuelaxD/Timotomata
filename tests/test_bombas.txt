@@ -1,0 +1,234 @@
+// ============================================================================
+//  ESTACION DE BOMBEO — monitor de dos bombas centrifugas gemelas
+//
+//  Programa real de una estacion de bombeo: lee 10 canales fisicos, deriva 12
+//  senales, y gobierna una maquina de 4 estados con historeseis.
+//
+//  Compila limpio: 0 lexicos, 0 sintacticos, 0 semanticos.
+// ============================================================================
+
+// ============================================================================
+//  1. CANALES FISICOS
+//
+//  Cada sensor declara su tipo, y el tipo trae la ficha tecnica del
+//  transductor: unidad, rango representable, banda y frecuencia de muestreo.
+//  Son esos numeros los que despues permiten verificar umbrales, frecuencias
+//  y ventanas.
+// ============================================================================
+
+// --- Alimentacion electrica ---
+sensor tension_motor    : ELECTRICO;   // V
+sensor corriente_motor  : ELECTRICO;   // A
+sensor corriente_bomba2 : ELECTRICO;   // A
+
+// --- Temperatura ---
+sensor temp_rodamiento  : TERMICO;     // grados
+sensor temp_devanado    : TERMICO;     // grados
+
+// --- Vibracion mecanica ---
+sensor vibracion        : MECANICO;    // mm/s
+
+// --- Hidraulica ---
+sensor presion_succion  : HIDRAULICO;  // bar
+sensor presion_descarga : HIDRAULICO;  // bar
+
+// --- Calidad del fluido ---
+sensor ph_succion       : QUIMICO;     // pH
+
+// --- Instalaciones ---
+sensor luz_sala         : LUMINICO;    // lux
+
+// ============================================================================
+//  2. EL RELOJ DEL PROGRAMA
+//
+//  50 Hz de muestreo, asi que la Nyquist del programa es 25 Hz: ninguna
+//  operacion con FRECUENCIA= puede pasar de ahi, por mas banda que tenga el
+//  transductor.
+// ============================================================================
+
+muestreo = 0.02;
+
+// ============================================================================
+//  3. UMBRALES
+//
+//  Cada uno declara su tipo, y el analizador verifica que el valor exista en
+//  el rango que ese transductor puede medir. Un umbral fuera de rango produce
+//  una regla que nunca se cumple, y eso casi siempre es un error de unidades.
+// ============================================================================
+
+// --- Red electrica ---
+umbral tension_alta     : ELECTRICO   = 235;   // limite de sobrecarga
+umbral tension_baja     : ELECTRICO   = 190;   // por debajo no hay par nominal
+umbral tension_nominal  : ELECTRICO   = 230;
+umbral corriente_max    : ELECTRICO   = 32;    // por motor
+
+// --- Temperatura ---
+umbral rod_alto         : TERMICO     = 75;
+umbral rod_bajo         : TERMICO     = 30;    // ya fria: se puede salir
+umbral devanado_max     : TERMICO     = 118;   // el transductor llega a 125 C
+
+// --- Mecanica ---
+umbral vibracion_max    : MECANICO    = 22;    // ISO 10816, zona C
+
+// --- Hidraulica ---
+umbral succion_min      : HIDRAULICO  = 0.8;   // por debajo: cavitacion
+umbral descarga_max     : HIDRAULICO  = 9.5;
+
+// --- Fluido ---
+umbral ph_min           : QUIMICO     = 6.2;
+umbral ph_max           : QUIMICO     = 8.4;
+
+// --- Instalaciones ---
+umbral luz_horaria      : LUMINICO    = 250;   // de noche no se boleh
+
+// ============================================================================
+//  4. SENALES DERIVADAS
+//
+//  El canal fisico queda intacto: `calcular` escribe el resultado en una senal
+//  nueva. Eso permite conservar la lectura cruda para las graficas y a la vez
+//  trabajar sobre el valor filtrado, sin que uno contamine al otro.
+//
+//  Las ventanas respetan el minimo fisico del tipo:
+//    ELECTRICO  >= 5 muestras   (transductor de 100 Hz)
+//    MECANICO   >= 3 muestras   (transductor de 2000 Hz)
+//    TERMICO    >= 20 muestras  (el transductor va a 0.1 Hz: la temperatura
+//                                tarda segundos en responder, y una ventana
+//                                corta promedia ruido en lugar de senal)
+// ============================================================================
+
+// --- Filtrado de la alimentacion ---
+// 20 muestras a 50 Hz = 0.4 s. Suficiente para separar el pico de un corte de
+// red de una sobretension de verdad.
+calcular(tension_motor, PROMEDIO(VENTANA=20), tension_prom);
+calcular(tension_motor, MAXIMO(VENTANA=20), tension_pico);
+
+// --- Consumo de las dos bombas en paralelo ---
+calcular(corriente_bomba2, SUMA(CON=corriente_motor, CON=corriente_bomba2),
+         corriente_total);
+
+// --- Potencia por dos vias independientes ---
+// Via 1: tension * corriente, normalizada a kW.
+calcular(corriente_total, tension_motor * corriente_total / 1000, potencia_kw);
+
+// Via 2: el regimen nominal de la estacion son 7.5 kW.
+calcular(potencia_kw, potencia_kw - 7.5, desvio_potencia);
+
+// --- Desviacion instantanea respecto de la media ---
+calcular(tension_motor, abs(tension_motor - tension_prom), desvio_tension);
+
+// --- Excursion: cuanto se ha alejado la tension de su propia media ---
+// Encadenamiento: la entrada es una senal derivada y hereda su tipo.
+calcular(tension_pico, tension_pico - tension_prom, excursion);
+
+// --- Temperatura ---
+calcular(temp_rodamiento, PROMEDIO(VENTANA=40), rod_prom);
+calcular(temp_devanado,   PROMEDIO(VENTANA=40), devanado_prom);
+
+// --- Vibracion ---
+calcular(vibracion, PROMEDIO(VENTANA=5), vibracion_prom);
+calcular(vibracion, MAXIMO(VENTANA=5), vibracion_pico);
+
+// --- Onda de referencia a la frecuencia de giro nominal ---
+// Sirve para distinguir desalineacion (que aparece en una frecuencia
+// concreta) de una falla mecanica general. 20 Hz queda por debajo de la
+// Nyquist del programa, que con muestreo = 0.02 es 25 Hz: es observable.
+calcular(vibracion, SENO(AMPLITUD=15, FRECUENCIA=20), vibracion_ref);
+
+// --- Salto de presion a traves de la bomba ---
+calcular(presion_descarga, presion_descarga - presion_succion, salto_presion);
+
+// --- Fluido ---
+calcular(ph_succion, ph_succion - 7, ph_desvio);
+
+// ============================================================================
+//  5. MAQUINA DE ESTADOS
+//
+//  Cuatro estados, con esta lectura:
+//
+//    NORMAL     marcha normal
+//    PICO       sobrecarga: la bomba trabaja, pero al limite
+//    INESTABLE  averia activa: hay que parar y llamar a mantenimiento
+//    CAIDA      degradado: la bomba no entrega lo que deberia
+//
+//  La precedencia es "gana la primera regla que se cumple", asi que el orden
+//  de escritura es parte del programa: lo que va despues solo se evalua si
+//  nada anterior disparo.
+//
+//  `estado = NORMAL;` es el valor antes de la primera pasada.
+//  `sino = ...;` al final es el valor cuando ninguna regla se cumplio.
+// ============================================================================
+
+estado = NORMAL;
+
+// --- 5.1 Perdida de succion: la bomba no entrega. Prioridad maxima ---------
+// Sin diferencia de presion no hay caudal, y sin caudal las demas reglas
+// evaluarian valores que no significan nada.
+si presion_succion < succion_min y presion_descarga < succion_min
+   entonces estado = CAIDA;
+
+// Tension por debajo de la nominal: no hay par para mover la bomba.
+si tension_prom < tension_baja y tension_pico < tension_baja
+   entonces estado = CAIDA;
+
+// --- 5.2 Sobretension sostenida --------------------------------------------
+// Se decide sobre la media, no sobre el valor instantaneo: una sobretension de
+// un solo tic es ruido de red, no una averia.
+si tension_prom > tension_alta entonces estado = PICO;
+
+// --- 5.3 Calentamiento ------------------------------------------------------
+si rod_prom > rod_alto o devanado_prom > devanado_max entonces estado = INESTABLE;
+
+// --- 5.4 Desalineacion del rotor --------------------------------------------
+// Dos condiciones a la vez, y ademas la vibracion tiene que superar tanto el
+// limite absoluto como el que corresponde al giro nominal. Si solo se
+// superara el absoluto, bastaria con que la bomba diera un golpe.
+si vibracion_pico > vibracion_max
+   y vibracion_pico > vibracion_ref * 1.5
+   entonces estado = INESTABLE;
+
+// --- 5.5 Consumo anomalo en regimen normal ---------------------------------
+// El desvio de potencia solo importa si la bomba deberia estar trabajando
+// bien. Durante un arranque o una parada el consumo tambien se desvia.
+si desvio_potencia > 3.0 y estado == NORMAL entonces estado = INESTABLE;
+
+// --- 5.6 Perdida de carga con la bomba en marcha ----------------------------
+// Succion alta y descarga baja es tipico de una fuga en la impulsion, no de
+// una bomba que no arranca.
+si presion_succion > 2.0 y presion_descarga < succion_min
+   entonces estado = CAIDA;
+
+// --- 5.7 Fluido contaminado --------------------------------------------------
+// pH fuera de banda mientras hay circulacion: hay que lavar el circuito.
+si ph_desvio > 1.4 y presion_descarga > descarga_max entonces estado = CAIDA;
+
+// --- 5.8 Depuracion de la sala de bombas -------------------------------------
+// Sin luz de dia y con la bomba en alarma, un tecnico entrando se tropieza.
+si luz_sala < luz_horaria y estado == INESTABLE entonces estado = INESTABLE;
+
+// --- 5.9 Historeseis: salir de un estado grave solo cuando la causa se fue ---
+// Estas reglas leen `estado`, asi que dependen de lo que decidio una regla
+// anterior de la misma pasada. Es lo que convierte un monton de reglas sueltas
+// en una maquina de estados con memoria: la salida de un estadoAlarmado
+// exige una condicion distinta de la de entrada.
+si estado == INESTABLE y rod_prom < rod_bajo entonces estado = NORMAL;
+
+si estado == PICO y tension_prom < tension_alta entonces estado = NORMAL;
+
+si estado == CAIDA y presion_descarga > succion_min entonces estado = NORMAL;
+
+// --- 5.10 Vuelta a la marcha normal -----------------------------------------
+// Por ultimo, y con las tres condiciones que la bomba necesita para trabajar:
+// tension nominal, succion suficiente y sala iluminada.
+si tension_prom > tension_baja
+   y presion_succion >= succion_min
+   y luz_sala > luz_horaria
+   entonces estado = NORMAL;
+
+// ============================================================================
+//  6. VALOR POR DEFECTO
+//
+//  Cuando ninguna regla se cumplio, la bomba se queda en el estado que
+// tenga. En el primer tick ese estado es el de `estado = NORMAL;`.
+// ============================================================================
+
+sino = NORMAL;
