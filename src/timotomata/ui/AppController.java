@@ -27,6 +27,9 @@ import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
+import timotomata.intermedio.Cuadruplo;
+import timotomata.intermedio.GeneradorCuadruplos;
+import timotomata.intermedio.TablaCuadruplos;
 import timotomata.lexer.*;
 import timotomata.parser.*;
 import timotomata.parser.ast.*;
@@ -101,6 +104,12 @@ public class AppController {
     private TableView<InfoSimbolo> tablaSimbolos;
     private ObservableList<InfoSimbolo> simbolosData = FXCollections.observableArrayList();
     private TitledPane tablaPane;
+
+    // ─── Cuádruplos (código intermedio) ───
+    private TableView<Cuadruplo> tablaCuadruplos;
+    private ObservableList<Cuadruplo> cuadruplosData = FXCollections.observableArrayList();
+    private TabPane panelPestanas;
+    private Tab pestanaCuadruplos;
 
     // ─── Palabras reservadas para sugerencias ───
     private static final String[] PALABRAS_RESERVADAS = {
@@ -358,7 +367,7 @@ public class AppController {
     }
 
     // ─── Panel derecho con pestañas ───
-    private VBox crearPanelInfo() {
+    private TabPane crearPanelInfo() {
         VBox panel = new VBox(6);
         panel.setStyle("-fx-background-color: #11111b; -fx-padding: 6;");
 
@@ -473,7 +482,66 @@ public class AppController {
 
         panel.getChildren().addAll(derivacionPanel, tokensPane, tablaPane, astPane);
         VBox.setVgrow(astPane, Priority.ALWAYS);
-        return panel;
+
+        // ─── Pestaña de cuádruplos (código intermedio) ───
+        tablaCuadruplos = new TableView<>(cuadruplosData);
+        tablaCuadruplos.setPlaceholder(new Label("Sin cuadruplos: corrige los errores del programa"));
+        tablaCuadruplos.setStyle("-fx-control-inner-background: #1e1e2e;"
+            + " -fx-table-cell-border-color: #313244;"
+            + " -fx-text-fill: #cdd6f4;"
+            + " -fx-font-family: 'Consolas', monospace;"
+            + " -fx-font-size: 11px;");
+
+        TableColumn<Cuadruplo, Number> colCuadIndice = new TableColumn<>("#");
+        colCuadIndice.setCellValueFactory(
+            cd -> new ReadOnlyIntegerWrapper(cd.getValue().indice));
+        colCuadIndice.setPrefWidth(45);
+        colCuadIndice.setStyle("-fx-alignment: CENTER-RIGHT;");
+
+        TableColumn<Cuadruplo, String> colCuadOp = new TableColumn<>("Op");
+        colCuadOp.setCellValueFactory(
+            cd -> new ReadOnlyStringWrapper(cd.getValue().getOp()));
+        colCuadOp.setPrefWidth(80);
+
+        TableColumn<Cuadruplo, String> colCuadArg1 = new TableColumn<>("Arg1");
+        colCuadArg1.setCellValueFactory(
+            cd -> new ReadOnlyStringWrapper(cd.getValue().getArg1()));
+        colCuadArg1.setPrefWidth(90);
+
+        TableColumn<Cuadruplo, String> colCuadArg2 = new TableColumn<>("Arg2");
+        colCuadArg2.setCellValueFactory(
+            cd -> new ReadOnlyStringWrapper(cd.getValue().getArg2()));
+        colCuadArg2.setPrefWidth(90);
+
+        TableColumn<Cuadruplo, String> colCuadResultado = new TableColumn<>("Resultado");
+        colCuadResultado.setCellValueFactory(
+            cd -> new ReadOnlyStringWrapper(cd.getValue().getResultado()));
+        colCuadResultado.setPrefWidth(90);
+
+        TableColumn<Cuadruplo, Number> colCuadLinea = new TableColumn<>("Linea");
+        colCuadLinea.setCellValueFactory(
+            cd -> new ReadOnlyIntegerWrapper(cd.getValue().linea));
+        colCuadLinea.setPrefWidth(55);
+        colCuadLinea.setStyle("-fx-alignment: CENTER-RIGHT;");
+
+        tablaCuadruplos.getColumns().addAll(colCuadIndice, colCuadOp, colCuadArg1,
+            colCuadArg2, colCuadResultado, colCuadLinea);
+        tablaCuadruplos.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+
+        VBox contenedorCuadruplos = new VBox(tablaCuadruplos);
+        contenedorCuadruplos.setStyle("-fx-background-color: #11111b; -fx-padding: 6;");
+        VBox.setVgrow(tablaCuadruplos, Priority.ALWAYS);
+
+        pestanaCuadruplos = new Tab("CUADRUPLOS", contenedorCuadruplos);
+        pestanaCuadruplos.setClosable(false);
+
+        Tab pestanaAnalisis = new Tab("ANALISIS", panel);
+        pestanaAnalisis.setClosable(false);
+
+        panelPestanas = new TabPane(pestanaAnalisis, pestanaCuadruplos);
+        panelPestanas.getStyleClass().add("tm-tab-pane");
+        panelPestanas.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        return panelPestanas;
     }
 
     // ─── Panel de errores (franja inferior, a todo el ancho) ───
@@ -658,6 +726,7 @@ public class AppController {
             && erroresSintParaUI.isEmpty()
             && erroresSemanticos.isEmpty();
         actualizarAST(codigoValido ? programa : null);
+        actualizarCuadruplos(codigoValido ? programa : null);
         actualizarDerivacion(codigoValido ? programa : null,
             codigoValido ? parser : null);
         actualizarStatus(tokens.size(), erroresLex.size(), erroresSintParaUI.size(),
@@ -954,6 +1023,32 @@ public class AppController {
             return "tm-delimiter";
         }
         return "tm-keyword";
+    }
+
+    // ─── Cuádruplos ───
+    /**
+     * Vuelca la tabla de cuadruplos del programa.
+     *
+     * <p>Solo se genera si el programa compiló limpio: un AST con errores
+     * semánticos puede tener construcciones incompletas y la tabla mostraría
+     * instrucciones que el programa real nunca ejecutaría.
+     */
+    private void actualizarCuadruplos(Programa programa) {
+        if (programa == null) {
+            cuadruplosData.clear();
+            pestanaCuadruplos.setText("CUADRUPLOS (bloqueado por errores)");
+            return;
+        }
+        try {
+            TablaCuadruplos tabla = new GeneradorCuadruplos().generar(programa);
+            cuadruplosData.setAll(tabla.cuadruplos());
+            pestanaCuadruplos.setText("CUADRUPLOS (" + tabla.size() + ")");
+        } catch (RuntimeException e) {
+            // Esto corre en cada debounce: nada de dialogos modales. El aviso
+            // va en el titulo de la pestana, que es donde se mira la tabla.
+            cuadruplosData.clear();
+            pestanaCuadruplos.setText("CUADRUPLOS (error al generar)");
+        }
     }
 
     // ─── AST ───
