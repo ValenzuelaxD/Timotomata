@@ -36,7 +36,10 @@ Esto hará todo automáticamente:
 1. ✅ Detecta tu JDK instalado
 2. ✅ Descarga JavaFX si no está presente
 3. ✅ Compila todo el proyecto
-4. ✅ Abre la ventana del compilador
+4. ✅ Crea o actualiza `dist\Timotomata\Timotomata.exe`
+5. ✅ Abre la ventana del compilador
+
+> El `.exe` es autónomo (incluye su propio runtime). Si lo dejas abierto y vuelves a ejecutar el script, ciérralo primero para que pueda actualizarse.
 
 Opción 2 — Desde VS Code
 

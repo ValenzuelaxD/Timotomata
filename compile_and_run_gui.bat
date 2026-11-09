@@ -11,6 +11,7 @@ set "RICH_DIR=%CACHE_DIR%\richtextfx"
 set "RICH_CP=%RICH_DIR%\*"
 set SRC_DIR=%~dp0src
 set "OUT_DIR=%CACHE_DIR%\out"
+set "DIST_DIR=%~dp0dist"
 
 if not exist "%CACHE_DIR%\" mkdir "%CACHE_DIR%"
 
@@ -73,6 +74,7 @@ pause
 exit /b 1
 
 :jdk_found
+for %%f in (%JAVA_CMD%) do set "JAVA_BIN=%%~dpf"
 echo [1/4] JDK detectado: %JAVAC_CMD%
 echo       Java y javac disponibles.
 echo.
@@ -180,12 +182,68 @@ echo [OK] Compilacion exitosa.
 echo.
 
 REM ═══════════════════════════════════════════════════════════════
+REM  3B. CREAR / ACTUALIZAR Timotomata.exe
+REM ═══════════════════════════════════════════════════════════════
+
+echo [3B/4] Generando Timotomata.exe...
+
+set "PKG_DIR=%CACHE_DIR%\package"
+set "PKG_INPUT=%PKG_DIR%\input"
+set "APP_IMAGE=%DIST_DIR%\Timotomata"
+
+if exist "%PKG_DIR%" rmdir /S /Q "%PKG_DIR%"
+mkdir "%PKG_INPUT%"
+
+REM RichTextFX viaja junto al jar principal; el manifiesto lo resuelve
+REM con un Class-Path relativo dentro de la carpeta app del ejecutable.
+copy /Y "%RICH_DIR%\*.jar" "%PKG_INPUT%\" >nul 2>&1
+
+> "%PKG_DIR%\MANIFEST.MF" echo Main-Class: timotomata.ui.MainApp
+>> "%PKG_DIR%\MANIFEST.MF" echo Class-Path: richtextfx.jar reactfx.jar undofx.jar flowless.jar wellbehavedfx.jar
+
+"%JAVA_BIN%jar.exe" --create --file "%PKG_INPUT%\Timotomata.jar" --manifest "%PKG_DIR%\MANIFEST.MF" -C "%OUT_DIR%" . >nul 2>&1
+if errorlevel 1 goto package_error
+
+if exist "%APP_IMAGE%" rmdir /S /Q "%APP_IMAGE%"
+if exist "%APP_IMAGE%" goto package_locked
+
+"%JAVA_BIN%jpackage.exe" --type app-image --name Timotomata --dest "%DIST_DIR%" --input "%PKG_INPUT%" --main-jar Timotomata.jar --main-class timotomata.ui.MainApp --module-path "%JAVA_BIN%..\jmods;%JAVAFX_DIR%\lib" --add-modules java.base,java.desktop,javafx.controls,javafx.graphics --java-options "--add-modules=javafx.controls,javafx.graphics" --app-version 1.0
+if errorlevel 1 goto package_error
+
+REM jpackage enlaza los módulos de JavaFX, pero las DLL nativas viven en
+REM el SDK; se copian al runtime empaquetado para que el .exe sea autónomo.
+copy /Y "%JAVAFX_DIR%\bin\*.dll" "%APP_IMAGE%\runtime\bin\" >nul 2>&1
+
+echo [OK] Timotomata.exe actualizado: "%APP_IMAGE%\Timotomata.exe"
+echo.
+goto run_app
+
+:package_locked
+echo.
+echo [AVISO] No se pudo actualizar Timotomata.exe porque esta en uso.
+echo         Cierra Timotomata.exe y vuelve a ejecutar este script.
+echo.
+goto run_app
+
+:package_error
+echo.
+echo [AVISO] No se pudo generar Timotomata.exe. Se abrira la GUI con Java.
+echo.
+goto run_app
+
+:run_app
+REM ═══════════════════════════════════════════════════════════════
 REM  4. EJECUTAR
 REM ═══════════════════════════════════════════════════════════════
 
 echo [4/4] Iniciando interfaz grafica...
 echo.
-%JAVA_CMD% %MODULES% -cp "%OUT_DIR%;%RICH_CP%" timotomata.ui.MainApp
+
+if exist "%APP_IMAGE%\Timotomata.exe" (
+    "%APP_IMAGE%\Timotomata.exe"
+) else (
+    %JAVA_CMD% %MODULES% -cp "%OUT_DIR%;%RICH_CP%" timotomata.ui.MainApp
+)
 
 if errorlevel 1 (
     echo.

@@ -12,7 +12,9 @@ Aplicación de escritorio JavaFX (no hay build web ni objetivo de navegador):
 Java 23 + JavaFX 23.0.2, editor `CodeArea` de RichTextFX, hoja de estilos CSS
 propia (`src/timotomata/ui/estilos.css`). Se ejecuta en Windows 10/11 con JDK 17+
 (23 recomendado) mediante `compile_and_run_gui.bat`, o desde VS Code
-(`GUI - Timotomata (ventana)`). Existe además una variante de consola
+(`GUI - Timotomata (ventana)`). El script de GUI también crea o actualiza
+`dist\Timotomata\Timotomata.exe` como app-image autónoma con `jpackage`.
+Existe además una variante de consola
 (`compile_and_run_cli.bat` / `timotomata.tools.CompiladorCLI`).
 
 El campo `Platform` exige `web`, `ios`, `android` o `adaptive`. Al ser una app
