@@ -260,6 +260,7 @@ public class Parser {
                 nodo.agregarHijo(t(t3));
                 nodo.agregarHijo(t(t4));
                 programa.estadoInicial = t3.lexema.toLowerCase();
+                programa.lineaEstadoInicial = t1.linea;
                 break;
             }
             case Gramatica.P_SENT_SINO: {
@@ -273,6 +274,7 @@ public class Parser {
                 nodo.agregarHijo(t(t3));
                 nodo.agregarHijo(t(t4));
                 programa.estadoPorDefecto = t3.lexema.toLowerCase();
+                programa.lineaEstadoPorDefecto = t1.linea;
                 break;
             }
             case Gramatica.P_SENT_MUESTREO: {

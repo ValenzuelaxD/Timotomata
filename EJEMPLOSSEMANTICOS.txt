@@ -1,0 +1,547 @@
+EJEMPLOS SEMANTICOS - Timotomata
+================================
+
+Un ejemplo por regla del analizador semantico.
+
+REGENERADO. Cada mensaje de este archivo es la salida real del compilador, no
+texto escrito a mano: los ejemplos se compilan al generar el archivo.
+
+  compilador : timotomata.tools.CompiladorCLI
+  programa   : CompiladorCLI <archivo.tmo>
+
+------------------------------------------------------------------------------
+COMO LEERLO
+------------------------------------------------------------------------------
+
+Cada seccion trae el programa minimo que dispara la regla y la salida que
+produce. Los programas son autonomos: se pueden copiar a un archivo .tmo y
+compilar tal cual.
+
+Hay dos clases de hallazgo, y la diferencia importa:
+
+  ERROR  - algo no tiene sentido. El programa no deberia ejecutarse.
+  AVISO  - algo es raro pero puede ser intencionado. Por eso no bloquea.
+
+El ejemplo de la regla 20 produce dos errores a proposito: son la misma causa
+vista desde dos reglas, y asi se ve como el analizador agrupa lo que sabe.
+
+Las reglas 9 y 12 no existen: la 9 por decision del proyecto, y la 12 porque
+el lenguaje ya no tiene la sentencia FIN. Por eso la numeracion tiene huecos.
+
+
+==============================================================================
+REGLA 1 - Colision sensor/umbral
+==============================================================================
+
+DETECTA
+  Un mismo nombre declara las dos cosas. Son categorias distintas: un sensor es un canal que se mide, un umbral es un limite fijo.
+
+PROGRAMA
+  sensor tension : ELECTRICO;
+  umbral tension : ELECTRICO = 220;   // 'tension' ya era un sensor
+  
+  muestreo = 0.02;
+  si tension > 220 entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 2: 'tension' esta declarado como sensor (linea 1) y como umbral (linea 2): colision de tipos.
+
+==============================================================================
+REGLA 2 - Declaracion duplicada
+==============================================================================
+
+DETECTA
+  Un nombre declarado dos veces. En Timotomata no hay 'redefinir': el estado del sistema es una unica variable, no un conjunto de variables.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  sensor voltaje : ELECTRICO;   // repetido
+  
+  muestreo = 0.02;
+  si voltaje > 220 entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 2: declaracion duplicada: el sensor 'voltaje' ya fue declarado en la linea 1.
+
+==============================================================================
+REGLA 3 - Sensor como umbral
+==============================================================================
+
+DETECTA
+  La parte derecha de una comparacion debe ser un limite fijo, no un canal. Comparar contra un sensor no tiene sentido fisico: el umbral es lo que no se quiere cruzar.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  si 250 > voltaje entonces estado = PICO;   // un sensor a la derecha
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 5: el sensor 'voltaje' no puede usarse como umbral: la expresion derecha de la condicion es un limite fijo y un sensor se lee, no fija limites.
+
+==============================================================================
+REGLA 4 - Umbral como sensor
+==============================================================================
+
+DETECTA
+  No hay transductor detras de un umbral. Es un numero escrito a mano, no una medida: no se puede promediar, no tiene banda ni rango.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  calcular(PROMEDIO(CON=v_max, VENTANA=10), p);   // promedia un umbral
+  si p > v_max entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (2)
+  [SEM] Error semantico en linea 5: el umbral 'v_max' no puede usarse como sensor en CON=...: es un limite fijo y no hay transductor detras.
+  [SEM] Error semantico en linea 5: el sensor 'p' no tiene tipo declarado: no se pueden verificar unidades, rango ni frecuencia sin el.
+
+==============================================================================
+REGLA 5 - Rango invalido
+==============================================================================
+
+DETECTA
+  El umbral minimo de un sensor no puede ser mayor o igual que su maximo. La regla es por sensor: un sensor sano en el mismo archivo no la evita.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  sensor rotor   : ELECTRICO;
+  muestreo = 0.02;
+  
+  umbral voltaje_min : ELECTRICO = 100;
+  umbral voltaje_max : ELECTRICO = 220;   // rango sano
+  
+  umbral rotor_min   : ELECTRICO = 250;   // minimo > maximo
+  umbral rotor_max   : ELECTRICO = 10;
+  
+  si voltaje > voltaje_max entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 2: rango invalido del sensor 'rotor': el minimo (250.0) es mayor o igual que el maximo (10.0).
+
+==============================================================================
+REGLA 6 - Margen insuficiente
+==============================================================================
+
+DETECTA
+  Un rango demasiado estrecho no es util: un umbral de 5 unidades sobre un rango de 5 no deja margen para el ruido de la medida.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  muestreo = 0.02;
+  
+  umbral voltaje_min : ELECTRICO = 220;
+  umbral voltaje_max : ELECTRICO = 225;   // rango de 5, por debajo del margen
+  
+  si voltaje > voltaje_max entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 1: la diferencia entre el maximo (225.0) y el minimo (220.0) del sensor 'voltaje' es 5.0, inferior al margen de seguridad (10.0).
+
+==============================================================================
+REGLA 7 - Estado invertido
+==============================================================================
+
+DETECTA
+  PICO corresponde a superar el maximo; CAIDA, a bajar del minimo. Asignar el estado contrario a la direccion de la comparacion es un error de signo.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  si voltaje < v_max entonces estado = PICO;   // PICO hacia abajo
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 5: estado PICO asignado a una condicion de caida ('<'): PICO corresponde a valores por encima del maximo ('>' o '>=').
+
+==============================================================================
+REGLA 8 - Reglas contradictorias
+==============================================================================
+
+DETECTA
+  Dos reglas se solapan en valores pero asignan estados distintos. Gana la primera que se cumple, asi que la segunda es inalcanzable por construccion.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_min : ELECTRICO = 100;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  si voltaje > v_max entonces estado = PICO;
+  si voltaje > v_min entonces estado = INESTABLE;   // se solapa con la anterior
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 7: regla contradictoria sobre 'voltaje': se solapa con la regla de la linea 6 (ambas se cumplen para el mismo valor) pero asignan estados distintos ('PICO' y 'INESTABLE').
+
+==============================================================================
+REGLA 10 - Parametros fisicamente invalidos
+==============================================================================
+
+DETECTA
+  Los tres parametros numericos tienen una restriccion: frecuencia y ventana deben ser positivas, y la amplitud no puede exceder el rango del transductor que alimenta el generador.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  sensor temp    : TERMICO;
+  muestreo = 0.02;
+  
+  umbral voltaje_min : ELECTRICO = 100;
+  umbral voltaje_max : ELECTRICO = 220;
+  umbral temp_min    : TERMICO   = 0;
+  umbral temp_max    : TERMICO   = 80;
+  
+  calcular(SENO(CON=temp, AMPLITUD=20, FRECUENCIA=0), onda_recta);
+  calcular(PROMEDIO(CON=voltaje, VENTANA=0), prom_rota);
+  calcular(SENO(CON=voltaje, AMPLITUD=500, FRECUENCIA=1), onda_sobredimensionada);
+  
+  si voltaje > voltaje_max entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (3)
+  [SEM] Error semantico en linea 10: frecuencia invalida (0.0): debe ser positiva y no cero.
+  [SEM] Error semantico en linea 11: ventana de promedio invalida (0.0): debe ser positiva.
+  [SEM] Error semantico en linea 12: la amplitud (500.0) excede el rango del sensor 'voltaje' [100.0, 220.0] (rango = 120.0).
+
+==============================================================================
+REGLA 11 - SUMA con magnitudes incompatibles
+==============================================================================
+
+DETECTA
+  Sumar volts y grados no produce volts: produce una suma sin unidad. Es la primera regla que exige que el tipo se declare.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  sensor temp    : TERMICO;
+  muestreo = 0.02;
+  
+  calcular(SUMA(CON=voltaje, CON=temp), total);
+  si total > 220 entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 5: SUMA combina senales de magnitudes incompatibles: 'voltaje' (ELECTRICO) y 'temp' (TERMICO).
+
+==============================================================================
+REGLA 13 - Identificador no declarado
+==============================================================================
+
+DETECTA
+  Se usa un nombre que no existe. El mensaje dice en que construccion aparecio, porque no todas las apariciones son comparaciones.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  si voltaje > v_max entonces estado = PICO;
+  calcular(voltaje * 2, no_declarada);
+  sino = NORMAL;
+
+  (el ejemplo no disparo nada - revisar)
+
+==============================================================================
+REGLA 14 - Tipos incompatibles
+==============================================================================
+
+DETECTA
+  Se opera entre magnitudes distintas. Se comprueba POR CADA LADO de la comparacion, no sobre la condicion entera: una conjuncion de dos preguntas sobre sensores distintos es normal.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  sensor temp    : TERMICO;
+  muestreo = 0.02;
+  
+  si voltaje + temp > 10 entonces estado = PICO;   // volts mas grados
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 5: incompatibilidad de tipos: la operacion combina senales de magnitudes incompatibles: 'voltaje' (ELECTRICO) y 'temp' (TERMICO).
+
+==============================================================================
+REGLA 15 - Firma incorrecta
+==============================================================================
+
+DETECTA
+  La cantidad o el tipo de parametros no coincide con la firma de la operacion. El canal de entrada siempre es CON=, y MAXIMO necesita la ventana para saber sobre que intervalo se toma.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_min : ELECTRICO = 100;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  calcular(MAXIMO(CON=voltaje), pico);   // falta VENTANA
+  si pico > v_max entonces estado = PICO;
+  sino = NORMAL;
+
+  (el ejemplo no disparo nada - revisar)
+
+==============================================================================
+REGLA 16 - Division entre cero constante
+==============================================================================
+
+DETECTA
+  El denominador es un literal cero. No se ejecuta, pero el generador de codigo no puede emitir la instruccion y el programa se caeria en ejecucion.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  muestreo = 0.02;
+  
+  calcular(voltaje / 0, ratio);
+  si ratio > 100 entonces estado = PICO;
+  sino = NORMAL;
+
+  (el ejemplo no disparo nada - revisar)
+
+==============================================================================
+REGLA 17 - Umbral fuera de rango
+==============================================================================
+
+DETECTA
+  El valor no existe en ese transductor. Se valida contra el tipo que el propio umbral declara, no contra el nombre de la variable de al lado.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  muestreo = 0.02;
+  
+  umbral v_max : ELECTRICO = 5000;   // un ELECTRICO llega a 250 V
+  
+  si voltaje > v_max entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 4: el umbral 'v_max' (5000.0) esta fuera del rango representable por un sensor ELECTRICO [0.0, 250.0 V].
+
+==============================================================================
+REGLA 18 - Frecuencia inobservable
+==============================================================================
+
+DETECTA
+  Hay dos limites posibles y manda el menor: la banda del transductor y la mitad de la frecuencia de muestreo del programa (Nyquist). El mensaje dice cual de los dos fallo, porque se arreglan de forma distinta.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  sensor temp    : TERMICO;
+  muestreo = 0.02;                 // 50 Hz de muestreo -> Nyquist en 25 Hz
+  
+  umbral voltaje_min : ELECTRICO = 100;
+  umbral voltaje_max : ELECTRICO = 220;
+  umbral temp_min    : TERMICO   = 0;
+  umbral temp_max    : TERMICO   = 80;
+  
+  // falla por MUESTREO: ELECTRICO aguanta 50 Hz, el programa solo observa 25
+  calcular(SENO(CON=voltaje, AMPLITUD=50, FRECUENCIA=40), alta_por_muestreo);
+  
+  // falla por TRANSDUCTOR: TERMICO solo sigue hasta 0.05 Hz
+  calcular(SENO(CON=temp, AMPLITUD=20, FRECUENCIA=5), rapida_por_sensor);
+  
+  si voltaje > voltaje_max entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (2)
+  [SEM] Error semantico en linea 11: frecuencia (40 Hz) no observable en un sensor ELECTRICO: el programa muestrea cada 0.02 s (50 Hz), asi que por Nyquist no puede observar mas de 25 Hz.
+  [SEM] Error semantico en linea 14: frecuencia (5 Hz) no observable en un sensor TERMICO: el transductor solo sigue hasta 0.05 Hz.
+
+==============================================================================
+REGLA 19 - Ventana insuficiente
+==============================================================================
+
+DETECTA
+  La ventana debe cubrir tiempo suficiente para que el sensor responda. Un sensor termico no 'promedia' 3 muestras tomadas cada 10 segundos.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  calcular(PROMEDIO(CON=voltaje, VENTANA=2), p);   // ELECTRICO pide 5
+  si p > v_max entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 5: ventana (2) inferior al minimo fisico para ELECTRICO (5 muestras): con un transductor de 100 Hz, 2 muestras cubren 0.02 s y el sensor no puede responder tan rapido.
+
+==============================================================================
+REGLA 20 - Tipo ausente
+==============================================================================
+
+DETECTA
+  Un canal usado sin tipo con el que verificar. Aqui la senal no puede heredar ninguno: su unica entrada es un umbral, y un umbral no es un canal fisico.
+
+PROGRAMA
+  umbral v_max      : ELECTRICO = 220;
+  umbral sin_fisica : ELECTRICO = 50;
+  muestreo = 0.02;
+  
+  calcular(MAXIMO(CON=sin_fisica, VENTANA=5), resultado);
+  si resultado > v_max entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (2)
+  [SEM] Error semantico en linea 5: el umbral 'sin_fisica' no puede usarse como sensor en CON=...: es un limite fijo y no hay transductor detras.
+  [SEM] Error semantico en linea 5: el sensor 'resultado' no tiene tipo declarado: no se pueden verificar unidades, rango ni frecuencia sin el.
+
+==============================================================================
+REGLA 21 - Orden de definicion
+==============================================================================
+
+DETECTA
+  Se lee una senal derivada antes de su calcular. Los calculos corren una vez por tick en orden de escritura, asi que leerla antes no da el valor del tick anterior: da nada.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_min : ELECTRICO = 100;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  si filtrada > v_max entonces estado = PICO;   // todavia no existe
+  
+  calcular(PROMEDIO(CON=voltaje, VENTANA=10), filtrada);   // se define aqui
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 6: se usa 'filtrada' antes de calcularlo: la senal se define en la linea 8, y hasta entonces no tiene valor. Los calculos se ejecutan en el orden en que estan escritos.
+
+==============================================================================
+REGLA 22 - Autodependencia
+==============================================================================
+
+DETECTA
+  La senal se calcula a partir de si misma. El resultado se leeria de donde todavia no se ha escrito.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  calcular(voltaje * 2, voltaje);   // lee y escribe lo mismo
+  si voltaje > v_max entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (2)
+  [SEM] Error semantico en linea 5: 'voltaje' esta declarado como sensor (linea 1) y como senal (linea 5): colision de tipos.
+  [SEM] Error semantico en linea 5: autodependencia: 'voltaje' se calcula a partir de si mismo. El resultado se leeria de donde todavia no se ha escrito.
+
+==============================================================================
+REGLA 23 - Umbral de otra magnitud
+==============================================================================
+
+DETECTA
+  Un umbral si lleva tipo declarado, asi que compararlo contra un canal de otra magnitud si tiene sentido. Sin esta regla, los voltios nunca superan los grados y el programa calla.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  sensor temp    : TERMICO;
+  muestreo = 0.02;
+  
+  umbral voltaje_max : ELECTRICO = 220;
+  umbral temp_max    : TERMICO   = 80;
+  
+  si voltaje > voltaje_max entonces estado = PICO;      // bien
+  si temp > temp_max entonces estado = INESTABLE;       // bien
+  
+  si voltaje > temp_max entonces estado = PICO;         // volts contra grados
+  
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 11: incompatibilidad de tipos: se compara 'voltaje' (ELECTRICO) contra el umbral 'temp_max' (TERMICO), que es de otra magnitud. El umbral nunca se cruza con este sensor, asi que la condicion nunca se cumple.
+
+==============================================================================
+REGLA 24 - Regla inalcanzable
+==============================================================================
+
+DETECTA
+  Las reglas anteriores ya cubren todos los valores en los que esta se cumpliria. No es incorrecta: es codigo que nunca se ejecuta, y el optimizador puede descartarlo.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_min : ELECTRICO = 100;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  si voltaje < v_min entonces estado = CAIDA;
+  si voltaje > v_min entonces estado = PICO;
+  si voltaje > v_max entonces estado = INESTABLE;   // ya cubierta por las dos de arriba
+  
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 8: regla contradictoria sobre 'voltaje': se solapa con la regla de la linea 7 (ambas se cumplen para el mismo valor) pero asignan estados distintos ('PICO' y 'INESTABLE').
+
+==============================================================================
+REGLA 25 - Zona sin cubrir
+==============================================================================
+
+DETECTA
+  AVISO, no error. Ninguna regla dispara para ciertos valores, asi que el estado se queda donde lo dejo la ultima regla que se cumplio, o en el valor de 'sino'. La banda entre el minimo y el maximo es donde el sistema funciona normal, y ahi no debe dispararse nada.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  si voltaje > v_max entonces estado = PICO;
+  sino = NORMAL;
+
+  (el ejemplo no disparo nada - revisar)
+
+==============================================================================
+REGLA 26 - Senal muerta
+==============================================================================
+
+DETECTA
+  AVISO, no error. Una senal derivada que nadie lee. Puede existir solo para graficarla, y en ese caso es esperado; si no, el nombre esta mal escrito.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  calcular(PROMEDIO(CON=voltaje, VENTANA=10), nadie_la_mira);
+  
+  si voltaje > v_max entonces estado = PICO;
+  sino = NORMAL;
+
+  (el ejemplo no disparo nada - revisar)
+
+==============================================================================
+REGLA 27 - Expresion con magnitudes incompatibles
+==============================================================================
+
+DETECTA
+  La regla 11 aplicada a las expresiones. Sin ella, la suma sin unidad pasaba en silencio y el destino heredaba el tipo de la primera variable.
+
+PROGRAMA
+  sensor voltaje : ELECTRICO;
+  sensor temp    : TERMICO;
+  umbral v_max : ELECTRICO = 220;
+  muestreo = 0.02;
+  
+  calcular(voltaje + temp, mezcla);   // volts mas grados
+  si mezcla > v_max entonces estado = PICO;
+  sino = NORMAL;
+
+ERROR (1)
+  [SEM] Error semantico en linea 6: la expresion combina senales de magnitudes incompatibles: 'voltaje' (ELECTRICO) y 'temp' (TERMICO).
+
+==============================================================================
+RESUMEN
+==============================================================================
+
+  secciones        : 25
+  errores emitidos : 26
+  avisos emitidos  : 0
+

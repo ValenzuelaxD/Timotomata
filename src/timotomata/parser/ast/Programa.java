@@ -57,8 +57,14 @@ public class Programa {
     /** Valor de `estado` fijado antes de cualquier regla, o {@code null}. */
     public String estadoInicial;
 
+    /** Línea del fuente donde aparece `estado = X;` (0 si no hay). */
+    public int lineaEstadoInicial;
+
     /** Valor de `sino = X;`: salida cuando ninguna regla se cumple. */
     public String estadoPorDefecto;
+
+    /** Línea del fuente donde aparece `sino = X;` (0 si no hay). */
+    public int lineaEstadoPorDefecto;
 
     /**
      * Duración de un tick de muestreo, en segundos (`muestreo = 0.01;`).

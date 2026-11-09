@@ -75,7 +75,8 @@ public final class GeneradorCuadruplos {
         if (programa == null) return tabla;
 
         if (programa.estadoInicial != null) {
-            tabla.emitir("=", estado(programa.estadoInicial), null, ESTADO, 0);
+            tabla.emitir("=", estado(programa.estadoInicial), null, ESTADO,
+                programa.lineaEstadoInicial);
         }
 
         for (Calculo calculo : programa.calculos) {
@@ -89,7 +90,8 @@ public final class GeneradorCuadruplos {
         // El estado por defecto solo se alcanza si ninguna regla disparo:
         // todas las que disparan saltan a FIN, que va justo despues.
         if (programa.estadoPorDefecto != null) {
-            tabla.emitir("=", estado(programa.estadoPorDefecto), null, ESTADO, 0);
+            tabla.emitir("=", estado(programa.estadoPorDefecto), null, ESTADO,
+                programa.lineaEstadoPorDefecto);
         }
 
         if (!programa.reglas.isEmpty()) {

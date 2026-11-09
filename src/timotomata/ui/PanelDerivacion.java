@@ -192,10 +192,19 @@ public class PanelDerivacion {
         Scene scene = new Scene(scroll, 900, 650);
         scene.setFill(COLOR_FONDO);
 
+        var css = getClass().getResource("estilos.css");
+        if (css != null) scene.getStylesheets().add(css.toExternalForm());
+
         Stage stage = new Stage();
-        stage.setTitle("Arbol de Derivacion Sintactica");
+        stage.setTitle("Árbol de derivación sintáctica");
         stage.initModality(Modality.WINDOW_MODAL);
+        Iconos.aplicar(stage);
         stage.setScene(scene);
+        stage.centerOnScreen();
+
+        scene.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) stage.close();
+        });
 
         stage.showingProperty().addListener((obs, antes, ahora) -> {
             if (ahora) {

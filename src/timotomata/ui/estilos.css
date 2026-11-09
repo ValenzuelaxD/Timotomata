@@ -317,68 +317,73 @@
     -fx-background-color: #89b4fa;
 }
 
-/* ─── TitledPane ─── */
-.titled-pane-custom {
-    -fx-background-color: #1e1e2e;
-    -fx-border-color: #313244;
-    -fx-border-width: 1;
-    -fx-border-radius: 6;
-    -fx-background-radius: 6;
-}
-
-.titled-pane-custom > .title {
-    -fx-background-color: #181825;
-    -fx-background-radius: 5 5 0 0;
-    -fx-padding: 3 8;
-}
-
-.titled-pane-custom > .title .text {
-    -fx-fill: #89b4fa;
-    -fx-font-weight: bold;
-    -fx-font-size: 12px;
-}
-
-.titled-pane-custom > .content {
-    -fx-background-color: #1e1e2e;
-    -fx-background-radius: 0 0 5 5;
-    -fx-border-color: transparent;
-    -fx-padding: 2;
-}
-
-/* ─── Pestañas (análisis / cuádruplos) ─── */
+/* ─── Pestañas del panel derecho ─── */
 .tm-tab-pane {
-    -fx-background-color: #11111b;
+    -fx-background-color: #1e1e2e;
+    -fx-tab-min-height: 26;
+    -fx-tab-max-height: 26;
+}
+
+.tm-tab-pane > .tab-header-area {
+    -fx-padding: 0;
 }
 
 .tm-tab-pane > .tab-header-area > .tab-header-background {
     -fx-background-color: #181825;
+    -fx-border-color: transparent transparent #313244 transparent;
+    -fx-border-width: 0 0 1 0;
 }
 
 .tm-tab-pane > .tab-header-area > .headers-region > .tab {
-    -fx-background-color: #1e1e2e;
+    -fx-background-color: #181825;
     -fx-background-insets: 0;
-    -fx-background-radius: 5 5 0 0;
-    -fx-padding: 3 12;
+    -fx-background-radius: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-padding: 4 8;
+}
+
+.tm-tab-pane > .tab-header-area > .headers-region > .tab:hover {
+    -fx-background-color: #1e1e2e;
 }
 
 .tm-tab-pane > .tab-header-area > .headers-region > .tab:selected {
-    -fx-background-color: #313244;
-    -fx-background-insets: 0;
+    -fx-background-color: #1e1e2e;
+    -fx-border-color: transparent transparent #89b4fa transparent;
 }
 
 .tm-tab-pane > .tab-header-area > .headers-region > .tab .tab-label {
-    -fx-text-fill: #cdd6f4;
+    -fx-text-fill: #9399b2;
     -fx-font-family: 'Consolas', monospace;
-    -fx-font-size: 11px;
+    -fx-font-size: 10px;
     -fx-font-weight: bold;
 }
 
 .tm-tab-pane > .tab-header-area > .headers-region > .tab:selected .tab-label {
-    -fx-text-fill: #89b4fa;
+    -fx-text-fill: #cdd6f4;
 }
 
 .tm-tab-pane > .tab-content-area {
-    -fx-background-color: #11111b;
+    -fx-background-color: #1e1e2e;
+}
+
+/* Contenedor común de cada pestaña del panel derecho */
+.tm-panel-tab {
+    -fx-background-color: #1e1e2e;
+    -fx-padding: 8;
+}
+
+.tm-panel-heading {
+    -fx-text-fill: #cdd6f4;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.tm-empty {
+    -fx-text-fill: #a6adc8;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 11.5px;
+    -fx-padding: 6 0;
 }
 
 /* ─── Botones ─── */
@@ -457,3 +462,367 @@
     -fx-background-radius: 4;
     -fx-padding: 4 8;
 }
+
+/* ─── Toolbar ─── */
+.tm-toolbar {
+    -fx-background-color: #181825;
+    -fx-padding: 3 8;
+    -fx-spacing: 3;
+    -fx-border-color: transparent transparent #313244 transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
+.tm-toolbar .separator:vertical .line {
+    -fx-background-color: #313244;
+}
+
+.tm-toolbar .separator {
+    -fx-padding: 0 5;
+}
+
+.tool-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #cdd6f4;
+    -fx-font-size: 11.5px;
+    -fx-padding: 4 10;
+    -fx-background-radius: 5;
+    -fx-cursor: hand;
+}
+
+.tool-button:hover {
+    -fx-background-color: #313244;
+    -fx-opacity: 1;
+}
+
+.tool-button:pressed {
+    -fx-background-color: #45475a;
+    -fx-opacity: 1;
+}
+
+.tool-primary {
+    -fx-background-color: #89b4fa;
+    -fx-text-fill: #11111b;
+    -fx-font-weight: bold;
+}
+
+.tool-primary:hover {
+    -fx-background-color: #a3c4fc;
+    -fx-opacity: 1;
+}
+
+.tool-primary:disabled {
+    -fx-background-color: #313244;
+    -fx-text-fill: #a6adc8;
+    -fx-opacity: 1;
+}
+
+/* ─── Buscador del editor ─── */
+.tm-find-bar {
+    -fx-background-color: #181825;
+    -fx-padding: 4 12;
+    -fx-spacing: 8;
+    -fx-border-color: transparent transparent #313244 transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
+.tm-find-label {
+    -fx-text-fill: #9399b2;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+}
+
+.tm-find-field {
+    -fx-background-color: #313244;
+    -fx-text-fill: #cdd6f4;
+    -fx-prompt-text-fill: #6c7086;
+    -fx-border-color: #45475a;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-padding: 3 6;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 11.5px;
+}
+
+.tm-find-field:focused {
+    -fx-border-color: #89b4fa;
+}
+
+.tm-find-count {
+    -fx-text-fill: #9399b2;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 10.5px;
+    -fx-min-width: 86px;
+    -fx-alignment: CENTER-RIGHT;
+}
+
+/* ─── Panel de problemas ─── */
+.tm-problems {
+    -fx-background-color: #181825;
+    -fx-border-color: #313244 transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+}
+
+.tm-problems-header {
+    -fx-padding: 4 12;
+    -fx-background-color: #181825;
+    -fx-border-color: transparent transparent #313244 transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
+.tm-problems-title {
+    -fx-text-fill: #cdd6f4;
+    -fx-font-size: 10.5px;
+    -fx-font-weight: bold;
+}
+
+.tm-problems-count {
+    -fx-background-color: #313244;
+    -fx-background-radius: 8;
+    -fx-text-fill: #cdd6f4;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 7;
+}
+
+.tm-problems:ok .tm-problems-count {
+    -fx-background-color: rgba(166, 227, 161, 0.16);
+    -fx-text-fill: #a6e3a1;
+}
+
+.tm-problems-hint {
+    -fx-text-fill: #9399b2;
+    -fx-font-size: 10.5px;
+}
+
+.tm-chip {
+    -fx-background-color: transparent;
+    -fx-border-color: #45475a;
+    -fx-border-radius: 9;
+    -fx-background-radius: 9;
+    -fx-text-fill: #9399b2;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 8;
+    -fx-cursor: hand;
+}
+
+.tm-chip:hover {
+    -fx-border-color: #585b70;
+    -fx-opacity: 1;
+}
+
+.tm-chip:selected {
+    -fx-background-color: rgba(137, 180, 250, 0.16);
+    -fx-border-color: #89b4fa;
+    -fx-text-fill: #89b4fa;
+    -fx-opacity: 1;
+}
+
+/* Un filtro sin problemas de su fase no se puede pulsar: se apaga sin
+   desaparecer, para que la cabecera siga mostrando las tres fases. */
+.tm-chip:disabled {
+    -fx-background-color: transparent;
+    -fx-border-color: #313244;
+    -fx-text-fill: #6c7086;
+    -fx-opacity: 1;
+}
+
+/* ─── Lista de problemas ─── */
+.tm-error-list,
+.tm-error-list .virtual-flow,
+.tm-error-list .virtual-flow .clipped-container,
+.tm-error-list .virtual-flow .sheet {
+    -fx-background-color: #181825;
+    -fx-border-color: transparent;
+}
+
+.tm-error-list {
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+
+.tm-error-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 11.5px;
+}
+
+.tm-error-list .list-cell:odd {
+    -fx-background-color: transparent;
+}
+
+.tm-error-list .list-cell:hover {
+    -fx-background-color: #1e1e2e;
+}
+
+.tm-error-list .list-cell:selected {
+    -fx-background-color: #313244;
+}
+
+.tm-error-cell {
+    -fx-padding: 4 12;
+}
+
+.tm-error-badge {
+    -fx-background-radius: 4;
+    -fx-font-family: 'Segoe UI', sans-serif;
+    -fx-font-size: 9px;
+    -fx-font-weight: bold;
+    -fx-padding: 1 6;
+}
+
+.tm-error-badge.fase-lexico {
+    -fx-background-color: rgba(249, 226, 175, 0.14);
+    -fx-text-fill: #f9e2af;
+}
+
+.tm-error-badge.fase-sintactico {
+    -fx-background-color: rgba(243, 139, 168, 0.14);
+    -fx-text-fill: #f38ba8;
+}
+
+.tm-error-badge.fase-semantico {
+    -fx-background-color: rgba(203, 166, 247, 0.14);
+    -fx-text-fill: #cba6f7;
+}
+
+.tm-error-badge.fase-sugerencia {
+    -fx-background-color: rgba(137, 180, 250, 0.14);
+    -fx-text-fill: #89b4fa;
+}
+
+.tm-error-line {
+    -fx-text-fill: #9399b2;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 10.5px;
+    -fx-min-width: 30px;
+}
+
+.tm-error-message {
+    -fx-text-fill: #cdd6f4;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 11.5px;
+}
+
+/* ─── Barra de estado ─── */
+.tm-status-bar {
+    -fx-background-color: #181825;
+    -fx-padding: 3 12;
+    -fx-border-color: #313244 transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-min-height: 24;
+    -fx-pref-height: 24;
+}
+
+.tm-status-item {
+    -fx-text-fill: #a6adc8;
+    -fx-font-size: 11px;
+}
+
+.tm-status-file {
+    -fx-text-fill: #cdd6f4;
+    -fx-font-weight: bold;
+}
+
+.tm-status-mono {
+    -fx-font-family: 'Consolas', monospace;
+}
+
+.tm-status-state {
+    -fx-text-fill: #a6e3a1;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+}
+
+.tm-status-error {
+    -fx-text-fill: #f38ba8;
+}
+
+.tm-status-divider {
+    -fx-background-color: #313244;
+    -fx-min-width: 1;
+    -fx-pref-width: 1;
+    -fx-min-height: 12;
+    -fx-pref-height: 12;
+}
+
+/* ─── Árbol de derivación ─── */
+.tm-derivacion {
+    -fx-background-color: #1e1e2e;
+}
+
+.tm-derivacion-preview {
+    -fx-control-inner-background: #181825;
+    -fx-text-inner-color: #a6e3a1;
+    -fx-font-family: 'Consolas', monospace;
+    -fx-font-size: 11px;
+    -fx-border-color: #313244;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-background-color: #181825;
+}
+
+.tm-derivacion-preview .content {
+    -fx-background-color: #181825;
+}
+
+.tm-derivacion-preview .corner,
+.tm-derivacion-preview .scroll-bar {
+    -fx-background-color: #181825;
+}
+
+/* ─── Diálogos ─── */
+.tm-dialog {
+    -fx-background-color: #1e1e2e;
+    -fx-border-color: #313244;
+    -fx-border-width: 1;
+}
+
+.tm-dialog > .header-panel {
+    -fx-background-color: #181825;
+    -fx-padding: 10 14;
+}
+
+.tm-dialog > .header-panel .label {
+    -fx-text-fill: #89b4fa;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.tm-dialog .content.label {
+    -fx-text-fill: #cdd6f4;
+    -fx-font-size: 12px;
+    -fx-font-family: 'Consolas', monospace;
+}
+
+.tm-dialog > .button-bar > .container {
+    -fx-padding: 8 14 14 14;
+}
+
+.tm-dialog .button {
+    -fx-background-color: #313244;
+    -fx-text-fill: #cdd6f4;
+    -fx-background-radius: 5;
+    -fx-padding: 4 16;
+    -fx-font-size: 12px;
+}
+
+.tm-dialog .button:hover {
+    -fx-background-color: #45475a;
+    -fx-opacity: 1;
+}
+
+.tm-dialog .button:default {
+    -fx-background-color: #89b4fa;
+    -fx-text-fill: #11111b;
+    -fx-font-weight: bold;
+}
+
+/* ─── Divisores más fáciles de agarrar ─── */
+.split-pane > .split-pane-divider:hover {
+    -fx-background-color: #89b4fa;
+}
+

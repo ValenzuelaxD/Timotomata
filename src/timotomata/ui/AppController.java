@@ -5,20 +5,23 @@ import java.util.*;
 import java.util.stream.*;
 
 import javafx.animation.PauseTransition;
+import javafx.application.Platform;
+import javafx.beans.binding.Bindings;
 import javafx.beans.property.*;
 import javafx.collections.*;
 import javafx.css.PseudoClass;
 import javafx.geometry.*;
-import javafx.scene.Scene;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCombination;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
-import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import javafx.util.Duration;
 
 import java.util.function.IntFunction;
@@ -85,31 +88,68 @@ public class AppController {
         public IntegerProperty lineaProperty() { return linea; }
     }
 
+    // ─── Modelo de datos para el panel de problemas ───
+    public static class ErrorItem {
+        public final String fase;
+        public final int linea;
+        public final String mensaje;
+
+        public ErrorItem(String fase, int linea, String mensaje) {
+            this.fase = fase;
+            this.linea = linea;
+            this.mensaje = mensaje;
+        }
+    }
+
     // ─── Componentes de la UI ───
     private BorderPane root;
+    private Stage stage;
     private CodeArea editor;
-    private Label statusLabel;
-    private ListView<String> errorList;
-    private TitledPane erroresPane;
+    private Label lblArchivo;
+    private Label lblPosicion;
+    private Label lblTokens;
+    private Label lblErrores;
+    private Label lblEstado;
+    private SplitPane splitVertical;
+    private ListView<ErrorItem> errorList;
+    private VBox problemasPanel;
+    private Label problemasTitulo;
+    private Label problemasCount;
+    private final ObservableList<ErrorItem> erroresData = FXCollections.observableArrayList();
+    private final List<ErrorItem> erroresTodos = new ArrayList<>();
+    private ToggleButton filtroLex;
+    private ToggleButton filtroSint;
+    private ToggleButton filtroSem;
+    private Boolean ultimoHayProblemas = null;
+    private Label errorEmpty;
+    private MenuItem itemArbol;
+    private Button botonArbol;
     private TableView<TokenInfo> tokenTable;
     private ObservableList<TokenInfo> tokenData = FXCollections.observableArrayList();
-    private TitledPane tokensPane;
     private TreeView<String> astTree;
-    private TitledPane astPane;
+    private StackPane astContenedor;
+    private Label astEmpty;
     private VBox derivacionPanel;
-    private Button btnAbrirArbol;
     private PauseTransition debounce;
+    private PauseTransition avisoAnalizado;
+    private boolean ultimoConErrores = false;
+
+    // ─── Buscador del editor ───
+    private HBox barraBusqueda;
+    private TextField campoBusqueda;
+    private Label lblBusqueda;
 
     // ─── Tabla de símbolos ───
     private TableView<InfoSimbolo> tablaSimbolos;
     private ObservableList<InfoSimbolo> simbolosData = FXCollections.observableArrayList();
-    private TitledPane tablaPane;
 
     // ─── Cuádruplos (código intermedio) ───
     private TableView<Cuadruplo> tablaCuadruplos;
     private ObservableList<Cuadruplo> cuadruplosData = FXCollections.observableArrayList();
-    private TabPane panelPestanas;
-    private Tab pestanaCuadruplos;
+
+    // ─── Estado del documento ───
+    private boolean dirty = false;
+    private boolean cargandoDocumento = false;
 
     // ─── Palabras reservadas para sugerencias ───
     private static final String[] PALABRAS_RESERVADAS = {
@@ -151,16 +191,6 @@ public class AppController {
      *  Todo lo que haya por debajo y esté vacío es relleno. */
     private int lineasReales = 1;
 
-    // ─── Alturas de los paneles ───
-    // La columna derecha reparte su alto entre árbol, tokens, tabla y AST.
-    // El AST tiene Vgrow=ALWAYS, así que se queda con el sobrante; para que
-    // el espacio liberado llegue a tokens y tabla hay que subirles a ellos
-    // también el alto preferred, no basta con encoger el árbol.
-    private static final int ALTO_PANEL_DERIVACION = 130;
-    /** Alto de la vista previa del árbol dentro de su panel: el resto son el
-     *  encabezado con el botón y el padding. */
-    private static final int ALTO_PREVIA_ARBOL = 78;
-
     // ─── Estado interno ───
     private Programa ultimoPrograma;
     private Parser ultimoParser;
@@ -190,34 +220,112 @@ public class AppController {
         root = new BorderPane();
         root.getStyleClass().add("root");
 
-        // ─── Panel central ───
-        SplitPane split = new SplitPane();
-        split.setDividerPositions(0.62);
-        split.getItems().addAll(crearPanelEditor(), crearPanelInfo());
-        SplitPane.setResizableWithParent(split.getItems().get(0), true);
-        root.setCenter(split);
+        // El editor se crea antes que el menú porque el menú Editar enlaza sus
+        // estados de deshacer/rehacer y de selección a este CodeArea.
+        VBox panelEditor = crearPanelEditor();
 
-        // ─── Panel inferior: errores + barra de estado ───
-        VBox bottomArea = new VBox(0);
-        bottomArea.setStyle("-fx-background-color: #11111b;");
-        bottomArea.getChildren().add(crearPanelErrores());
-        bottomArea.getChildren().add(crearStatusBar());
-        root.setBottom(bottomArea);
+        // ─── Cabecera: menú + toolbar ───
+        VBox cabecera = new VBox(0, crearMenuBar(), crearToolBar());
+        root.setTop(cabecera);
 
-        // ─── Atajos de teclado (sin toolbar) ───
-        root.setOnKeyReleased(e -> {
-            if (e.isControlDown() && e.getCode() == KeyCode.N) {
-                nuevoArchivo();
-            } else if (e.isControlDown() && e.getCode() == KeyCode.O) {
-                abrirArchivo();
-            } else if (e.isControlDown() && e.getCode() == KeyCode.S) {
-                guardarArchivo();
-            } else if (e.getCode() == KeyCode.F5) {
-                analizarCodigo();
-            } else if (e.getCode() == KeyCode.F6) {
-                abrirArbolDerivacion();
-            }
-        });
+        // ─── Centro: editor + paneles, con problemas redimensionables ───
+        SplitPane splitPrincipal = new SplitPane();
+        splitPrincipal.getItems().addAll(panelEditor, crearPanelInfo());
+        splitPrincipal.setDividerPositions(0.64);
+        SplitPane.setResizableWithParent(splitPrincipal.getItems().get(0), true);
+        SplitPane.setResizableWithParent(splitPrincipal.getItems().get(1), false);
+
+        splitVertical = new SplitPane();
+        splitVertical.setOrientation(Orientation.VERTICAL);
+        splitVertical.getItems().addAll(splitPrincipal, crearPanelErrores());
+        splitVertical.setDividerPositions(0.80);
+        SplitPane.setResizableWithParent(splitPrincipal, true);
+
+        root.setCenter(splitVertical);
+        root.setBottom(crearStatusBar());
+    }
+
+    // ─── Menú superior ───
+    private MenuBar crearMenuBar() {
+        MenuBar bar = new MenuBar();
+
+        Menu archivo = new Menu("Archivo");
+        MenuItem nuevo = itemMenu("Nuevo", "Shortcut+N", this::nuevoArchivo);
+        MenuItem abrir = itemMenu("Abrir…", "Shortcut+O", this::abrirArchivo);
+        MenuItem guardar = itemMenu("Guardar", "Shortcut+S", this::guardarArchivo);
+        MenuItem guardarComo = itemMenu("Guardar como…", "Shortcut+Shift+S", this::guardarArchivoComo);
+        MenuItem salir = itemMenu("Salir", null, this::salir);
+        archivo.getItems().addAll(nuevo, abrir, guardar, guardarComo,
+            new SeparatorMenuItem(), salir);
+
+        Menu editar = new Menu("Editar");
+        MenuItem deshacer = itemMenu("Deshacer", "Shortcut+Z", () -> editor.undo());
+        deshacer.disableProperty().bind(Bindings.createBooleanBinding(
+            () -> !editor.isUndoAvailable(), editor.getUndoManager().undoAvailableProperty()));
+        MenuItem rehacer = itemMenu("Rehacer", "Shortcut+Y", () -> editor.redo());
+        rehacer.disableProperty().bind(Bindings.createBooleanBinding(
+            () -> !editor.isRedoAvailable(), editor.getUndoManager().redoAvailableProperty()));
+        MenuItem cortar = itemMenu("Cortar", "Shortcut+X", () -> editor.cut());
+        cortar.disableProperty().bind(Bindings.createBooleanBinding(
+            () -> editor.getSelectedText().isEmpty(), editor.selectedTextProperty()));
+        MenuItem copiar = itemMenu("Copiar", "Shortcut+C", () -> editor.copy());
+        copiar.disableProperty().bind(Bindings.createBooleanBinding(
+            () -> editor.getSelectedText().isEmpty(), editor.selectedTextProperty()));
+        MenuItem pegar = itemMenu("Pegar", "Shortcut+V", () -> editor.paste());
+        MenuItem seleccionarTodo = itemMenu("Seleccionar todo", "Shortcut+A", () -> editor.selectAll());
+        MenuItem buscar = itemMenu("Buscar…", "Shortcut+F", this::mostrarBusqueda);
+        editar.getItems().addAll(deshacer, rehacer,
+            new SeparatorMenuItem(), cortar, copiar, pegar,
+            new SeparatorMenuItem(), seleccionarTodo,
+            new SeparatorMenuItem(), buscar);
+
+        Menu ver = new Menu("Ver");
+        MenuItem enfocarEditor = itemMenu("Enfocar editor", "Shortcut+1", () -> editor.requestFocus());
+        MenuItem problemas = itemMenu("Panel de problemas", "Shortcut+E", this::enfocarProblemas);
+        itemArbol = itemMenu("Ver árbol de derivación", "F6", this::abrirArbolDerivacion);
+        ver.getItems().addAll(enfocarEditor, problemas,
+            new SeparatorMenuItem(), itemArbol);
+
+        Menu ayuda = new Menu("Ayuda");
+        MenuItem atajos = itemMenu("Atajos de teclado", "F1", this::mostrarAtajos);
+        MenuItem acerca = itemMenu("Acerca de Timotomata", null, this::mostrarAcercaDe);
+        ayuda.getItems().addAll(atajos, acerca);
+
+        bar.getMenus().addAll(archivo, editar, ver, ayuda);
+        return bar;
+    }
+
+    private MenuItem itemMenu(String texto, String atajo, Runnable accion) {
+        MenuItem item = new MenuItem(texto);
+        if (atajo != null) {
+            item.setAccelerator(KeyCombination.keyCombination(atajo));
+        }
+        item.setOnAction(e -> accion.run());
+        return item;
+    }
+
+    // ─── Toolbar compacta ───
+    private ToolBar crearToolBar() {
+        ToolBar bar = new ToolBar();
+        bar.getStyleClass().add("tm-toolbar");
+
+        Button nuevo = botonBarra("Nuevo", "Ctrl+N", this::nuevoArchivo);
+        Button abrir = botonBarra("Abrir", "Ctrl+O", this::abrirArchivo);
+        Button guardar = botonBarra("Guardar", "Ctrl+S", this::guardarArchivo);
+        botonArbol = botonBarra("Árbol", "F6", this::abrirArbolDerivacion);
+
+        bar.getItems().addAll(nuevo, abrir, guardar,
+            new Separator(Orientation.VERTICAL), botonArbol);
+        return bar;
+    }
+
+    private Button botonBarra(String texto, String atajo, Runnable accion) {
+        Button boton = new Button(texto);
+        boton.getStyleClass().add("tool-button");
+        boton.setTooltip(new Tooltip(texto + "  ·  " + atajo));
+        boton.setOnAction(e -> accion.run());
+        boton.setFocusTraversable(false);
+        return boton;
     }
 
     // ─── Panel del editor (con números de línea a la izquierda) ───
@@ -255,14 +363,194 @@ public class AppController {
         // Solo los cambios de texto programan el análisis; mover el cursor o
         // seleccionar no reconstruye tokens ni estilos.
         editor.textProperty().addListener((obs, oldText, newText) -> {
-            if (debounce != null) debounce.playFromStart();
+            if (barraBusqueda != null && barraBusqueda.isVisible()) {
+                actualizarContadorBusqueda();
+            }
+            if (debounce != null) {
+                marcarAnalizando();
+                debounce.playFromStart();
+            }
         });
         editor.caretPositionProperty().addListener((obs, oldPos, newPos) ->
             actualizarStatusCursor());
 
-        panel.getChildren().add(editor);
+        // El estado sucio se deriva de la posición del UndoManager, no de un
+        // booleano que solo se apaga al guardar: deshacer hasta el punto de
+        // guardado vuelve a dejar el documento limpio.
+        editor.getUndoManager().atMarkedPositionProperty().addListener((obs, antes, ahora) -> {
+            if (cargandoDocumento) return;
+            boolean nuevoDirty = !ahora;
+            if (nuevoDirty != dirty) {
+                dirty = nuevoDirty;
+                actualizarEtiquetaArchivo();
+            }
+        });
+
+        // RichTextFX usa Ctrl+Shift+Z para rehacer; el menú anuncia Ctrl+Y.
+        // Se aceptan las dos combinaciones.
+        editor.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.isShortcutDown() && e.isShiftDown() && e.getCode() == KeyCode.Z) {
+                editor.redo();
+                e.consume();
+            }
+        });
+
+        panel.getChildren().addAll(crearBarraBusqueda(), editor);
         VBox.setVgrow(editor, Priority.ALWAYS);
         return panel;
+    }
+
+    /**
+     * Barra de búsqueda del editor. Vive sobre el código y solo ocupa espacio
+     * cuando está visible; Ctrl+F la muestra, Esc la cierra.
+     */
+    private HBox crearBarraBusqueda() {
+        barraBusqueda = new HBox(8);
+        barraBusqueda.getStyleClass().add("tm-find-bar");
+        barraBusqueda.setAlignment(Pos.CENTER_LEFT);
+        barraBusqueda.setVisible(false);
+        barraBusqueda.setManaged(false);
+
+        Label etiqueta = new Label("BUSCAR");
+        etiqueta.getStyleClass().add("tm-find-label");
+
+        campoBusqueda = new TextField();
+        campoBusqueda.getStyleClass().add("tm-find-field");
+        campoBusqueda.setPromptText("Texto en el código");
+        campoBusqueda.setPrefWidth(320);
+        campoBusqueda.setMaxWidth(320);
+        campoBusqueda.textProperty().addListener((obs, antes, ahora) ->
+            actualizarContadorBusqueda());
+        campoBusqueda.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == KeyCode.ESCAPE) {
+                ocultarBusqueda();
+                e.consume();
+            } else if (e.getCode() == KeyCode.ENTER) {
+                buscarSiguiente(!e.isShiftDown());
+                e.consume();
+            }
+        });
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        lblBusqueda = new Label();
+        lblBusqueda.getStyleClass().add("tm-find-count");
+
+        Button anterior = botonBarra("Anterior", "Shift+Enter", () -> buscarSiguiente(false));
+        Button siguiente = botonBarra("Siguiente", "Enter", () -> buscarSiguiente(true));
+        Button cerrar = botonBarra("Cerrar", "Esc", this::ocultarBusqueda);
+
+        barraBusqueda.getChildren().addAll(etiqueta, campoBusqueda, spacer,
+            lblBusqueda, anterior, siguiente, cerrar);
+        return barraBusqueda;
+    }
+
+    private void mostrarBusqueda() {
+        if (barraBusqueda == null) return;
+        String seleccion = editor.getSelectedText();
+        if (seleccion != null && !seleccion.isEmpty() && !seleccion.contains("\n")) {
+            campoBusqueda.setText(seleccion);
+        }
+        barraBusqueda.setVisible(true);
+        barraBusqueda.setManaged(true);
+        campoBusqueda.requestFocus();
+        campoBusqueda.selectAll();
+        if (campoBusqueda.getText().isEmpty()) {
+            lblBusqueda.setText("");
+        } else {
+            actualizarContadorBusqueda();
+        }
+    }
+
+    private void ocultarBusqueda() {
+        if (barraBusqueda == null) return;
+        barraBusqueda.setVisible(false);
+        barraBusqueda.setManaged(false);
+        editor.requestFocus();
+    }
+
+    /** Recalcula el contador y resalta la primera coincidencia desde el cursor. */
+    private void actualizarContadorBusqueda() {
+        if (editor == null || campoBusqueda == null || lblBusqueda == null) return;
+        String consulta = campoBusqueda.getText();
+        if (consulta == null || consulta.isEmpty()) {
+            lblBusqueda.setText("");
+            return;
+        }
+        String texto = editor.getText();
+        int total = contarCoincidencias(texto, consulta);
+        if (total == 0) {
+            lblBusqueda.setText("Sin coincidencias");
+            return;
+        }
+        int desde = Math.max(0, editor.getSelection().getStart());
+        int pos = indiceDe(texto, consulta, desde, true);
+        if (pos < 0) pos = indiceDe(texto, consulta, 0, true);
+        editor.selectRange(pos, pos + consulta.length());
+        editor.requestFollowCaret();
+        lblBusqueda.setText((indiceCoincidencia(texto, consulta, pos) + 1)
+            + " de " + total);
+    }
+
+    private void buscarSiguiente(boolean adelante) {
+        if (editor == null || campoBusqueda == null) return;
+        String consulta = campoBusqueda.getText();
+        if (consulta == null || consulta.isEmpty()) return;
+
+        String texto = editor.getText();
+        int total = contarCoincidencias(texto, consulta);
+        if (total == 0) {
+            lblBusqueda.setText("Sin coincidencias");
+            return;
+        }
+
+        int pos;
+        if (adelante) {
+            int desde = editor.getSelection().getEnd();
+            pos = indiceDe(texto, consulta, desde, true);
+            if (pos < 0) pos = indiceDe(texto, consulta, 0, true);
+        } else {
+            int hasta = editor.getSelection().getStart();
+            pos = indiceDe(texto, consulta, hasta, false);
+            if (pos < 0) pos = indiceDe(texto, consulta, texto.length(), false);
+        }
+        editor.selectRange(pos, pos + consulta.length());
+        editor.requestFollowCaret();
+        lblBusqueda.setText((indiceCoincidencia(texto, consulta, pos) + 1)
+            + " de " + total);
+    }
+
+    private static int indiceDe(String texto, String consulta, int desde, boolean adelante) {
+        String t = texto.toLowerCase();
+        String q = consulta.toLowerCase();
+        if (adelante) return t.indexOf(q, Math.max(0, desde));
+        return t.lastIndexOf(q, Math.max(0, desde - 1));
+    }
+
+    private static int contarCoincidencias(String texto, String consulta) {
+        if (texto == null || consulta == null || consulta.isEmpty()) return 0;
+        String t = texto.toLowerCase();
+        String q = consulta.toLowerCase();
+        int total = 0;
+        int i = t.indexOf(q);
+        while (i >= 0) {
+            total++;
+            i = t.indexOf(q, i + q.length());
+        }
+        return total;
+    }
+
+    private static int indiceCoincidencia(String texto, String consulta, int posicion) {
+        String t = texto.toLowerCase();
+        String q = consulta.toLowerCase();
+        int indice = 0;
+        int i = t.indexOf(q);
+        while (i >= 0 && i < posicion) {
+            indice++;
+            i = t.indexOf(q, i + q.length());
+        }
+        return indice;
     }
 
     /** Reutiliza LineNumberFactory y sincroniza el color con el párrafo activo.
@@ -368,16 +656,9 @@ public class AppController {
 
     // ─── Panel derecho con pestañas ───
     private TabPane crearPanelInfo() {
-        VBox panel = new VBox(6);
-        panel.setStyle("-fx-background-color: #11111b; -fx-padding: 6;");
-
-        // El árbol de derivación va arriba: antes ocupaba la franja inferior
-        // completa y ahora comparte columna con los paneles de la derecha.
-        crearPanelDerivacion();
-
-        // Panel de Tokens — 3 columnas: Tipo, Lexema, Linea
+        // Panel de Tokens — 3 columnas: Tipo, Lexema, Línea
         tokenTable = new TableView<>(tokenData);
-        tokenTable.setPrefHeight(215);
+        tokenTable.setPlaceholder(placeholder("Sin tokens"));
         tokenTable.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-table-cell-border-color: #313244;"
             + " -fx-text-fill: #cdd6f4;"
@@ -413,7 +694,7 @@ public class AppController {
             }
         });
 
-        TableColumn<TokenInfo, Number> colLinea = new TableColumn<>("Linea");
+        TableColumn<TokenInfo, Number> colLinea = new TableColumn<>("Línea");
         colLinea.setCellValueFactory(new PropertyValueFactory<>("linea"));
         colLinea.setPrefWidth(55);
         colLinea.setStyle("-fx-alignment: CENTER-RIGHT;");
@@ -421,13 +702,9 @@ public class AppController {
         tokenTable.getColumns().addAll(colTipo, colLexema, colLinea);
         tokenTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
 
-        tokensPane = new TitledPane("TOKENS", tokenTable);
-        tokensPane.getStyleClass().add("titled-pane-custom");
-        tokensPane.setCollapsible(false);
-
-        // ─── Panel de la Tabla de Símbolos (5 columnas) ───
+        // ─── Tabla de Símbolos (6 columnas) ───
         tablaSimbolos = new TableView<>(simbolosData);
-        tablaSimbolos.setPrefHeight(190);
+        tablaSimbolos.setPlaceholder(placeholder("Sin símbolos"));
         tablaSimbolos.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-table-cell-border-color: #313244;"
             + " -fx-text-fill: #cdd6f4;"
@@ -436,56 +713,55 @@ public class AppController {
 
         TableColumn<InfoSimbolo, String> colSimbNombre = new TableColumn<>("Nombre");
         colSimbNombre.setCellValueFactory(new PropertyValueFactory<>("nombre"));
-        colSimbNombre.setPrefWidth(110);
+        colSimbNombre.setPrefWidth(96);
 
         TableColumn<InfoSimbolo, String> colSimbClase = new TableColumn<>("Clase");
         colSimbClase.setCellValueFactory(new PropertyValueFactory<>("clase"));
-        colSimbClase.setPrefWidth(70);
+        colSimbClase.setPrefWidth(60);
 
         TableColumn<InfoSimbolo, String> colSimbTipo = new TableColumn<>("Tipo");
         colSimbTipo.setCellValueFactory(new PropertyValueFactory<>("tipo"));
-        colSimbTipo.setPrefWidth(95);
+        colSimbTipo.setPrefWidth(80);
 
         TableColumn<InfoSimbolo, String> colSimbUnidad = new TableColumn<>("Unidad");
         colSimbUnidad.setCellValueFactory(new PropertyValueFactory<>("unidad"));
-        colSimbUnidad.setPrefWidth(55);
+        colSimbUnidad.setPrefWidth(54);
 
-        TableColumn<InfoSimbolo, Number> colSimbLinea = new TableColumn<>("Linea");
+        TableColumn<InfoSimbolo, Number> colSimbLinea = new TableColumn<>("Línea");
         colSimbLinea.setCellValueFactory(new PropertyValueFactory<>("linea"));
-        colSimbLinea.setPrefWidth(45);
+        colSimbLinea.setPrefWidth(48);
+        colSimbLinea.setMinWidth(48);
         colSimbLinea.setStyle("-fx-alignment: CENTER-RIGHT;");
 
         TableColumn<InfoSimbolo, String> colSimbValor = new TableColumn<>("Valor");
         colSimbValor.setCellValueFactory(new PropertyValueFactory<>("valor"));
-        colSimbValor.setPrefWidth(70);
+        colSimbValor.setPrefWidth(52);
 
         tablaSimbolos.getColumns().addAll(colSimbNombre, colSimbClase,
             colSimbTipo, colSimbUnidad, colSimbValor, colSimbLinea);
         tablaSimbolos.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
 
-        tablaPane = new TitledPane("TABLA SIMBOLOS", tablaSimbolos);
-        tablaPane.getStyleClass().add("titled-pane-custom");
-        tablaPane.setCollapsible(false);
-
-        // Panel del AST
+        // ─── AST ───
         astTree = new TreeView<>();
-        astTree.setPrefHeight(180);
         astTree.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-text-fill: #cdd6f4;"
             + " -fx-font-family: 'Consolas', monospace;"
             + " -fx-font-size: 11px;"
             + " -fx-accent: #45475a;");
         astTree.setShowRoot(false);
-        astPane = new TitledPane("AST (Arbol Sintactico)", astTree);
-        astPane.getStyleClass().add("titled-pane-custom");
-        astPane.setCollapsible(false);
 
-        panel.getChildren().addAll(derivacionPanel, tokensPane, tablaPane, astPane);
-        VBox.setVgrow(astPane, Priority.ALWAYS);
+        astEmpty = new Label("El AST aparece cuando el código compila");
+        astEmpty.getStyleClass().add("tm-empty");
+        astEmpty.setMouseTransparent(true);
+        astContenedor = new StackPane(astTree, astEmpty);
+        StackPane.setAlignment(astEmpty, Pos.CENTER);
 
-        // ─── Pestaña de cuádruplos (código intermedio) ───
+        // ─── Árbol de derivación ───
+        crearPanelDerivacion();
+
+        // ─── Cuádruplos (código intermedio) ───
         tablaCuadruplos = new TableView<>(cuadruplosData);
-        tablaCuadruplos.setPlaceholder(new Label("Sin cuadruplos: corrige los errores del programa"));
+        tablaCuadruplos.setPlaceholder(placeholder("Los cuádruplos se generan cuando el código compila"));
         tablaCuadruplos.setStyle("-fx-control-inner-background: #1e1e2e;"
             + " -fx-table-cell-border-color: #313244;"
             + " -fx-text-fill: #cdd6f4;"
@@ -518,103 +794,200 @@ public class AppController {
             cd -> new ReadOnlyStringWrapper(cd.getValue().getResultado()));
         colCuadResultado.setPrefWidth(90);
 
-        TableColumn<Cuadruplo, Number> colCuadLinea = new TableColumn<>("Linea");
+        TableColumn<Cuadruplo, Number> colCuadLinea = new TableColumn<>("Línea");
         colCuadLinea.setCellValueFactory(
             cd -> new ReadOnlyIntegerWrapper(cd.getValue().linea));
         colCuadLinea.setPrefWidth(55);
         colCuadLinea.setStyle("-fx-alignment: CENTER-RIGHT;");
+        // Las instrucciones sintetizadas (etiquetas, fin de programa) no
+        // pertenecen a ninguna línea del fuente: se muestran como «—» en vez
+        // de un 0 que parece un número de línea real.
+        colCuadLinea.setCellFactory(col -> new TableCell<Cuadruplo, Number>() {
+            @Override
+            protected void updateItem(Number item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    return;
+                }
+                int linea = item.intValue();
+                setText(linea > 0 ? String.valueOf(linea) : "—");
+                setTextFill(Color.web(linea > 0 ? "#cdd6f4" : "#6c7086"));
+            }
+        });
 
         tablaCuadruplos.getColumns().addAll(colCuadIndice, colCuadOp, colCuadArg1,
             colCuadArg2, colCuadResultado, colCuadLinea);
         tablaCuadruplos.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
 
-        VBox contenedorCuadruplos = new VBox(tablaCuadruplos);
-        contenedorCuadruplos.setStyle("-fx-background-color: #11111b; -fx-padding: 6;");
-        VBox.setVgrow(tablaCuadruplos, Priority.ALWAYS);
-
-        pestanaCuadruplos = new Tab("CUADRUPLOS", contenedorCuadruplos);
-        pestanaCuadruplos.setClosable(false);
-
-        Tab pestanaAnalisis = new Tab("ANALISIS", panel);
-        pestanaAnalisis.setClosable(false);
-
-        panelPestanas = new TabPane(pestanaAnalisis, pestanaCuadruplos);
-        panelPestanas.getStyleClass().add("tm-tab-pane");
-        panelPestanas.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
-        return panelPestanas;
+        // ─── Una sola columna de pestañas planas para todo el panel derecho ───
+        TabPane pestanas = new TabPane(
+            new Tab("TOKENS", envolver(tokenTable)),
+            new Tab("SÍMBOLOS", envolver(tablaSimbolos)),
+            new Tab("AST", envolver(astContenedor)),
+            new Tab("DERIVACIÓN", envolver(derivacionPanel)),
+            new Tab("CUÁDRUPLOS", envolver(tablaCuadruplos))
+        );
+        pestanas.getStyleClass().add("tm-tab-pane");
+        pestanas.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        return pestanas;
     }
 
-    // ─── Panel de errores (franja inferior, a todo el ancho) ───
-    private TitledPane crearPanelErrores() {
-        errorList = new ListView<>();
-        errorList.setPrefHeight(140);
-        errorList.setStyle("-fx-control-inner-background: #1e1e2e;"
-            + " -fx-text-fill: #cdd6f4;"
-            + " -fx-font-family: 'Consolas', monospace;"
-            + " -fx-font-size: 11px;");
-        erroresPane = new TitledPane("ERRORES", errorList);
-        erroresPane.getStyleClass().add("titled-pane-custom");
-        erroresPane.setCollapsible(false);
-        return erroresPane;
+    /** Envuelve el contenido de una pestaña con el relleno común del panel. */
+    private VBox envolver(Region contenido) {
+        VBox caja = new VBox(contenido);
+        caja.getStyleClass().add("tm-panel-tab");
+        VBox.setVgrow(contenido, Priority.ALWAYS);
+        return caja;
     }
 
-    // ─── Panel del árbol de derivación (columna derecha) ───
+    // ─── Panel de problemas (franja inferior redimensionable) ───
+    private VBox crearPanelErrores() {
+        problemasPanel = new VBox(0);
+        problemasPanel.getStyleClass().add("tm-problems");
+
+        problemasTitulo = new Label("PROBLEMAS");
+        problemasTitulo.getStyleClass().add("tm-problems-title");
+
+        problemasCount = new Label("0");
+        problemasCount.getStyleClass().add("tm-problems-count");
+
+        filtroLex = chip("LÉXICO");
+        filtroSint = chip("SINTÁCTICO");
+        filtroSem = chip("SEMÁNTICO");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        Label ayuda = new Label("Doble clic en un problema para ir a la línea");
+        ayuda.getStyleClass().add("tm-problems-hint");
+
+        HBox cabecera = new HBox(8, problemasTitulo, problemasCount,
+            filtroLex, filtroSint, filtroSem, spacer, ayuda);
+        cabecera.setAlignment(Pos.CENTER_LEFT);
+        cabecera.getStyleClass().add("tm-problems-header");
+
+        errorList = new ListView<>(erroresData);
+        errorList.getStyleClass().add("tm-error-list");
+        errorEmpty = placeholder("Sin problemas");
+        errorList.setPlaceholder(errorEmpty);
+        errorList.setCellFactory(lv -> celdaError());
+        errorList.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) irAlSeleccionado();
+        });
+        errorList.setOnKeyPressed(e -> {
+            if (e.getCode() == KeyCode.ENTER) irAlSeleccionado();
+        });
+        VBox.setVgrow(errorList, Priority.ALWAYS);
+
+        problemasPanel.getChildren().addAll(cabecera, errorList);
+        return problemasPanel;
+    }
+
+    private ToggleButton chip(String texto) {
+        ToggleButton chip = new ToggleButton(texto);
+        chip.getStyleClass().add("tm-chip");
+        chip.setSelected(true);
+        chip.setFocusTraversable(false);
+        chip.selectedProperty().addListener((obs, antes, ahora) -> aplicarFiltroErrores());
+        return chip;
+    }
+
+    private ListCell<ErrorItem> celdaError() {
+        return new ListCell<>() {
+            private final Label insignia = new Label();
+            private final Label linea = new Label();
+            private final Label mensaje = new Label();
+            private final HBox caja = new HBox(10, insignia, linea, mensaje);
+
+            {
+                insignia.getStyleClass().add("tm-error-badge");
+                insignia.setMinWidth(Region.USE_PREF_SIZE);
+                insignia.setMaxWidth(Region.USE_PREF_SIZE);
+                linea.getStyleClass().add("tm-error-line");
+                linea.setMinWidth(Region.USE_PREF_SIZE);
+                mensaje.getStyleClass().add("tm-error-message");
+                mensaje.setWrapText(true);
+                mensaje.setMinWidth(0);
+                mensaje.setMaxWidth(Double.MAX_VALUE);
+                caja.setAlignment(Pos.CENTER_LEFT);
+                HBox.setHgrow(mensaje, Priority.ALWAYS);
+                // Ancho 0: la celda se estira al ancho del ListView y el
+                // mensaje envuelve en vez de provocar scroll horizontal.
+                setPrefWidth(0);
+                getStyleClass().add("tm-error-cell");
+            }
+
+            @Override
+            protected void updateItem(ErrorItem item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                insignia.setText(item.fase);
+                insignia.getStyleClass().removeAll("fase-lexico", "fase-sintactico",
+                    "fase-semantico", "fase-sugerencia");
+                insignia.getStyleClass().add(claseFase(item.fase));
+                linea.setText(item.linea > 0 ? "L" + item.linea : "");
+                mensaje.setText(item.mensaje);
+                setGraphic(caja);
+            }
+        };
+    }
+
+    private static String claseFase(String fase) {
+        return switch (fase) {
+            case "LÉXICO" -> "fase-lexico";
+            case "SINTÁCTICO" -> "fase-sintactico";
+            case "SEMÁNTICO" -> "fase-semantico";
+            default -> "fase-sugerencia";
+        };
+    }
+
+    // ─── Panel del árbol de derivación (pestaña derecha) ───
     private VBox crearPanelDerivacion() {
-        derivacionPanel = new VBox(6);
-        // Alto del árbol de derivación. Es la vista previa en texto; la vista
-        // completa se abre con el botón. Es el panel más bajo de la columna a
-        // propósito: el espacio va a TOKENS y TABLA SIMBOLOS, que muestran
-        // muchas más filas. Alto fijo para que la columna no salte entre
-        // "árbol mostrado" y "hay errores: corrige primero el código".
-        derivacionPanel.setStyle("-fx-background-color: #1e1e2e;"
-            + " -fx-border-color: #313244;"
-            + " -fx-border-width: 1;"
-            + " -fx-border-radius: 6;"
-            + " -fx-padding: 8 10;");
-        derivacionPanel.setPrefHeight(ALTO_PANEL_DERIVACION);
-        derivacionPanel.setMinHeight(ALTO_PANEL_DERIVACION);
-
-        HBox header = new HBox(10);
-        header.setAlignment(Pos.CENTER_LEFT);
-
-        Label lblTitulo = new Label("ARBOL DE DERIVACION");
-        lblTitulo.setStyle("-fx-text-fill: #89b4fa; -fx-font-weight: bold; -fx-font-size: 12;");
-
-        btnAbrirArbol = new Button("Ver arbol de derivacion");
-        btnAbrirArbol.setStyle("-fx-background-color: #89b4fa; -fx-text-fill: #11111b;"
-            + " -fx-font-weight: bold; -fx-font-size: 12px;"
-            + " -fx-background-radius: 6; -fx-padding: 4 14;"
-            + " -fx-cursor: hand;");
-        btnAbrirArbol.setOnAction(e -> abrirArbolDerivacion());
-        btnAbrirArbol.setDisable(true);
-
-        header.getChildren().addAll(lblTitulo, btnAbrirArbol);
-
-        derivacionPanel.getChildren().add(header);
+        derivacionPanel = new VBox(10);
+        derivacionPanel.getStyleClass().add("tm-derivacion");
+        derivacionPanel.setPadding(new Insets(12));
         return derivacionPanel;
     }
 
     // ─── Barra de estado inferior ───
     private HBox crearStatusBar() {
-        HBox statusBar = new HBox(8);
-        statusBar.setStyle("-fx-background-color: #181825;"
-            + " -fx-padding: 4 12;"
-            + " -fx-border-color: #313244 transparent transparent transparent;"
-            + " -fx-border-width: 1;");
+        HBox statusBar = new HBox(10);
+        statusBar.getStyleClass().add("tm-status-bar");
+        statusBar.setAlignment(Pos.CENTER_LEFT);
 
-        Label lblArchivo = new Label("Sin archivo");
-        lblArchivo.setStyle("-fx-text-fill: #a6adc8; -fx-font-size: 11px;"
-            + " -fx-font-family: 'Segoe UI', sans-serif;");
+        lblArchivo = new Label("Sin archivo");
+        lblArchivo.getStyleClass().addAll("tm-status-item", "tm-status-file");
+
+        lblPosicion = new Label("Ln 1, Col 1");
+        lblPosicion.getStyleClass().addAll("tm-status-item", "tm-status-mono");
+
+        lblTokens = new Label("0 tokens");
+        lblTokens.getStyleClass().addAll("tm-status-item", "tm-status-mono");
+
+        lblErrores = new Label("Sin analizar");
+        lblErrores.getStyleClass().addAll("tm-status-item", "tm-status-mono");
+
+        lblEstado = new Label("LISTO");
+        lblEstado.getStyleClass().addAll("tm-status-item", "tm-status-state");
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        statusLabel = new Label("  Ln 1, Col 1  |  SIN ANALIZAR");
-        statusLabel.setStyle("-fx-text-fill: #a6adc8;"
-            + " -fx-font-family: 'Consolas', monospace; -fx-font-size: 11;");
-
-        statusBar.getChildren().addAll(lblArchivo, spacer, statusLabel);
+        statusBar.getChildren().addAll(lblArchivo, divisorStatus(), spacer,
+            lblPosicion, divisorStatus(), lblTokens, divisorStatus(),
+            lblErrores, divisorStatus(), lblEstado);
         return statusBar;
+    }
+
+    private Region divisorStatus() {
+        Region divisor = new Region();
+        divisor.getStyleClass().add("tm-status-divider");
+        return divisor;
     }
 
     // =============================================================
@@ -625,10 +998,36 @@ public class AppController {
         debounce.setOnFinished(e -> analizarCodigo());
     }
 
+    /**
+     * Anuncia que hay un análisis en cola. El debounce tarda 300 ms; sin este
+     * aviso la barra de estado sigue mostrando el veredicto del análisis
+     * anterior y el usuario no sabe si el cambio ya se evaluó.
+     */
+    private void marcarAnalizando() {
+        if (lblEstado == null) return;
+        lblEstado.setText("ANALIZANDO…");
+        marcarEstado(lblEstado, false);
+        if (avisoAnalizado != null) avisoAnalizado.stop();
+    }
+
+    /** Deja «ANALIZADO» un momento y luego vuelve al veredicto estable. */
+    private void programarFinAvisoAnalisis() {
+        if (avisoAnalizado == null) {
+            avisoAnalizado = new PauseTransition(Duration.seconds(1.6));
+            avisoAnalizado.setOnFinished(e -> {
+                if (lblEstado == null) return;
+                lblEstado.setText(ultimoConErrores ? "CON ERRORES" : "OK");
+                marcarEstado(lblEstado, ultimoConErrores);
+            });
+        }
+        avisoAnalizado.playFromStart();
+    }
+
     // =============================================================
     //  ANÁLISIS EN TIEMPO REAL
     // =============================================================
     public void analizarCodigo() {
+        marcarAnalizando();
         String codigo = editor.getText();
 
         // ─── Fase 1: Análisis Léxico ───
@@ -729,7 +1128,11 @@ public class AppController {
         actualizarCuadruplos(codigoValido ? programa : null);
         actualizarDerivacion(codigoValido ? programa : null,
             codigoValido ? parser : null);
-        actualizarStatus(tokens.size(), erroresLex.size(), erroresSintParaUI.size(),
+        int tokensReales = 0;
+        for (Token t : tokens) {
+            if (t.tipo != TipoToken.EOF) tokensReales++;
+        }
+        actualizarStatus(tokensReales, erroresLex.size(), erroresSintParaUI.size(),
             erroresSemanticos.size() + sugerenciasReservadas.size());
     }
 
@@ -740,42 +1143,146 @@ public class AppController {
     // ─── Errores ───
     private void actualizarErrores(List<String> erroresLex, List<String> erroresSint,
                                     List<String> erroresSemanticos, List<String> sugerencias) {
-        ObservableList<String> items = errorList.getItems();
-        items.clear();
+        erroresTodos.clear();
+        agregarErrores(erroresLex, "LÉXICO");
+        agregarErrores(sugerencias, "SUGERENCIA");
+        agregarErrores(erroresSint, "SINTÁCTICO");
+        agregarErrores(erroresSemanticos, "SEMÁNTICO");
 
-        int totalErrores = 0;
+        // Un filtro sin problemas de su fase no es una acción: se apaga para
+        // que la cabecera diga la verdad sobre lo que se puede filtrar.
+        int nLex = 0, nSint = 0, nSem = 0;
+        for (ErrorItem item : erroresTodos) {
+            switch (item.fase) {
+                case "LÉXICO", "SUGERENCIA" -> nLex++;
+                case "SINTÁCTICO" -> nSint++;
+                case "SEMÁNTICO" -> nSem++;
+                default -> { }
+            }
+        }
+        filtroLex.setDisable(nLex == 0);
+        filtroSint.setDisable(nSint == 0);
+        filtroSem.setDisable(nSem == 0);
 
-        for (String err : erroresLex) {
-            items.add("[ERROR LEXICO] " + err);
-            totalErrores++;
+        aplicarFiltroErrores();
+    }
+
+    private void agregarErrores(List<String> mensajes, String fase) {
+        if (mensajes == null) return;
+        for (String mensaje : mensajes) {
+            erroresTodos.add(new ErrorItem(fase, lineaDe(mensaje), limpiarMensaje(mensaje)));
+        }
+    }
+
+    /** Extrae el número de línea de mensajes del tipo "… en linea 12: …". */
+    private static int lineaDe(String mensaje) {
+        if (mensaje == null) return 0;
+        String lower = mensaje.toLowerCase();
+        int idx = lower.indexOf("en linea ");
+        if (idx < 0) return 0;
+        int ini = idx + "en linea ".length();
+        int fin = ini;
+        while (fin < mensaje.length() && Character.isDigit(mensaje.charAt(fin))) fin++;
+        if (fin == ini) return 0;
+        try {
+            return Integer.parseInt(mensaje.substring(ini, fin));
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    /** Quita el prefijo "Error léxico en linea N:" que ya muestran la insignia y la línea. */
+    private static String limpiarMensaje(String mensaje) {
+        if (mensaje == null) return "";
+        int idx = mensaje.indexOf(": ");
+        if (idx > 0 && idx < 80) {
+            String prefijo = mensaje.substring(0, idx).toLowerCase();
+            if (prefijo.contains("error") || prefijo.contains("sugerencia")) {
+                return mensaje.substring(idx + 2).trim();
+            }
+        }
+        return mensaje;
+    }
+
+    private boolean pasaFiltro(ErrorItem item) {
+        return switch (item.fase) {
+            case "LÉXICO", "SUGERENCIA" -> filtroLex.isSelected();
+            case "SINTÁCTICO" -> filtroSint.isSelected();
+            case "SEMÁNTICO" -> filtroSem.isSelected();
+            default -> true;
+        };
+    }
+
+    private void aplicarFiltroErrores() {
+        if (errorList == null || filtroLex == null) return;
+
+        List<ErrorItem> visibles = new ArrayList<>();
+        for (ErrorItem item : erroresTodos) {
+            if (pasaFiltro(item)) visibles.add(item);
+        }
+        erroresData.setAll(visibles);
+
+        int total = erroresTodos.size();
+        int mostrados = visibles.size();
+        problemasCount.setText(mostrados == total
+            ? String.valueOf(total) : mostrados + " de " + total);
+        if (errorEmpty != null) {
+            errorEmpty.setText(total == 0
+                ? "Sin problemas"
+                : "Ningún problema coincide con los filtros");
         }
 
-        for (String err : sugerencias) {
-            items.add("[SUGERENCIA] " + err);
-            totalErrores++;
-        }
+        problemasPanel.pseudoClassStateChanged(PseudoClass.getPseudoClass("ok"), total == 0);
+        ajustarPanelProblemas(total > 0);
+    }
 
-        for (String err : erroresSint) {
-            items.add("[ERROR SINTACTICO] " + err);
-            totalErrores++;
-        }
+    /**
+     * Abre o colapsa la franja de problemas. Solo actúa cuando el estado
+     * cambia (hay ↔ no hay) para no pelearse con el divisor que arrastra
+     * el usuario en cada análisis.
+     */
+    private void ajustarPanelProblemas(boolean hay) {
+        if (splitVertical == null || errorList == null) return;
+        if (ultimoHayProblemas != null && ultimoHayProblemas == hay) return;
+        ultimoHayProblemas = hay;
 
-        for (String err : erroresSemanticos) {
-            items.add("[ERROR SEMANTICO] " + err);
-            totalErrores++;
-        }
+        errorList.setVisible(hay);
+        errorList.setManaged(hay);
 
-        if (totalErrores == 0) {
-            items.add("Sin errores.");
-        }
+        Platform.runLater(() -> {
+            if (hay) {
+                splitVertical.setDividerPositions(0.74);
+                return;
+            }
+            double alto = splitVertical.getHeight();
+            double franja = 34.0;
+            splitVertical.setDividerPositions(alto > 0
+                ? Math.max(0.5, 1 - franja / alto) : 0.96);
+        });
+    }
 
-        if (totalErrores > 0) {
-            erroresPane.setText("ERRORES (" + totalErrores + ")");
-            erroresPane.setStyle("-fx-text-fill: #f38ba8;");
-        } else {
-            erroresPane.setText("OK (0)");
-            erroresPane.setStyle("-fx-text-fill: #a6e3a1;");
+    private void irAlSeleccionado() {
+        ErrorItem item = errorList.getSelectionModel().getSelectedItem();
+        if (item != null) irALinea(item.linea);
+    }
+
+    private void irALinea(int linea) {
+        if (linea <= 0) return;
+        int indice = Math.max(0, Math.min(linea - 1, editor.getParagraphs().size() - 1));
+        editor.moveTo(indice, 0);
+        // Seleccionar la línea completa hace visible el destino del salto; solo
+        // mover el cursor deja al usuario sin saber dónde aterrizó.
+        editor.selectParagraph();
+        editor.requestFollowCaret();
+        editor.requestFocus();
+    }
+
+    private void enfocarProblemas() {
+        if (errorList == null || !errorList.isVisible()) return;
+        if (errorList.getSelectionModel().isEmpty() && !erroresData.isEmpty()) {
+            errorList.getSelectionModel().selectFirst();
         }
+        errorList.requestFocus();
     }
 
     // ─── Tokens (con columna de línea) ───
@@ -789,7 +1296,6 @@ public class AppController {
                 t.linea
             ));
         }
-        tokensPane.setText("\u25C6 TOKENS (" + tokenData.size() + ")");
     }
 
     /**
@@ -1036,30 +1542,37 @@ public class AppController {
     private void actualizarCuadruplos(Programa programa) {
         if (programa == null) {
             cuadruplosData.clear();
-            pestanaCuadruplos.setText("CUADRUPLOS (bloqueado por errores)");
+            tablaCuadruplos.setPlaceholder(placeholder("Los cuádruplos se generan cuando el código compila"));
             return;
         }
         try {
             TablaCuadruplos tabla = new GeneradorCuadruplos().generar(programa);
             cuadruplosData.setAll(tabla.cuadruplos());
-            pestanaCuadruplos.setText("CUADRUPLOS (" + tabla.size() + ")");
+            tablaCuadruplos.setPlaceholder(placeholder("Sin cuadruplos"));
         } catch (RuntimeException e) {
             // Esto corre en cada debounce: nada de dialogos modales. El aviso
-            // va en el titulo de la pestana, que es donde se mira la tabla.
+            // va en el placeholder de la tabla, que es donde se mira.
             cuadruplosData.clear();
-            pestanaCuadruplos.setText("CUADRUPLOS (error al generar)");
+            tablaCuadruplos.setPlaceholder(placeholder("No se pudieron generar los cuádruplos"));
         }
+    }
+
+    private static Label placeholder(String texto) {
+        Label etiqueta = new Label(texto);
+        etiqueta.getStyleClass().add("tm-empty");
+        return etiqueta;
     }
 
     // ─── AST ───
     private void actualizarAST(Programa programa) {
         if (programa == null) {
             astTree.setRoot(null);
-            astPane.setText("AST (bloqueado por errores)");
+            astEmpty.setText("El AST se bloquea mientras haya errores");
+            astEmpty.setVisible(true);
             return;
         }
 
-        astPane.setText("AST (Arbol Sintactico)");
+        astEmpty.setVisible(false);
 
         TreeItem<String> raiz = new TreeItem<>("Programa");
         raiz.setExpanded(true);
@@ -1126,48 +1639,45 @@ public class AppController {
 
     // ─── Panel de derivación ───
     private void actualizarDerivacion(Programa programa, Parser parser) {
+        if (derivacionPanel == null) return;
         derivacionPanel.getChildren().clear();
 
-        HBox header = new HBox(10);
+        boolean disponible = programa != null && parser != null
+            && parser.arbolDerivacion != null;
+        if (itemArbol != null) itemArbol.setDisable(!disponible);
+        if (botonArbol != null) botonArbol.setDisable(!disponible);
+
+        Label titulo = new Label("Árbol de derivación");
+        titulo.getStyleClass().add("tm-panel-heading");
+
+        Button abrir = new Button("Abrir vista completa");
+        abrir.getStyleClass().addAll("tool-button", "tool-primary");
+        abrir.setFocusTraversable(false);
+        abrir.setOnAction(e -> abrirArbolDerivacion());
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        HBox header = new HBox(10, titulo, spacer, abrir);
         header.setAlignment(Pos.CENTER_LEFT);
-
-        Label lblTitulo = new Label("ARBOL DE DERIVACION");
-        lblTitulo.setStyle("-fx-text-fill: #89b4fa; -fx-font-weight: bold; -fx-font-size: 12;");
-
-        btnAbrirArbol = new Button("Ver arbol de derivacion");
-        btnAbrirArbol.setStyle("-fx-background-color: #89b4fa; -fx-text-fill: #11111b;"
-            + " -fx-font-weight: bold; -fx-font-size: 12px;"
-            + " -fx-background-radius: 6; -fx-padding: 4 14;"
-            + " -fx-cursor: hand;");
-        btnAbrirArbol.setOnAction(e -> abrirArbolDerivacion());
-
-        header.getChildren().addAll(lblTitulo, btnAbrirArbol);
         derivacionPanel.getChildren().add(header);
 
-        if (programa == null || parser == null || parser.arbolDerivacion == null) {
-            btnAbrirArbol.setDisable(true);
-            Label info = new Label("Arbol no disponible: corrige primero los errores del codigo.");
-            info.setStyle("-fx-text-fill: #a6adc8; -fx-font-family: 'Consolas', monospace;"
-                + " -fx-font-size: 12px; -fx-padding: 8 0;");
+        if (!disponible) {
+            abrir.setDisable(true);
+            Label info = new Label("Corrige los errores del código para generar el árbol.");
+            info.getStyleClass().add("tm-empty");
+            info.setWrapText(true);
             derivacionPanel.getChildren().add(info);
             return;
         }
 
-        btnAbrirArbol.setDisable(false);
+        abrir.setDisable(false);
 
-        // Vista previa del árbol en texto (solo primeros niveles)
-        String arbolTexto = arbolPreviewCompleto(parser.arbolDerivacion);
-        TextArea arbolPreviewArea = new TextArea(arbolTexto);
+        TextArea arbolPreviewArea = new TextArea(arbolPreviewCompleto(parser.arbolDerivacion));
         arbolPreviewArea.setEditable(false);
-        arbolPreviewArea.setPrefHeight(ALTO_PREVIA_ARBOL);
-        arbolPreviewArea.setStyle("-fx-control-inner-background: #1e1e2e;"
-            + " -fx-text-fill: #a6e3a1;"
-            + " -fx-font-family: 'Consolas', monospace;"
-            + " -fx-font-size: 11px;"
-            + " -fx-border-color: #313244;"
-            + " -fx-border-radius: 4;"
-            + " -fx-padding: 4;");
-
+        arbolPreviewArea.setWrapText(false);
+        arbolPreviewArea.getStyleClass().add("tm-derivacion-preview");
+        VBox.setVgrow(arbolPreviewArea, Priority.ALWAYS);
         derivacionPanel.getChildren().add(arbolPreviewArea);
     }
 
@@ -1198,7 +1708,7 @@ public class AppController {
     // ─── Abrir ventana gráfica del árbol de derivación ───
     private void abrirArbolDerivacion() {
         if (ultimoParser == null || ultimoParser.arbolDerivacion == null) {
-            mostrarError("No hay \u00E1rbol de derivaci\u00F3n disponible. Analiza el c\u00F3digo primero.");
+            mostrarError("No hay árbol de derivación disponible. Corrige los errores del código para generarlo.");
             return;
         }
         PanelDerivacion panel = new PanelDerivacion(ultimoParser.arbolDerivacion);
@@ -1238,21 +1748,31 @@ public class AppController {
     // ─── Barra de estado ───
     private void actualizarStatus(int numTokens, int numErroresLex, int numErroresSint, int numErroresNoDecl) {
         int totalErrores = numErroresLex + numErroresSint + numErroresNoDecl;
-        String color = totalErrores > 0 ? "#f38ba8" : "#a6e3a1";
-        statusLabel.setStyle("-fx-text-fill: " + color
-            + "; -fx-font-family: 'Consolas', monospace; -fx-font-size: 11;");
-        statusLabel.setText("  Tokens: " + numTokens
-            + "  |  Errores: " + totalErrores
-            + "  |  " + (totalErrores > 0 ? "CON ERRORES" : "OK"));
+        ultimoConErrores = totalErrores > 0;
+
+        lblTokens.setText(numTokens + (numTokens == 1 ? " token" : " tokens"));
+        lblErrores.setText(totalErrores == 0
+            ? "Sin errores"
+            : totalErrores + (totalErrores == 1 ? " error" : " errores"));
+        lblEstado.setText("ANALIZADO");
+
+        marcarEstado(lblErrores, totalErrores > 0);
+        marcarEstado(lblEstado, totalErrores > 0);
+        programarFinAvisoAnalisis();
+    }
+
+    private static void marcarEstado(Label etiqueta, boolean conError) {
+        etiqueta.getStyleClass().remove("tm-status-error");
+        if (conError) etiqueta.getStyleClass().add("tm-status-error");
     }
 
     private void actualizarStatusCursor() {
+        if (lblPosicion == null || editor == null) return;
         String texto = editor.getText();
-        int pos = editor.getCaretPosition();
-        if (texto.isEmpty() || pos > texto.length()) return;
+        int pos = Math.min(Math.max(editor.getCaretPosition(), 0), texto.length());
 
         int linea = 1, columna = 1;
-        for (int i = 0; i < pos && i < texto.length(); i++) {
+        for (int i = 0; i < pos; i++) {
             if (texto.charAt(i) == '\n') {
                 linea++;
                 columna = 1;
@@ -1260,11 +1780,7 @@ public class AppController {
                 columna++;
             }
         }
-        String current = statusLabel.getText();
-        if (current.contains("|  ")) {
-            String analisis = current.substring(current.lastIndexOf("|"));
-            statusLabel.setText("  Ln " + linea + ", Col " + columna + "  " + analisis);
-        }
+        lblPosicion.setText("Ln " + linea + ", Col " + columna);
     }
 
     // =============================================================
@@ -1292,8 +1808,6 @@ public class AppController {
                 s.valorTexto(),
                 s.linea()));
         }
-
-        tablaPane.setText("◆ TABLA SIMBOLOS (" + simbolosData.size() + ")");
     }
 
     /** Busca la primera línea donde aparece una referencia a un identificador */
@@ -2162,8 +2676,19 @@ public class AppController {
     private void setTextoConRelleno(String texto) {
         String limpio = texto == null ? "" : texto;
         lineasReales = contarLineas(limpio);
-        editor.replaceText(0, editor.getLength(),
-            completarConRelleno(limpio, MIN_LINEAS_GUTTER));
+        cargandoDocumento = true;
+        try {
+            editor.replaceText(0, editor.getLength(),
+                completarConRelleno(limpio, MIN_LINEAS_GUTTER));
+        } finally {
+            cargandoDocumento = false;
+        }
+        // Cargar un documento no es una edición que el usuario pueda deshacer:
+        // se borra el historial para que Ctrl+Z no devuelva el archivo anterior.
+        editor.getUndoManager().forgetHistory();
+        editor.getUndoManager().mark();
+        dirty = false;
+        actualizarEtiquetaArchivo();
         // replaceText no mueve el cursor: lo deja donde estuviera, y si estaba
         // al final pasa a apuntar al final del texto nuevo. Como el texto nuevo
         // son los párrafos reales más el relleno, el cursor aterriza sobre la
@@ -2175,7 +2700,7 @@ public class AppController {
         // ventana el CodeArea todavía no tiene skin montada y requestFollowCaret
         // no hace nada, así que el cursor quedaría en su sitio pero la vista
         // arriba del todo.
-        javafx.application.Platform.runLater(editor::requestFollowCaret);
+        Platform.runLater(editor::requestFollowCaret);
     }
 
     /**
@@ -2238,24 +2763,30 @@ public class AppController {
     // =============================================================
 
     private void nuevoArchivo() {
+        if (!confirmarDescartar()) return;
         setTextoConRelleno("");
         archivoActual = null;
+        actualizarEtiquetaArchivo();
+        editor.requestFocus();
     }
 
     private void abrirArchivo() {
+        if (!confirmarDescartar()) return;
+
         FileChooser fc = new FileChooser();
         fc.setTitle("Abrir archivo Timotomata");
         fc.getExtensionFilters().add(
-            new FileChooser.ExtensionFilter("Archivos Timotomata", "*.txt", "*.tm"));
+            new FileChooser.ExtensionFilter("Archivos Timotomata", "*.tm", "*.txt"));
         fc.setInitialDirectory(new File("."));
-        File file = fc.showOpenDialog(root.getScene().getWindow());
-        if (file != null) {
-            try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-                setTextoConRelleno(br.lines().collect(Collectors.joining("\n")));
-                archivoActual = file.getAbsolutePath();
-            } catch (IOException ex) {
-                mostrarError("No se pudo abrir el archivo: " + ex.getMessage());
-            }
+        File file = fc.showOpenDialog(ventana());
+        if (file == null) return;
+
+        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+            setTextoConRelleno(br.lines().collect(Collectors.joining("\n")));
+            archivoActual = file.getAbsolutePath();
+            actualizarEtiquetaArchivo();
+        } catch (IOException ex) {
+            mostrarError("No se pudo abrir el archivo: " + ex.getMessage());
         }
     }
 
@@ -2271,21 +2802,131 @@ public class AppController {
         FileChooser fc = new FileChooser();
         fc.setTitle("Guardar archivo Timotomata");
         fc.getExtensionFilters().add(
-            new FileChooser.ExtensionFilter("Archivos Timotomata", "*.txt"));
-        fc.setInitialFileName("programa.txt");
-        File file = fc.showSaveDialog(root.getScene().getWindow());
+            new FileChooser.ExtensionFilter("Archivos Timotomata", "*.tm", "*.txt"));
+        fc.setInitialFileName("programa.tm");
+        File file = fc.showSaveDialog(ventana());
         if (file != null) {
             guardarA(file);
             archivoActual = file.getAbsolutePath();
+            actualizarEtiquetaArchivo();
         }
     }
 
     private void guardarA(File file) {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(file))) {
             bw.write(textoAGuardar());
+            // El punto de guardado pasa a ser el estado limpio del documento:
+            // deshacer hasta aquí vuelve a quitar la marca de cambios.
+            editor.getUndoManager().mark();
+            dirty = false;
+            actualizarEtiquetaArchivo();
         } catch (IOException ex) {
             mostrarError("No se pudo guardar: " + ex.getMessage());
         }
+    }
+
+    private void salir() {
+        if (confirmarDescartar()) Platform.exit();
+    }
+
+    /**
+     * Pregunta qué hacer si hay cambios sin guardar.
+     * @return true si se puede continuar (guardado, descartado o sin cambios)
+     */
+    private boolean confirmarDescartar() {
+        if (!dirty) return true;
+
+        Alert alerta = new Alert(Alert.AlertType.CONFIRMATION);
+        alerta.setTitle("Cambios sin guardar");
+        alerta.setHeaderText("Hay cambios sin guardar.");
+        alerta.setContentText("¿Quieres guardarlos antes de continuar?");
+
+        ButtonType guardar = new ButtonType("Guardar", ButtonBar.ButtonData.YES);
+        ButtonType descartar = new ButtonType("Descartar", ButtonBar.ButtonData.NO);
+        ButtonType cancelar = new ButtonType("Cancelar", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alerta.getButtonTypes().setAll(guardar, descartar, cancelar);
+
+        estilizarDialogo(alerta);
+        Optional<ButtonType> eleccion = alerta.showAndWait();
+        if (eleccion.isEmpty() || eleccion.get() == cancelar) return false;
+        if (eleccion.get() == descartar) return true;
+
+        guardarArchivo();
+        return !dirty;
+    }
+
+    /** Devuelve true si la ventana puede cerrarse. */
+    public boolean confirmarSalida() {
+        return confirmarDescartar();
+    }
+
+    private Window ventana() {
+        return stage != null ? stage : root.getScene().getWindow();
+    }
+
+    public void setStage(Stage stage) {
+        this.stage = stage;
+        actualizarEtiquetaArchivo();
+    }
+
+    private void actualizarEtiquetaArchivo() {
+        String nombre = archivoActual == null
+            ? "Sin archivo" : new File(archivoActual).getName();
+
+        if (lblArchivo != null) {
+            lblArchivo.setText(dirty ? nombre + " •" : nombre);
+        }
+        if (stage != null) {
+            String base = "Compilador Timotomata";
+            stage.setTitle((dirty ? "• " : "")
+                + (archivoActual == null ? base
+                    : nombre + " — " + base));
+        }
+    }
+
+    // ─── Diálogos ───
+    private void estilizarDialogo(Dialog<?> dialogo) {
+        DialogPane pane = dialogo.getDialogPane();
+        var css = getClass().getResource("estilos.css");
+        if (css != null) pane.getStylesheets().add(css.toExternalForm());
+        pane.getStyleClass().add("tm-dialog");
+
+        // El diálogo hereda el icono del producto y se abre sobre la ventana
+        // principal, no como una ventana huérfana con el icono de JavaFX.
+        if (stage != null) {
+            dialogo.initOwner(stage);
+        }
+        dialogo.setOnShown(e -> Iconos.aplicar(dialogo));
+    }
+
+    private void mostrarAtajos() {
+        Alert alerta = new Alert(Alert.AlertType.INFORMATION);
+        alerta.setTitle("Atajos de teclado");
+        alerta.setHeaderText("Atajos de Timotomata");
+        alerta.setContentText("""
+            Ctrl+N   Nuevo archivo
+            Ctrl+O   Abrir archivo
+            Ctrl+S   Guardar
+            Ctrl+Shift+S   Guardar como
+            Ctrl+Z   Deshacer
+            Ctrl+Y   Rehacer
+            Ctrl+F   Buscar en el código
+            F6       Árbol de derivación
+            Ctrl+E   Ir al panel de problemas
+            Ctrl+1   Volver al editor
+            F1       Esta ayuda""");
+        estilizarDialogo(alerta);
+        alerta.showAndWait();
+    }
+
+    private void mostrarAcercaDe() {
+        Alert alerta = new Alert(Alert.AlertType.INFORMATION);
+        alerta.setTitle("Acerca de Timotomata");
+        alerta.setHeaderText("Compilador Timotomata");
+        alerta.setContentText("Editor y analizador para el lenguaje Timotomata.\n"
+            + "Análisis léxico, sintáctico, semántico, AST y cuádruplos en tiempo real.");
+        estilizarDialogo(alerta);
+        alerta.showAndWait();
     }
 
     private void cargarEjemploPorDefecto() {
@@ -2334,6 +2975,7 @@ public class AppController {
         alert.setTitle("Error");
         alert.setHeaderText(null);
         alert.setContentText(msg);
+        estilizarDialogo(alert);
         alert.showAndWait();
     }
 }

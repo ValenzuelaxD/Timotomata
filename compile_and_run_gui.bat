@@ -150,9 +150,10 @@ REM ═════════════════════════�
 
 echo [3/4] Compilando...
 
-REM Copiar CSS al directorio de salida
+REM Copiar CSS e iconos al directorio de salida
 if not exist "%OUT_DIR%\timotomata\ui\" mkdir "%OUT_DIR%\timotomata\ui"
 copy /Y "%SRC_DIR%\timotomata\ui\estilos.css" "%OUT_DIR%\timotomata\ui\estilos.css" >nul 2>&1
+copy /Y "%SRC_DIR%\timotomata\ui\*.png" "%OUT_DIR%\timotomata\ui\" >nul 2>&1
 
 set MODULES=--module-path "%JAVAFX_DIR%/lib" --add-modules javafx.controls,javafx.graphics
 

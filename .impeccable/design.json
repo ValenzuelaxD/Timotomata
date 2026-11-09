@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-09T10:00:00-07:00",
+  "title": "Design System: Compilador Timotomata",
+  "extensions": {
+    "colorMeta": {
+      "crust": {
+        "role": "neutral",
+        "displayName": "Mocha Crust",
+        "canonical": "oklch(18.3% 0.0204 -75.8)",
+        "tonalRamp": ["#0a0a13", "#20202b", "#393945", "#545461", "#70707d", "#9c9dab", "#ccccdb", "#ecedfc"]
+      },
+      "mantle": {
+        "role": "neutral",
+        "displayName": "Mocha Mantle",
+        "canonical": "oklch(21.6% 0.0254 -75.9)",
+        "tonalRamp": ["#0a0a15", "#20202e", "#393948", "#535463", "#6f7080", "#9c9dae", "#cbccde", "#ecedff"]
+      },
+      "base": {
+        "role": "neutral",
+        "displayName": "Mocha Base",
+        "canonical": "oklch(24.3% 0.0304 -76.1)",
+        "tonalRamp": ["#0a0917", "#202030", "#38394a", "#535366", "#6f7083", "#9c9cb1", "#cbcce2", "#ecedff"]
+      },
+      "surface0": {
+        "role": "neutral",
+        "displayName": "Mocha Surface0",
+        "canonical": "oklch(32.4% 0.0319 -78.0)",
+        "tonalRamp": ["#090918", "#1f2031", "#38394b", "#525367", "#6e7084", "#9b9cb2", "#cacce3", "#ebedff"]
+      },
+      "surface1": {
+        "role": "neutral",
+        "displayName": "Mocha Surface1",
+        "canonical": "oklch(40.4% 0.0320 -79.8)",
+        "tonalRamp": ["#090918", "#1f2031", "#37394b", "#515467", "#6e7084", "#9a9db3", "#c9cce3", "#ebedff"]
+      },
+      "surface2": {
+        "role": "neutral",
+        "displayName": "Mocha Surface2",
+        "canonical": "oklch(47.7% 0.0340 -81.4)",
+        "tonalRamp": ["#080919", "#1e2032", "#36394c", "#515468", "#6d7086", "#999db4", "#c8cce4", "#eaedff"]
+      },
+      "overlay0": {
+        "role": "neutral",
+        "displayName": "Mocha Overlay0",
+        "canonical": "oklch(55.0% 0.0345 -82.9)",
+        "tonalRamp": ["#080919", "#1d2032", "#36394d", "#505469", "#6c7086", "#999db4", "#c8cce5", "#eaedff"]
+      },
+      "overlay1": {
+        "role": "neutral",
+        "displayName": "Mocha Overlay1",
+        "canonical": "oklch(68.7% 0.0374 -85.3)",
+        "tonalRamp": ["#07091b", "#1c2034", "#35394e", "#4f546a", "#6b7088", "#979db6", "#c6cce7", "#e9eeff"]
+      },
+      "subtext1": {
+        "role": "neutral",
+        "displayName": "Mocha Subtext1",
+        "canonical": "oklch(75.1% 0.0396 -86.1)",
+        "tonalRamp": ["#07091c", "#1c2035", "#34394f", "#4e546c", "#6a7089", "#969db8", "#c5cde8", "#e9eeff"]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Mocha Text",
+        "canonical": "oklch(87.9% 0.0426 -87.7)",
+        "tonalRamp": ["#06091d", "#1b2036", "#333951", "#4d546d", "#69708b", "#959dba", "#c4cdea", "#e9eeff"]
+      },
+      "blue": {
+        "role": "primary",
+        "displayName": "Mocha Blue",
+        "canonical": "oklch(76.6% 0.1113 -100.1)",
+        "tonalRamp": ["#00062c", "#001c53", "#133773", "#2e5492", "#4a71b2", "#759fe4", "#b2cfff", "#e5efff"]
+      },
+      "blue-hover": {
+        "role": "primary",
+        "displayName": "Mocha Blue Hover",
+        "canonical": "oklch(81.6% 0.0872 -99.2)",
+        "tonalRamp": ["#00052f", "#061f4a", "#1f3967", "#395585", "#5472a5", "#7f9fd5", "#b3cfff", "#e6efff"]
+      },
+      "green": {
+        "role": "secondary",
+        "displayName": "Mocha Green",
+        "canonical": "oklch(85.8% 0.1092 142.7)",
+        "tonalRamp": ["#001100", "#002b00", "#0a4809", "#2b6428", "#488245", "#75b071", "#a4e09f", "#cbffc6"]
+      },
+      "red": {
+        "role": "secondary",
+        "displayName": "Mocha Red",
+        "canonical": "oklch(75.6% 0.1297 2.8)",
+        "tonalRamp": ["#1f0009", "#45001d", "#6c0c34", "#8c2e4f", "#ad4c6a", "#e07a97", "#ffb6c8", "#ffe8ed"]
+      },
+      "yellow": {
+        "role": "tertiary",
+        "displayName": "Mocha Yellow",
+        "canonical": "oklch(91.9% 0.0704 86.5)",
+        "tonalRamp": ["#120a00", "#2d1f00", "#4a3702", "#665223", "#846f3f", "#b29c6b", "#e2cb99", "#ffedc4"]
+      },
+      "mauve": {
+        "role": "tertiary",
+        "displayName": "Mocha Mauve",
+        "canonical": "oklch(78.7% 0.1187 -55.2)",
+        "tonalRamp": ["#140027", "#2f064e", "#49256b", "#654189", "#825ea9", "#af8bda", "#dbbfff", "#f3eaff"]
+      },
+      "sky": {
+        "role": "tertiary",
+        "displayName": "Mocha Sky",
+        "canonical": "oklch(84.7% 0.0833 -149.7)",
+        "tonalRamp": ["#000e12", "#00272d", "#00434c", "#00616d", "#267f8d", "#5aadbb", "#8addec", "#cef7ff"]
+      },
+      "peach": {
+        "role": "tertiary",
+        "displayName": "Mocha Peach",
+        "canonical": "oklch(82.4% 0.1015 52.6)",
+        "tonalRamp": ["#1a0500", "#391600", "#5e2a00", "#804315", "#9f5f35", "#d08c61", "#ffbd95", "#ffeadd"]
+      },
+      "pink": {
+        "role": "tertiary",
+        "displayName": "Mocha Pink",
+        "canonical": "oklch(87.0% 0.0752 -23.7)",
+        "tonalRamp": ["#1c0016", "#37102f", "#522a49", "#704565", "#8e6182", "#bd8db0", "#eebce0", "#ffe6f8"]
+      }
+    },
+    "typographyMeta": {
+      "body": { "displayName": "Interfaz", "purpose": "Menús, toolbar, diálogos y texto de interfaz." },
+      "body-small": { "displayName": "Interfaz pequeña", "purpose": "Botones de toolbar y texto secundario de interfaz." },
+      "label": { "displayName": "Microetiqueta", "purpose": "Chips, insignias de fase y contadores." },
+      "code": { "displayName": "Código", "purpose": "El programa en el editor; único texto a 14 px." },
+      "code-data": { "displayName": "Dato", "purpose": "Tokens, símbolos, cuádruplos, AST, mensajes y celdas." },
+      "code-micro": { "displayName": "Dato micro", "purpose": "Pestañas, barra de estado y etiquetas de línea." }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "La única acción primaria de la pantalla; en la app es Abrir vista completa, en el panel DERIVACIÓN.",
+      "html": "<button class=\"ds-btn-primary\">Abrir vista completa</button>",
+      "css": ".ds-btn-primary { background: #89b4fa; color: #11111b; border: none; border-radius: 5px; padding: 4px 10px; font-family: \"Segoe UI\", sans-serif; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: background 120ms linear; } .ds-btn-primary:hover { background: #a3c4fc; } .ds-btn-primary:active { background: #759fe4; } .ds-btn-primary:disabled { background: #313244; color: #a6adc8; cursor: default; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Botón por defecto de la toolbar: se retira hasta que se interactúa.",
+      "html": "<button class=\"ds-btn-ghost\">Guardar</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: #cdd6f4; border: none; border-radius: 5px; padding: 4px 10px; font-family: \"Segoe UI\", sans-serif; font-size: 11.5px; font-weight: 400; cursor: pointer; transition: background 120ms linear; } .ds-btn-ghost:hover { background: #313244; } .ds-btn-ghost:active { background: #45475a; } .ds-btn-ghost:focus-visible { outline: 1px solid #89b4fa; outline-offset: 1px; }"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Filtro de fase en la cabecera de problemas; seleccionado adopta el azul de señal y se apaga cuando su fase no tiene problemas.",
+      "html": "<div class=\"ds-chip-row\"><button class=\"ds-chip is-selected\">LÉXICO</button><button class=\"ds-chip\">SINTÁCTICO</button><button class=\"ds-chip\" disabled>SEMÁNTICO</button></div>",
+      "css": ".ds-chip-row { display: flex; gap: 6px; } .ds-chip { background: transparent; color: #9399b2; border: 1px solid #45475a; border-radius: 9px; height: 20px; padding: 0 8px; font-family: \"Segoe UI\", sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; cursor: pointer; transition: border-color 120ms linear, background 120ms linear; } .ds-chip:hover { border-color: #585b70; } .ds-chip.is-selected { background: rgba(137, 180, 250, 0.16); border-color: #89b4fa; color: #89b4fa; } .ds-chip:disabled { background: transparent; border-color: #313244; color: #6c7086; cursor: default; opacity: 1; }"
+    },
+    {
+      "name": "Flat Tab",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "Pestaña plana del panel derecho; la activa se marca con un subrayado de 2 px, no con una píldora.",
+      "html": "<nav class=\"ds-tabs\"><button class=\"ds-tab is-selected\">TOKENS</button><button class=\"ds-tab\">SÍMBOLOS</button><button class=\"ds-tab\">AST</button><button class=\"ds-tab\">DERIVACIÓN</button><button class=\"ds-tab\">CUÁDRUPLOS</button></nav>",
+      "css": ".ds-tabs { display: flex; background: #181825; border-bottom: 1px solid #313244; } .ds-tab { background: #181825; color: #9399b2; border: none; border-bottom: 2px solid transparent; height: 26px; padding: 4px 8px; font-family: Consolas, monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; cursor: pointer; transition: background 120ms linear, color 120ms linear; } .ds-tab:hover { background: #1e1e2e; } .ds-tab.is-selected { background: #1e1e2e; color: #cdd6f4; border-bottom-color: #89b4fa; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Campo de dato numérico o de texto; el foco se anuncia con borde azul, sin resplandor.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Umbral máximo</span><input class=\"ds-input\" value=\"220\" /></label>",
+      "css": ".ds-field { display: grid; gap: 4px; } .ds-field-label { color: #9399b2; font-family: \"Segoe UI\", sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; } .ds-input { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 4px 6px; font-family: Consolas, monospace; font-size: 12px; outline: none; } .ds-input:focus { border-color: #89b4fa; }"
+    },
+    {
+      "name": "Problem Row",
+      "kind": "custom",
+      "description": "Fila del panel de problemas: insignia de fase, línea y mensaje con ajuste de texto.",
+      "html": "<div class=\"ds-problem\"><span class=\"ds-badge ds-phase-syn\">SINTÁCTICO</span><span class=\"ds-problem-line\">L 42</span><span class=\"ds-problem-msg\">Se esperaba 'entonces' después de la condición.</span></div>",
+      "css": ".ds-problem { display: flex; align-items: flex-start; gap: 10px; padding: 4px 12px; background: #181825; border-bottom: 1px solid #1e1e2e; } .ds-problem:hover { background: #1e1e2e; } .ds-badge { flex: 0 0 auto; border-radius: 4px; padding: 1px 6px; font-family: \"Segoe UI\", sans-serif; font-size: 9px; font-weight: 700; letter-spacing: 0.02em; } .ds-phase-syn { background: rgba(243, 139, 168, 0.14); color: #f38ba8; } .ds-problem-line { flex: 0 0 auto; min-width: 30px; color: #9399b2; font-family: Consolas, monospace; font-size: 10.5px; } .ds-problem-msg { flex: 1 1 auto; color: #cdd6f4; font-family: Consolas, monospace; font-size: 11.5px; line-height: 1.45; }"
+    },
+    {
+      "name": "Find Bar",
+      "kind": "custom",
+      "description": "Franja de búsqueda del editor, visible solo con Ctrl+F; campo fijo, contador estable y acciones fantasma.",
+      "html": "<div class=\"ds-find\"><span class=\"ds-find-label\">BUSCAR</span><input class=\"ds-find-input\" value=\"sensor\" /><span class=\"ds-find-spacer\"></span><span class=\"ds-find-count\">1 de 2</span><button class=\"ds-find-btn\">Anterior</button><button class=\"ds-find-btn\">Siguiente</button><button class=\"ds-find-btn\">Cerrar</button></div>",
+      "css": ".ds-find { display: flex; align-items: center; gap: 8px; padding: 4px 12px; background: #181825; border-bottom: 1px solid #313244; } .ds-find-label { color: #9399b2; font-family: Consolas, monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; } .ds-find-input { width: 320px; box-sizing: border-box; background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 3px 6px; font-family: Consolas, monospace; font-size: 11.5px; outline: none; } .ds-find-input:focus { border-color: #89b4fa; } .ds-find-spacer { flex: 1 1 auto; } .ds-find-count { min-width: 86px; text-align: right; color: #9399b2; font-family: Consolas, monospace; font-size: 10.5px; } .ds-find-btn { background: transparent; color: #cdd6f4; border: none; border-radius: 5px; padding: 4px 10px; font-family: \"Segoe UI\", sans-serif; font-size: 11.5px; cursor: pointer; } .ds-find-btn:hover { background: #313244; } .ds-find-btn:active { background: #45475a; }"
+    },
+    {
+      "name": "Status Bar",
+      "kind": "custom",
+      "description": "Tira de indicadores de 24 px: archivo, posición, tokens, errores y estado. El estado anuncia ANALIZANDO… mientras hay trabajo en cola, deja ANALIZADO 1,6 s y vuelve al veredicto estable OK o CON ERRORES.",
+      "html": "<div class=\"ds-status\"><span class=\"ds-status-file\">programa.tm</span><span class=\"ds-status-spacer\"></span><span class=\"ds-status-item ds-mono\">Ln 12, Col 4</span><i class=\"ds-status-div\"></i><span class=\"ds-status-item ds-mono\">148 tokens</span><i class=\"ds-status-div\"></i><span class=\"ds-status-item ds-mono ds-status-error\">3 errores</span><i class=\"ds-status-div\"></i><span class=\"ds-status-state ds-status-error\">CON ERRORES</span></div>",
+      "css": ".ds-status { display: flex; align-items: center; gap: 10px; height: 24px; padding: 3px 12px; background: #181825; border-top: 1px solid #313244; } .ds-status-file { color: #cdd6f4; font-family: \"Segoe UI\", sans-serif; font-size: 11px; font-weight: 700; } .ds-status-spacer { flex: 1 1 auto; } .ds-status-item { color: #a6adc8; font-family: \"Segoe UI\", sans-serif; font-size: 11px; } .ds-mono { font-family: Consolas, monospace; } .ds-status-div { width: 1px; height: 12px; background: #313244; } .ds-status-state { color: #a6e3a1; font-family: \"Segoe UI\", sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; } .ds-status-error { color: #f38ba8; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "El banco de instrumentación",
+    "overview": "Timotomata se lee como un banco de instrumentos: el editor es la superficie de trabajo, la columna derecha es el juego de medidores y la barra de estado es la tira de luces indicadoras. Cada fase del compilador tiene su propio instrumento y su propia lectura; nada existe solo para decorar.\n\nLa personalidad es sobria y de instrumento. La pantalla es densa por necesidad, no por descuido: la separación entre zonas se resuelve con líneas de 1 px y cuatro pasos de fondo, nunca con sombras ni con aire generoso. El color es información: aparece cuando reporta un estado (pasa, falla, fase, selección) y se retira cuando no tiene nada que decir.\n\nLa paleta es Catppuccin Mocha usada como panel de instrumentos, no como tema de marketing. Los neutros fríos construyen la profundidad y los acentos quedan reservados para la acción primaria, la selección y las fases de error. La barra de título de la ventana es la nativa de Windows y queda fuera de este sistema.",
+    "keyCharacteristics": [
+      "Fondo oscuro en cuatro pasos tonales, sin sombras.",
+      "Acento azul único para acción, selección y foco.",
+      "Datos siempre en Consolas; lenguaje de interfaz en Segoe UI.",
+      "Bordes de 1 px como única herramienta de separación.",
+      "Superficies estructurales rectas; radios pequeños solo en lo interactivo.",
+      "Color por fase de error, estable y no negociable."
+    ],
+    "rules": [
+      { "name": "The One Signal Rule", "body": "El azul es el único color que puede significar \"acción primaria, seleccionado o enfocado\". Nunca decora una superficie ni compite con otro azul en la misma pantalla.", "section": "colors" },
+      { "name": "The Phase Color Rule", "body": "Cada fase de error tiene un acento fijo: amarillo léxico, rojo sintáctico, lila semántico, azul sugerencia. No se recolorea una insignia por variedad ni se intercambian los papeles.", "section": "colors" },
+      { "name": "The Tonal Depth Rule", "body": "La profundidad sale de cuatro pasos de fondo (Crust → Mantle → Base → Surface0) y de bordes de 1 px. Si hace falta una sombra para explicar la jerarquía, la jerarquía está mal.", "section": "colors" },
+      { "name": "The Measure Rule", "body": "Si el usuario compara caracteres — identificadores, números, líneas, unidades — va en Consolas. Si el usuario lee una frase, va en Segoe UI. No hay excepciones decorativas.", "section": "typography" },
+      { "name": "The No-Shadow Rule", "body": "Ninguna superficie de interfaz lleva sombra. Si dos capas necesitan separarse, se separan con un paso tonal o con una línea de 1 px.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do asignar cada superficie a uno de los cuatro pasos tonales y no inventar un quinto fondo.",
+      "Do reservar Blue para acción primaria, selección y foco; una sola acción primaria por pantalla.",
+      "Do dejar que el análisis ocurra solo (debounce de 300 ms) y usar el estado de la barra para contar qué está pasando; no hay acción manual en la interfaz.",
+      "Do separar con líneas de 1 px Surface0 antes que con espacio en blanco.",
+      "Do poner el programa en Consolas 14 px y todo dato comparable en Consolas 11 px.",
+      "Do mantener el mapeo de color por fase: Yellow léxico, Red sintáctico, Mauve semántico, Blue sugerencia.",
+      "Do colapsar el panel de problemas a su cabecera de ≈34 px cuando el contador es cero.",
+      "Do mantener el gutter de 51 px fijo para que marcar un error no desplace el código."
+    ],
+    "donts": [
+      "Don't añadir sombras, resplandores, desenfoques ni degradados decorativos; el único degradado es el corte duro del editor.",
+      "Don't redondear superficies estructurales; por encima de 6 px solo existen chips (9) y el contador (8).",
+      "Don't usar Blue como decoración ni como segundo acento de sintaxis.",
+      "Don't añadir un botón ni un ítem de menú para analizar: duplicaría el análisis automático y competiría con la única acción primaria.",
+      "Don't poner prosa en Consolas ni datos en Segoe UI.",
+      "Don't introducir acentos fuera de Catppuccin Mocha.",
+      "Don't animar cambios de estado: el producto no tiene tokens de movimiento y las transiciones son instantáneas.",
+      "Don't cambiar el texto de una pestaña para anunciar que está bloqueada; el aviso va en el panel."
+    ]
+  }
+}

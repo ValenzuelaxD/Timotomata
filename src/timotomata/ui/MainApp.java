@@ -36,8 +36,20 @@ public class MainApp extends Application {
             System.err.println("Advertencia: No se pudo cargar estilos.css");
         }
 
-        primaryStage.setTitle("Compilador Timotomata — Análisis Léxico y Sintáctico");
+        primaryStage.setTitle("Compilador Timotomata");
+        primaryStage.setMinWidth(1024);
+        primaryStage.setMinHeight(680);
+        Iconos.aplicar(primaryStage);
         primaryStage.setScene(scene);
+
+        controller.setStage(primaryStage);
+        primaryStage.setOnCloseRequest(event -> {
+            if (!controller.confirmarSalida()) event.consume();
+        });
+
+        // La herramienta siempre abre ocupando la pantalla: el editor y los
+        // paneles necesitan el ancho completo para no nacer recortados.
+        primaryStage.setMaximized(true);
         primaryStage.show();
 
         // Ejecutar análisis inicial con el código de ejemplo
