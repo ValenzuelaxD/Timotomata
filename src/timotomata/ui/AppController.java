@@ -1,6 +1,8 @@
 package timotomata.ui;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.stream.*;
 
@@ -19,6 +21,7 @@ import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
+import javafx.scene.shape.Circle;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.stage.Window;
@@ -195,6 +198,9 @@ public class AppController {
     private Programa ultimoPrograma;
     private Parser ultimoParser;
     private String archivoActual = null;
+    private File ultimoDirectorio = new File("tests").isDirectory()
+        ? new File("tests") : new File(".");
+    private final Map<TreeItem<String>, Integer> lineaPorItemAST = new IdentityHashMap<>();
 
     // ─── Marcas de error en el editor ───
     private final Set<Integer> lineasConError = new HashSet<>();
@@ -207,8 +213,6 @@ public class AppController {
         crearUI();
         configurarDebounce();
         cargarEjemploPorDefecto();
-        // Análisis inicial automático
-        analizarCodigo();
     }
 
     public BorderPane getRoot() { return root; }
@@ -240,6 +244,7 @@ public class AppController {
         splitVertical.getItems().addAll(splitPrincipal, crearPanelErrores());
         splitVertical.setDividerPositions(0.80);
         SplitPane.setResizableWithParent(splitPrincipal, true);
+        SplitPane.setResizableWithParent(problemasPanel, false);
 
         root.setCenter(splitVertical);
         root.setBottom(crearStatusBar());
@@ -366,6 +371,7 @@ public class AppController {
             if (barraBusqueda != null && barraBusqueda.isVisible()) {
                 actualizarContadorBusqueda();
             }
+            if (cargandoDocumento) return;
             if (debounce != null) {
                 marcarAnalizando();
                 debounce.playFromStart();
@@ -566,13 +572,13 @@ public class AppController {
             Node nodo = numerosBase.apply(indice);
             if (nodo instanceof Label numero) {
                 numero.getStyleClass().add("tm-line-number");
-                Label punto = new Label("●");
-                punto.setTextFill(Color.web("#f38ba8"));
-                punto.setStyle("-fx-font-size: 9px;");
+                Circle circulo = new Circle(3.0, Color.web("#f38ba8"));
+                StackPane punto = new StackPane(circulo);
                 // Ancho fijo: el punto debe reservar su hueco aunque no se vea.
                 punto.setPadding(Insets.EMPTY);
                 punto.setMinWidth(ANCHO_PUNTO);
                 punto.setPrefWidth(ANCHO_PUNTO);
+                punto.setMaxWidth(ANCHO_PUNTO);
                 punto.setAlignment(Pos.CENTER);
                 // El gráfico se asigna una sola vez y NUNCA se quita. Si se
                 // hiciese setGraphic(null) el Label encogería, RichTextFX
@@ -589,7 +595,7 @@ public class AppController {
                         numero.setBackground(new Background(new BackgroundFill(
                             Color.web("rgba(243, 139, 168, 0.16)"),
                             CornerRadii.EMPTY, Insets.EMPTY)));
-} else {
+                    } else {
                         numero.setBackground(new Background(new BackgroundFill(
                             Color.web(activo ? "rgba(137, 180, 250, 0.22)"
                                 : COLOR_GUTTER),
@@ -601,7 +607,7 @@ public class AppController {
                     punto.setOpacity(conError ? 1.0 : 0.0);
                     String detalle = mensajeErrorPorLinea.get(linea);
                     numero.setTooltip(conError && detalle != null
-                        ? new Tooltip("⚠ " + detalle) : null);
+                        ? new Tooltip(detalle) : null);
                 };
                 parrafoActual.addListener((obs, anterior, nuevo) -> actualizar.run());
                 actualizar.run();
@@ -612,8 +618,8 @@ public class AppController {
 
     /**
      * Recalcula qué líneas tienen errores (para los iconos del gutter) a partir
-     * de los mensajes "en linea N". Solo re-crea los gráficos si el conjunto
-     * cambió, para no acumular listeners en cada análisis.
+     * de los mensajes "en linea N". Solo re-crea los gráficos si el conjunto o
+     * los mensajes cambiaron, para no acumular listeners en cada análisis.
      */
     private void actualizarIconosLinea(List<String> erroresLex, List<String> erroresSint,
                                        List<String> erroresSemanticos) {
@@ -624,25 +630,13 @@ public class AppController {
         if (erroresSint != null) todos.addAll(erroresSint);
         if (erroresSemanticos != null) todos.addAll(erroresSemanticos);
         for (String err : todos) {
-            String lower = err.toLowerCase();
-            int idx = lower.indexOf("en linea ");
-            if (idx < 0) continue;
-            int ini = idx + "en linea ".length();
-            int fin = ini;
-            while (fin < err.length() && Character.isDigit(err.charAt(fin))) fin++;
-            if (fin == ini) continue;
-            int linea;
-            try {
-                linea = Integer.parseInt(err.substring(ini, fin));
-            } catch (NumberFormatException ex) {
-                continue;
-            }
+            int linea = lineaDe(err);
+            if (linea <= 0) continue;
             nuevas.add(linea);
-            mensajes.putIfAbsent(linea, err);
+            String limpio = limpiarMensaje(err);
+            mensajes.merge(linea, limpio, (a, b) -> a.contains(b) ? a : a + "\n• " + b);
         }
-        if (nuevas.equals(lineasConError)) {
-            mensajeErrorPorLinea.clear();
-            mensajeErrorPorLinea.putAll(mensajes);
+        if (nuevas.equals(lineasConError) && mensajes.equals(mensajeErrorPorLinea)) {
             return;
         }
         lineasConError.clear();
@@ -699,8 +693,20 @@ public class AppController {
         colLinea.setPrefWidth(55);
         colLinea.setStyle("-fx-alignment: CENTER-RIGHT;");
 
-        tokenTable.getColumns().addAll(colTipo, colLexema, colLinea);
+        tokenTable.getColumns().setAll(List.of(colTipo, colLexema, colLinea));
         tokenTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        tokenTable.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                TokenInfo sel = tokenTable.getSelectionModel().getSelectedItem();
+                if (sel != null) irALinea(sel.lineaProperty().get());
+            }
+        });
+        tokenTable.setOnKeyPressed(e -> {
+            if (e.getCode() == KeyCode.ENTER) {
+                TokenInfo sel = tokenTable.getSelectionModel().getSelectedItem();
+                if (sel != null) irALinea(sel.lineaProperty().get());
+            }
+        });
 
         // ─── Tabla de Símbolos (6 columnas) ───
         tablaSimbolos = new TableView<>(simbolosData);
@@ -722,10 +728,12 @@ public class AppController {
         TableColumn<InfoSimbolo, String> colSimbTipo = new TableColumn<>("Tipo");
         colSimbTipo.setCellValueFactory(new PropertyValueFactory<>("tipo"));
         colSimbTipo.setPrefWidth(80);
+        colSimbTipo.setCellFactory(col -> celdaTextoOpcional());
 
         TableColumn<InfoSimbolo, String> colSimbUnidad = new TableColumn<>("Unidad");
         colSimbUnidad.setCellValueFactory(new PropertyValueFactory<>("unidad"));
         colSimbUnidad.setPrefWidth(54);
+        colSimbUnidad.setCellFactory(col -> celdaTextoOpcional());
 
         TableColumn<InfoSimbolo, Number> colSimbLinea = new TableColumn<>("Línea");
         colSimbLinea.setCellValueFactory(new PropertyValueFactory<>("linea"));
@@ -736,10 +744,23 @@ public class AppController {
         TableColumn<InfoSimbolo, String> colSimbValor = new TableColumn<>("Valor");
         colSimbValor.setCellValueFactory(new PropertyValueFactory<>("valor"));
         colSimbValor.setPrefWidth(52);
+        colSimbValor.setCellFactory(col -> celdaTextoOpcional());
 
-        tablaSimbolos.getColumns().addAll(colSimbNombre, colSimbClase,
-            colSimbTipo, colSimbUnidad, colSimbValor, colSimbLinea);
+        tablaSimbolos.getColumns().setAll(List.of(colSimbNombre, colSimbClase,
+            colSimbTipo, colSimbUnidad, colSimbValor, colSimbLinea));
         tablaSimbolos.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        tablaSimbolos.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                InfoSimbolo sel = tablaSimbolos.getSelectionModel().getSelectedItem();
+                if (sel != null) irALinea(sel.lineaProperty().get());
+            }
+        });
+        tablaSimbolos.setOnKeyPressed(e -> {
+            if (e.getCode() == KeyCode.ENTER) {
+                InfoSimbolo sel = tablaSimbolos.getSelectionModel().getSelectedItem();
+                if (sel != null) irALinea(sel.lineaProperty().get());
+            }
+        });
 
         // ─── AST ───
         astTree = new TreeView<>();
@@ -749,6 +770,20 @@ public class AppController {
             + " -fx-font-size: 11px;"
             + " -fx-accent: #45475a;");
         astTree.setShowRoot(false);
+        astTree.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                TreeItem<String> sel = astTree.getSelectionModel().getSelectedItem();
+                Integer ln = sel == null ? null : lineaPorItemAST.get(sel);
+                if (ln != null && ln > 0) irALinea(ln);
+            }
+        });
+        astTree.setOnKeyPressed(e -> {
+            if (e.getCode() == KeyCode.ENTER) {
+                TreeItem<String> sel = astTree.getSelectionModel().getSelectedItem();
+                Integer ln = sel == null ? null : lineaPorItemAST.get(sel);
+                if (ln != null && ln > 0) irALinea(ln);
+            }
+        });
 
         astEmpty = new Label("El AST aparece cuando el código compila");
         astEmpty.getStyleClass().add("tm-empty");
@@ -783,11 +818,13 @@ public class AppController {
         colCuadArg1.setCellValueFactory(
             cd -> new ReadOnlyStringWrapper(cd.getValue().getArg1()));
         colCuadArg1.setPrefWidth(90);
+        colCuadArg1.setCellFactory(col -> celdaTextoOpcional());
 
         TableColumn<Cuadruplo, String> colCuadArg2 = new TableColumn<>("Arg2");
         colCuadArg2.setCellValueFactory(
             cd -> new ReadOnlyStringWrapper(cd.getValue().getArg2()));
         colCuadArg2.setPrefWidth(90);
+        colCuadArg2.setCellFactory(col -> celdaTextoOpcional());
 
         TableColumn<Cuadruplo, String> colCuadResultado = new TableColumn<>("Resultado");
         colCuadResultado.setCellValueFactory(
@@ -816,9 +853,21 @@ public class AppController {
             }
         });
 
-        tablaCuadruplos.getColumns().addAll(colCuadIndice, colCuadOp, colCuadArg1,
-            colCuadArg2, colCuadResultado, colCuadLinea);
+        tablaCuadruplos.getColumns().setAll(List.of(colCuadIndice, colCuadOp, colCuadArg1,
+            colCuadArg2, colCuadResultado, colCuadLinea));
         tablaCuadruplos.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        tablaCuadruplos.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                Cuadruplo sel = tablaCuadruplos.getSelectionModel().getSelectedItem();
+                if (sel != null && sel.linea > 0) irALinea(sel.linea);
+            }
+        });
+        tablaCuadruplos.setOnKeyPressed(e -> {
+            if (e.getCode() == KeyCode.ENTER) {
+                Cuadruplo sel = tablaCuadruplos.getSelectionModel().getSelectedItem();
+                if (sel != null && sel.linea > 0) irALinea(sel.linea);
+            }
+        });
 
         // ─── Una sola columna de pestañas planas para todo el panel derecho ───
         TabPane pestanas = new TabPane(
@@ -833,6 +882,23 @@ public class AppController {
         return pestanas;
     }
 
+    /** Atenúa en Overlay0 los guiones («—» o «-») de campos vacíos. */
+    private static <T> TableCell<T, String> celdaTextoOpcional() {
+        return new TableCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    return;
+                }
+                boolean vacio = "—".equals(item) || "-".equals(item);
+                setText(vacio ? "—" : item);
+                setTextFill(Color.web(vacio ? "#6c7086" : "#cdd6f4"));
+            }
+        };
+    }
+
     /** Envuelve el contenido de una pestaña con el relleno común del panel. */
     private VBox envolver(Region contenido) {
         VBox caja = new VBox(contenido);
@@ -845,6 +911,7 @@ public class AppController {
     private VBox crearPanelErrores() {
         problemasPanel = new VBox(0);
         problemasPanel.getStyleClass().add("tm-problems");
+        problemasPanel.setMinHeight(34);
 
         problemasTitulo = new Label("PROBLEMAS");
         problemasTitulo.getStyleClass().add("tm-problems-title");
@@ -1096,7 +1163,6 @@ public class AppController {
         // Colisiones de nombres, duplicados, sensor/umbral confundidos, rangos
         // inválidos, estados incoherentes, reglas contradictorias, parámetros de
         // simulación, flujo de datos y magnitudes mezcladas.
-        construirTablaSimbolos(programa, tokens);
         List<String> erroresSemanticos;
         try {
             erroresSemanticos = new AnalizadorSemantico()
@@ -1105,6 +1171,9 @@ public class AppController {
             erroresSemanticos = new ArrayList<>();
             mostrarError("Error en análisis semántico: " + e.getMessage());
         }
+        // Se construye después del análisis semántico para que las señales
+        // derivadas (calcular) ya tengan su tipo y unidad física resueltos.
+        construirTablaSimbolos(programa, tokens);
 
         // ─── Fase 4: Sugerencias de palabras reservadas mal escritas ───
         List<String> sugerenciasReservadas = Collections.emptyList();
@@ -1115,9 +1184,10 @@ public class AppController {
         // los errores ya calculados (léxico + sintáctico + semántico).
         Set<String> lexemasConErrorLex = new HashSet<>(erroresReservadas.keySet());
         lexemasConErrorLex.addAll(erroresIncluidos.keySet());
-        Set<String> clavesSintacticas = extraerClavesSintacticas(erroresSint);
+        Set<String> clavesConError = extraerClavesSintacticas(erroresSint);
+        clavesConError.addAll(extraerClavesSemanticas(erroresSemanticos));
         boolean[] charsConErrorLex = marcarCharsErrorLexico(codigo, lexer.getRangosErrorLexico());
-        actualizarEstilosEditor(codigo, tokens, lexemasConErrorLex, clavesSintacticas, charsConErrorLex);
+        actualizarEstilosEditor(codigo, tokens, lexemasConErrorLex, clavesConError, charsConErrorLex);
         actualizarIconosLinea(erroresLex, erroresSintParaUI, erroresSemanticos);
         actualizarErrores(erroresLex, erroresSintParaUI, erroresSemanticos, sugerenciasReservadas);
         actualizarTokens(tokens);
@@ -1248,6 +1318,7 @@ public class AppController {
 
         errorList.setVisible(hay);
         errorList.setManaged(hay);
+        problemasPanel.setMaxHeight(hay ? Double.MAX_VALUE : 34);
 
         Platform.runLater(() -> {
             if (hay) {
@@ -1381,6 +1452,36 @@ public class AppController {
         return claves;
     }
 
+    /**
+     * Extrae claves "linea + lexema entre comillas" de cada error semántico
+     * para subrayar en el editor los identificadores problemáticos en esa línea.
+     */
+    private Set<String> extraerClavesSemanticas(List<String> erroresSemanticos) {
+        Set<String> claves = new HashSet<>();
+        if (erroresSemanticos == null) return claves;
+        for (String err : erroresSemanticos) {
+            int linea = lineaDe(err);
+            if (linea <= 0) continue;
+            int idx = 0;
+            while (idx < err.length()) {
+                int ini = err.indexOf('\'', idx);
+                if (ini < 0) break;
+                int fin = err.indexOf('\'', ini + 1);
+                if (fin < 0) break;
+                String citado = err.substring(ini + 1, fin);
+                if (!citado.isEmpty() && !citado.contains(" ")) {
+                    claves.add(linea + "\0" + citado);
+                }
+                idx = fin + 1;
+            }
+            if (err.toLowerCase().contains("division entre cero")) {
+                claves.add(linea + "\0" + "/");
+                claves.add(linea + "\0" + "0");
+            }
+        }
+        return claves;
+    }
+
     /** Emite un tramo de texto plano/comentario partido por error léxico. */
     private void agregarEstilosDeTexto(String texto,
                                        StyleSpansBuilder<Collection<String>> estilos,
@@ -1491,7 +1592,8 @@ public class AppController {
         if (tipo.equals("ID")) return "#89dceb";
         if (tipo.equals("NUMERO")) return "#fab387";
         if (tipo.equals("ESTADO_SISTEMA")) return "#f38ba8";
-        if (tipo.equals("SI") || tipo.equals("ENTONCES") || tipo.equals("ESTADO")) {
+        if (tipo.equals("SI") || tipo.equals("ENTONCES")
+                || tipo.equals("SINO") || tipo.equals("ESTADO")) {
             return "#f38ba8";
         }
         if (tipo.equals("MAYOR") || tipo.equals("MENOR")
@@ -1502,8 +1604,9 @@ public class AppController {
                 || tipo.equals("ASIGNACION")) {
             return "#f9e2af";
         }
-        if (tipo.equals("PUNTO_COMA") || tipo.equals("COMA")
-                || tipo.equals("PAREN_IZQ") || tipo.equals("PAREN_DER")) {
+        if (tipo.equals("PUNTO_COMA") || tipo.equals("DOS_PUNTOS")
+                || tipo.equals("COMA") || tipo.equals("PAREN_IZQ")
+                || tipo.equals("PAREN_DER")) {
             return "#a6e3a1";
         }
         return "#cba6f7";
@@ -1513,7 +1616,8 @@ public class AppController {
         if ("ID".equals(tipo)) return "tm-identifier";
         if ("NUMERO".equals(tipo)) return "tm-number";
         if ("ESTADO_SISTEMA".equals(tipo)) return "tm-state";
-        if (tipo.equals("SI") || tipo.equals("ENTONCES") || tipo.equals("ESTADO")) {
+        if (tipo.equals("SI") || tipo.equals("ENTONCES")
+                || tipo.equals("SINO") || tipo.equals("ESTADO")) {
             return "tm-control";
         }
         if (tipo.equals("MAYOR") || tipo.equals("MENOR")
@@ -1524,8 +1628,9 @@ public class AppController {
                 || tipo.equals("ASIGNACION")) {
             return "tm-operator";
         }
-        if (tipo.equals("PUNTO_COMA") || tipo.equals("COMA")
-                || tipo.equals("PAREN_IZQ") || tipo.equals("PAREN_DER")) {
+        if (tipo.equals("PUNTO_COMA") || tipo.equals("DOS_PUNTOS")
+                || tipo.equals("COMA") || tipo.equals("PAREN_IZQ")
+                || tipo.equals("PAREN_DER")) {
             return "tm-delimiter";
         }
         return "tm-keyword";
@@ -1565,6 +1670,7 @@ public class AppController {
 
     // ─── AST ───
     private void actualizarAST(Programa programa) {
+        lineaPorItemAST.clear();
         if (programa == null) {
             astTree.setRoot(null);
             astEmpty.setText("El AST se bloquea mientras haya errores");
@@ -1578,63 +1684,122 @@ public class AppController {
         raiz.setExpanded(true);
 
         // Sensores
-        TreeItem<String> sensores = new TreeItem<>("Sensores: "
-            + (programa.sensores.isEmpty() ? "(ninguno)"
-                : String.join(", ", programa.sensores)));
-        sensores.setExpanded(true);
-        raiz.getChildren().add(sensores);
+        if (programa.sensoresDeclarados.isEmpty()) {
+            raiz.getChildren().add(new TreeItem<>("Sensores: (ninguno)"));
+        } else {
+            TreeItem<String> sensores = new TreeItem<>(
+                "Sensores (" + programa.sensoresDeclarados.size() + ")");
+            sensores.setExpanded(true);
+            for (Sensor s : programa.sensoresDeclarados) {
+                String detalle = s.tipo() == null
+                    ? s.nombre()
+                    : s.nombre() + " : " + s.tipo().etiqueta()
+                        + " (" + s.tipo().unidad() + ")";
+                sensores.getChildren().add(nodoAST(detalle, s.linea()));
+            }
+            raiz.getChildren().add(sensores);
+        }
+
+        // Reloj de muestreo
+        if (programa.muestreo != null) {
+            raiz.getChildren().add(nodoAST(
+                "Muestreo: " + programa.muestreo + " s", programa.lineaMuestreo));
+        }
 
         // Umbrales
         if (programa.umbrales.isEmpty()) {
             raiz.getChildren().add(new TreeItem<>("Umbrales: (ninguno)"));
         } else {
-            TreeItem<String> umbrales = new TreeItem<>("Umbrales");
+            TreeItem<String> umbrales = new TreeItem<>(
+                "Umbrales (" + programa.umbrales.size() + ")");
             umbrales.setExpanded(true);
-            programa.umbrales.forEach((nom, val) ->
-                umbrales.getChildren().add(new TreeItem<>(nom + " = " + val)));
+            for (Map.Entry<String, Double> e : programa.umbrales.entrySet()) {
+                Simbolo s = programa.simbolos.buscar(e.getKey());
+                int ln = s != null ? s.linea() : 0;
+                String tipoStr = (s != null && s.tipo() != null)
+                    ? " : " + s.tipo().etiqueta() : "";
+                String valStr = s != null ? s.valorTexto() : String.valueOf(e.getValue());
+                String uniStr = (s != null && s.tipo() != null)
+                    ? " " + s.tipo().unidad() : "";
+                umbrales.getChildren().add(nodoAST(
+                    e.getKey() + tipoStr + " = " + valStr + uniStr, ln));
+            }
             raiz.getChildren().add(umbrales);
         }
 
-        // Reglas
-        if (programa.reglas.isEmpty()) {
-            raiz.getChildren().add(new TreeItem<>("Reglas: (ninguna)"));
-        } else {
-            TreeItem<String> reglas = new TreeItem<>("Reglas (" + programa.reglas.size() + ")");
-            reglas.setExpanded(true);
-            for (int i = 0; i < programa.reglas.size(); i++) {
-                Regla r = programa.reglas.get(i);
-                String condStr = condicionToString(r.condicion);
-                TreeItem<String> regla = new TreeItem<>(
-                    "Regla " + (i + 1) + ": Si " + condStr);
-                regla.getChildren().add(new TreeItem<>("\u2192 Estado: " + r.estado));
-                if (r.tieneRamaSino()) {
-                    regla.getChildren().add(new TreeItem<>("\u2192 Sino: " + r.estadoSino));
-                }
-                reglas.getChildren().add(regla);
-            }
-            raiz.getChildren().add(reglas);
+        // Estado inicial
+        if (programa.estadoInicial != null) {
+            raiz.getChildren().add(nodoAST(
+                "Estado inicial: " + programa.estadoInicial.toUpperCase(),
+                programa.lineaEstadoInicial));
         }
 
         // Cálculos
         if (programa.calculos.isEmpty()) {
-            raiz.getChildren().add(new TreeItem<>("Calculos: (ninguno)"));
+            raiz.getChildren().add(new TreeItem<>("Cálculos: (ninguno)"));
         } else {
-            TreeItem<String> calculos = new TreeItem<>("Calculos (" + programa.calculos.size() + ")");
+            TreeItem<String> calculos = new TreeItem<>(
+                "Cálculos (" + programa.calculos.size() + ")");
             calculos.setExpanded(true);
             for (Calculo c : programa.calculos) {
-                TreeItem<String> calcItem = new TreeItem<>(
-                    c.esExpresion()
-                        ? "CALCULAR (" + c.expresion + ") -> " + c.destino
-                        : "CALCULAR " + c.operacion + " -> " + c.destino);
+                Simbolo s = programa.simbolos.buscar(c.destino);
+                String tipoDest = (s != null && s.tipo() != null)
+                    ? " [" + s.tipo().etiqueta() + "]" : "";
+                TreeItem<String> calcItem = nodoAST(
+                    (c.esExpresion()
+                        ? "CALCULAR (" + c.expresion + ") \u2192 " + c.destino
+                        : "CALCULAR " + c.operacion.toUpperCase() + " \u2192 " + c.destino)
+                        + tipoDest,
+                    c.linea);
                 for (Parametro p : c.parametros) {
-                    calcItem.getChildren().add(new TreeItem<>("  " + p.nombre + " = " + p.valor));
+                    calcItem.getChildren().add(nodoAST(
+                        "  " + p.nombre.toUpperCase() + " = " + p.valor, c.linea));
+                }
+                String mem = c.memoria() == null ? null : c.memoria().toString();
+                if (mem != null && !mem.equals("ninguna")) {
+                    calcItem.getChildren().add(nodoAST("  memoria: " + mem, c.linea));
                 }
                 calculos.getChildren().add(calcItem);
             }
             raiz.getChildren().add(calculos);
         }
 
+        // Reglas
+        if (programa.reglas.isEmpty()) {
+            raiz.getChildren().add(new TreeItem<>("Reglas: (ninguna)"));
+        } else {
+            TreeItem<String> reglas = new TreeItem<>(
+                "Reglas (" + programa.reglas.size() + ")");
+            reglas.setExpanded(true);
+            for (int i = 0; i < programa.reglas.size(); i++) {
+                Regla r = programa.reglas.get(i);
+                String condStr = condicionToString(r.condicion);
+                TreeItem<String> regla = nodoAST(
+                    "Regla " + (i + 1) + ": si " + condStr, r.linea);
+                regla.setExpanded(true);
+                regla.getChildren().add(nodoAST("\u2192 estado = " + r.estado, r.linea));
+                if (r.tieneRamaSino()) {
+                    regla.getChildren().add(nodoAST("\u2192 sino = " + r.estadoSino, r.linea));
+                }
+                reglas.getChildren().add(regla);
+            }
+            raiz.getChildren().add(reglas);
+        }
+
+        // Estado por defecto (sino)
+        if (programa.estadoPorDefecto != null) {
+            raiz.getChildren().add(nodoAST(
+                "Por defecto (sino): " + programa.estadoPorDefecto.toUpperCase(),
+                programa.lineaEstadoPorDefecto));
+        }
+
         astTree.setRoot(raiz);
+    }
+
+    private TreeItem<String> nodoAST(String texto, int linea) {
+        TreeItem<String> item = new TreeItem<>(texto);
+        if (linea > 0) lineaPorItemAST.put(item, linea);
+        return item;
     }
 
     // ─── Panel de derivación ───
@@ -1673,7 +1838,8 @@ public class AppController {
 
         abrir.setDisable(false);
 
-        TextArea arbolPreviewArea = new TextArea(arbolPreviewCompleto(parser.arbolDerivacion));
+        NodoDerivacion limpio = PanelDerivacion.copiarSinSinteticos(parser.arbolDerivacion);
+        TextArea arbolPreviewArea = new TextArea(arbolPreviewCompleto(limpio));
         arbolPreviewArea.setEditable(false);
         arbolPreviewArea.setWrapText(false);
         arbolPreviewArea.getStyleClass().add("tm-derivacion-preview");
@@ -1682,20 +1848,26 @@ public class AppController {
     }
 
     /**
-     * Convierte el árbol de derivación completo a texto indentado (sin límite de profundidad).
-     * Usa caracteres ASCII para compatibilidad con todas las fuentes.
+     * Convierte el árbol de derivación completo a texto indentado.
      */
     private String arbolPreviewCompleto(NodoDerivacion nodo) {
-        return arbolPreviewCompleto(nodo, "", true);
+        if (nodo == null) return "";
+        StringBuilder sb = new StringBuilder();
+        sb.append(nodo.valor).append("\n");
+        for (int i = 0; i < nodo.hijos.size(); i++) {
+            sb.append(arbolPreviewCompleto(nodo.hijos.get(i), "",
+                i == nodo.hijos.size() - 1));
+        }
+        return sb.toString();
     }
 
     private String arbolPreviewCompleto(NodoDerivacion nodo, String prefijo, boolean esUltimo) {
         StringBuilder sb = new StringBuilder();
         sb.append(prefijo);
-        sb.append(esUltimo ? "+-- " : "+-- ");
+        sb.append(esUltimo ? "\u2514\u2500\u2500 " : "\u251C\u2500\u2500 ");
         sb.append(nodo.valor).append("\n");
 
-        String nuevoPrefijo = prefijo + (esUltimo ? "    " : "|   ");
+        String nuevoPrefijo = prefijo + (esUltimo ? "    " : "\u2502   ");
 
         for (int i = 0; i < nodo.hijos.size(); i++) {
             sb.append(arbolPreviewCompleto(nodo.hijos.get(i), nuevoPrefijo,
@@ -1712,7 +1884,7 @@ public class AppController {
             return;
         }
         PanelDerivacion panel = new PanelDerivacion(ultimoParser.arbolDerivacion);
-        panel.mostrarEnVentana();
+        panel.mostrarEnVentana(ventana());
     }
 
     // ─── Convertir expresión a string para el AST ───
@@ -1808,130 +1980,6 @@ public class AppController {
                 s.valorTexto(),
                 s.linea()));
         }
-    }
-
-    /** Busca la primera línea donde aparece una referencia a un identificador */
-    private int buscarLineaPrimerUso(String nombre, List<Token> tokens) {
-        for (Token t : tokens) {
-            if (t.tipo == TipoToken.ID && t.lexema.equals(nombre)) {
-                return t.linea;
-            }
-        }
-        return 0;
-    }
-
-    /**
-     * Extrae todas las variables referenciadas en condiciones y expresiones
-     * del AST (Reglas, Cálculos).
-     */
-    private Set<String> extraerVariablesReferenciadas(Programa programa) {
-        Set<String> vars = new HashSet<>();
-        for (Regla r : programa.reglas) {
-            vars.addAll(r.condicion.variables());
-        }
-        for (Calculo c : programa.calculos) {
-            if (c.esExpresion()) {
-                extraerVariablesDeExpresion(c.expresion, vars);
-            }
-            for (Parametro p : c.parametros) {
-                if ("con".equals(p.nombre)) {
-                    vars.add(p.valor); // con = identificador
-                }
-            }
-        }
-        return vars;
-    }
-
-    /** Recorre recursivamente una expresión para extraer Variables */
-    private void extraerVariablesDeExpresion(Expresion e, Set<String> vars) {
-        if (e instanceof Variable v) {
-            vars.add(v.nombre);
-        } else if (e instanceof Binaria b) {
-            extraerVariablesDeExpresion(b.izquierda, vars);
-            extraerVariablesDeExpresion(b.derecha, vars);
-        } else if (e instanceof Negacion n) {
-            extraerVariablesDeExpresion(n.expresion, vars);
-        } else if (e instanceof Abs a) {
-            extraerVariablesDeExpresion(a.expresion, vars);
-        }
-        // Numero no tiene variables
-    }
-
-    /**
-     * Análisis SEMÁNTICO DESACTIVADO (por pedido, se redefinirá después).
-     * Se conserva el método para no romper la estructura, pero siempre
-     * retorna lista vacía: los identificadores no declarados NO se reportan
-     * ni se reasignan a léxico/sintáctico.
-     */
-    private List<String> detectarNoDeclarados(Programa programa, List<Token> tokens) {
-        return new ArrayList<>();
-    }
-
-    /**
-     * Valida que cada calcular() use los parámetros con sentido según su operación.
-     * DESACTIVADO por pedido (no se llama de momento; se reactivará después).
-     * Es error SEMÁNTICO (la forma ya pasó el parser): un error por cada calcular.
-     * SENO/COSENO/CUADRADA: exactamente AMPLITUD y FRECUENCIA (1 vez c/u).
-     * PROMEDIO: exactamente VENTANA (1 vez). MAXIMO: vacío. SUMA: 2+ CON.
-     */
-    private List<String> validarParametrosCalculo(Programa programa) {
-        List<String> errores = new ArrayList<>();
-        if (programa == null) return errores;
-
-        for (Calculo c : programa.calculos) {
-            String op = c.operacion == null ? "" : c.operacion.toLowerCase();
-            Map<String, Integer> conteo = new HashMap<>();
-            for (Parametro p : c.parametros) {
-                String n = p.nombre == null ? "" : p.nombre.toLowerCase();
-                conteo.put(n, conteo.getOrDefault(n, 0) + 1);
-            }
-            int linea = c.linea;
-
-            if (op.equals("seno") || op.equals("coseno") || op.equals("cuadrada")) {
-                String opMay = op.toUpperCase();
-                boolean ok = c.parametros.size() == 2
-                    && conteo.getOrDefault("amplitud", 0) == 1
-                    && conteo.getOrDefault("frecuencia", 0) == 1;
-                if (!ok) {
-                    errores.add("Error semantico en linea " + linea + ": " + opMay
-                        + " requiere AMPLITUD y FRECUENCIA (2 parametros)."
-                        + " Se encontró: " + describirParams(c) + ".");
-                }
-            } else if (op.equals("promedio")) {
-                boolean ok = c.parametros.size() == 1
-                    && conteo.getOrDefault("ventana", 0) == 1;
-                if (!ok) {
-                    errores.add("Error semantico en linea " + linea + ": PROMEDIO"
-                        + " requiere VENTANA (1 parametro)."
-                        + " Se encontró: " + describirParams(c) + ".");
-                }
-            } else if (op.equals("maximo")) {
-                if (!c.parametros.isEmpty()) {
-                    errores.add("Error semantico en linea " + linea + ": MAXIMO"
-                        + " no lleva parametros ()."
-                        + " Se encontró: " + describirParams(c) + ".");
-                }
-            } else if (op.equals("suma")) {
-                boolean soloCon = conteo.keySet().stream().allMatch(k -> k.equals("con"));
-                int nCon = conteo.getOrDefault("con", 0);
-                if (!soloCon || nCon < 2) {
-                    errores.add("Error semantico en linea " + linea + ": SUMA"
-                        + " requiere 2 o más CON (ej. SUMA(CON=a, CON=b))."
-                        + " Se encontró: " + describirParams(c) + ".");
-                }
-            }
-        }
-        return errores;
-    }
-
-    /** Describe los parámetros para el mensaje semántico (vacío → "vacío"). */
-    private String describirParams(Calculo c) {
-        if (c.parametros.isEmpty()) return "vacío";
-        List<String> partes = new ArrayList<>();
-        for (Parametro p : c.parametros) {
-            partes.add(p.nombre.toUpperCase() + "=" + p.valor);
-        }
-        return String.join(", ", partes);
     }
 
     /**
@@ -2444,8 +2492,9 @@ public class AppController {
             return new String[] { "sensor", "umbral", "si", "calcular", "estado",
                                  "sino", "muestreo" };
         }
-        // Tras `sensor ID =` o `umbral ID =` se espera un tipo de sensor.
-        if (anterior.tipo == TipoToken.ASIGNACION && indice > 1) {
+        // Tras `sensor ID :` o `umbral ID :` (o `=`) se espera un tipo de sensor.
+        if ((anterior.tipo == TipoToken.DOS_PUNTOS || anterior.tipo == TipoToken.ASIGNACION)
+                && indice > 1) {
             TipoToken previo = tokens.get(indice - 2).tipo;
             if (previo == TipoToken.ID) {
                 boolean trasNombre = (indice > 2
@@ -2475,6 +2524,12 @@ public class AppController {
                 return new String[] { "seno", "coseno", "cuadrada", "promedio", "maximo", "suma" };
             }
             if (estaEnParametros(tokens, indice)) return parametrosReservados();
+        }
+
+        if (anterior != null && anterior.tipo == TipoToken.PAREN_IZQ
+                && indice > 1 && tokens.get(indice - 2).tipo == TipoToken.CALCULAR
+                && siguiente != null && siguiente.tipo == TipoToken.PAREN_IZQ) {
+            return new String[] { "seno", "coseno", "cuadrada", "promedio", "maximo", "suma" };
         }
 
         if (anterior != null && anterior.tipo == TipoToken.PAREN_IZQ
@@ -2514,63 +2569,6 @@ public class AppController {
     private String[] tiposReservados() {
         return new String[] { "electrico", "termico", "luminico",
                              "mecanico", "quimico", "hidraulico" };
-    }
-
-    /**
-     * Escanea TODOS los tokens ID del código y los compara con las
-     * palabras reservadas del lenguaje usando distancia de Levenshtein.
-     * Solo sugiere un ID cuando el parser también lo mencionó en un error.
-     * Así no se confunden identificadores válidos con palabras reservadas.
-     */
-    private List<String> sugerirIDsMalEscritos(List<Token> tokens, Programa programa,
-                                               List<String> erroresSintacticos) {
-        List<String> sugerencias = new ArrayList<>();
-        Set<String> yaSugeridos = new HashSet<>(); // evita duplicados
-
-        // Identificadores declarados (sensores, umbrales) — no sugerir sobre ellos
-        Set<String> declaradas = new HashSet<>();
-        if (programa != null) {
-            declaradas.addAll(programa.sensores);
-            for (String k : programa.umbrales.keySet()) {
-                declaradas.add(k);
-            }
-        }
-
-        // Recorrer todos los tokens buscando IDs
-        for (Token t : tokens) {
-            if (t.tipo != TipoToken.ID) continue;
-            String lexema = t.lexema;
-            String idLower = lexema.toLowerCase();
-
-            // Si ya está declarado o ya sugerimos para este ID, ignorar
-            if (declaradas.contains(lexema)) continue;
-            if (yaSugeridos.contains(idLower)) continue;
-
-            Set<String> candidatos = new LinkedHashSet<>();
-            for (String error : erroresSintacticos) {
-                if (error.contains("'" + lexema + "'")) {
-                    candidatos.addAll(candidatosEsperados(error));
-                }
-            }
-            if (candidatos.isEmpty()) continue;
-
-            boolean esReservadaExacta = false;
-            for (String r : PALABRAS_RESERVADAS) {
-                if (idLower.equals(r)) { esReservadaExacta = true; break; }
-            }
-            if (esReservadaExacta) continue;
-
-            // Comparar solo con palabras que el parser esperaba en ese punto.
-            String sugerencia = buscarSugerencia(idLower, candidatos.toArray(new String[0]));
-            if (sugerencia != null) {
-                yaSugeridos.add(idLower);
-                sugerencias.add("Linea " + t.linea + ": '" + lexema
-                    + "' se parece a la palabra reservada '" + sugerencia + "'."
-                    + " \u00BFQuisiste decir '" + sugerencia + "'?");
-            }
-        }
-
-        return sugerencias;
     }
 
     /** Extrae solo las palabras que el parser esperaba en ese punto. */
@@ -2696,6 +2694,8 @@ public class AppController {
         // línea 100. Se devuelve al final del código, que es donde se quiere
         // seguir escribiendo.
         editor.getCaretSelectionBind().moveTo(finDelContenido(limpio));
+        if (debounce != null) debounce.stop();
+        analizarCodigo();
         // El scroll va en el siguiente pulso: durante la construcción de la
         // ventana el CodeArea todavía no tiene skin montada y requestFollowCaret
         // no hace nada, así que el cursor quedaría en su sitio pero la vista
@@ -2777,14 +2777,20 @@ public class AppController {
         fc.setTitle("Abrir archivo Timotomata");
         fc.getExtensionFilters().add(
             new FileChooser.ExtensionFilter("Archivos Timotomata", "*.tm", "*.txt"));
-        fc.setInitialDirectory(new File("."));
+        if (ultimoDirectorio != null && ultimoDirectorio.isDirectory()) {
+            fc.setInitialDirectory(ultimoDirectorio);
+        }
         File file = fc.showOpenDialog(ventana());
         if (file == null) return;
 
-        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-            setTextoConRelleno(br.lines().collect(Collectors.joining("\n")));
+        try {
+            if (file.getParentFile() != null) {
+                ultimoDirectorio = file.getParentFile();
+            }
+            String contenido = String.join("\n",
+                Files.readAllLines(file.toPath(), StandardCharsets.UTF_8));
             archivoActual = file.getAbsolutePath();
-            actualizarEtiquetaArchivo();
+            setTextoConRelleno(contenido);
         } catch (IOException ex) {
             mostrarError("No se pudo abrir el archivo: " + ex.getMessage());
         }
@@ -2803,9 +2809,15 @@ public class AppController {
         fc.setTitle("Guardar archivo Timotomata");
         fc.getExtensionFilters().add(
             new FileChooser.ExtensionFilter("Archivos Timotomata", "*.tm", "*.txt"));
+        if (ultimoDirectorio != null && ultimoDirectorio.isDirectory()) {
+            fc.setInitialDirectory(ultimoDirectorio);
+        }
         fc.setInitialFileName("programa.tm");
         File file = fc.showSaveDialog(ventana());
         if (file != null) {
+            if (file.getParentFile() != null) {
+                ultimoDirectorio = file.getParentFile();
+            }
             guardarA(file);
             archivoActual = file.getAbsolutePath();
             actualizarEtiquetaArchivo();
@@ -2813,8 +2825,8 @@ public class AppController {
     }
 
     private void guardarA(File file) {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(file))) {
-            bw.write(textoAGuardar());
+        try {
+            Files.writeString(file.toPath(), textoAGuardar(), StandardCharsets.UTF_8);
             // El punto de guardado pasa a ser el estado limpio del documento:
             // deshacer hasta aquí vuelve a quitar la marca de cambios.
             editor.getUndoManager().mark();
@@ -2948,17 +2960,17 @@ public class AppController {
             + "// Estado inicial de la maquina.\n"
             + "estado = NORMAL;\n"
             + "\n"
-            + "// Las reglas se evaluan en orden: gana la primera que se cumpla.\n"
-            + "si voltaje     >= voltaje_max entonces estado = PICO;\n"
-            + "si voltaje     <= voltaje_min entonces estado = CAIDA;\n"
-            + "si temperatura >  temp_max    entonces estado = INESTABLE;\n"
-            + "si temperatura <  temp_min    entonces estado = CAIDA;\n"
-            + "\n"
             + "// El calculo escribe en una senal derivada: el canal fisico\n"
             + "// de voltaje queda intacto. El canal de entrada es el\n"
             + "// parametro CON= de la operacion, no un argumento suelto.\n"
             + "calcular(PROMEDIO(CON=voltaje, VENTANA=10), voltaje_prom);\n"
             + "calcular(MAXIMO(CON=temperatura, VENTANA=20), temp_maximo);\n"
+            + "\n"
+            + "// Las reglas se evaluan en orden: gana la primera que se cumpla.\n"
+            + "si voltaje      >= voltaje_max entonces estado = PICO;\n"
+            + "si voltaje      <= voltaje_min entonces estado = CAIDA;\n"
+            + "si temperatura  >  temp_max    entonces estado = INESTABLE;\n"
+            + "si temperatura  <  temp_min    entonces estado = CAIDA;\n"
             + "si voltaje_prom >= voltaje_max entonces estado = PICO;\n"
             + "\n"
             + "// Si ninguna regla se cumple.\n"

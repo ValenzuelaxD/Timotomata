@@ -9,6 +9,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import timotomata.intermedio.Cuadruplo;
+import timotomata.intermedio.GeneradorCuadruplos;
+import timotomata.intermedio.TablaCuadruplos;
 import timotomata.lexer.Lexer;
 import timotomata.lexer.TipoToken;
 import timotomata.lexer.Token;
@@ -110,14 +113,14 @@ public final class CompiladorCLI {
         for (String e : erroresSemanticos) System.out.println("  [SEM] " + e);
 
         if (verbose && erroresSintacticos.isEmpty()) {
-            volcar(programa);
+            volcar(programa, erroresLexicos.isEmpty() && erroresSemanticos.isEmpty());
         }
 
         return erroresLexicos.isEmpty() && erroresSintacticos.isEmpty()
             && erroresSemanticos.isEmpty();
     }
 
-    private static void volcar(Programa programa) {
+    private static void volcar(Programa programa, boolean sinErrores) {
         List<String> conflictos = Gramatica.conflictos();
         System.out.println("  -- gramatica --");
 
@@ -163,6 +166,15 @@ public final class CompiladorCLI {
         System.out.println("  -- reglas en orden de evaluacion --");
         for (Regla r : programa.reglas) {
             System.out.printf("     linea %-4d %s  ->  %s%n", r.linea, r.condicion, r.estado);
+        }
+
+        if (sinErrores) {
+            TablaCuadruplos cuadruplos = new GeneradorCuadruplos().generar(programa);
+            System.out.printf("  -- codigo intermedio (%d cuadruplos) --%n",
+                cuadruplos.size());
+            for (Cuadruplo q : cuadruplos.cuadruplos()) {
+                System.out.println("     " + q);
+            }
         }
     }
 }

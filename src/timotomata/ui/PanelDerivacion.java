@@ -3,40 +3,45 @@ package timotomata.ui;
 import java.util.*;
 import javafx.geometry.Point2D;
 import javafx.geometry.VPos;
+import javafx.scene.Group;
 import javafx.scene.Scene;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.input.KeyCode;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
-import javafx.scene.shape.Circle;
 import javafx.scene.shape.Line;
+import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import timotomata.parser.NodoDerivacion;
 
 /**
  * Panel que dibuja el árbol de derivación sintáctica de forma gráfica.
- * Los nodos sintéticos (EXPRESION_SIG, TERMINO_SIG, LISTA_PARAMS, PARAM)
- * se colapsan automáticamente promoviendo sus hijos.
+ * Los nodos sintéticos (CONDICION_SIG, EXPRESION_SIG, TERMINO_SIG,
+ * LISTA_PARAMS, PARAM) se colapsan automáticamente promoviendo sus hijos.
  */
 public class PanelDerivacion {
 
     // ─── Constantes de dibujo ───
-    private static final double RADIO = 12;
-    private static final double ESPACIO_H = 75;
-    private static final double ESPACIO_V = 75;
+    private static final double ALTO_NODO = 26;
+    private static final double RADIO_V = ALTO_NODO / 2.0;
+    private static final double ANCHO_MIN_NODO = 28;
+    private static final double ESPACIO_H = 28;
+    private static final double ESPACIO_V = 68;
     private static final double PADDING_LATERAL = 50;
-    private static final double PADDING_SUPERIOR = 20;
-    private static final double MIN_CANVAS_W = 400;
-    private static final double MIN_CANVAS_H = 200;
-    private static final double ESPACIO_V_HOJA = 30;
+    private static final double PADDING_SUPERIOR = 40;
+    private static final double MIN_CANVAS_W = 500;
+    private static final double MIN_CANVAS_H = 260;
+    private static final double ESPACIO_V_HOJA = 16;
 
     private final NodoDerivacion raiz;
-    private Map<NodoDerivacion, Point2D> posiciones;
+    private final Map<NodoDerivacion, Point2D> posiciones;
 
-    // ─── Paleta ───
+    // ─── Paleta (Catppuccin Mocha) ───
     private static final Color COLOR_FONDO = Color.web("#1e1e2e");
     private static final Color CIRCULO_INTERNO = Color.web("#45475a");
     private static final Color BORDE_INTERNO = Color.web("#89b4fa");
@@ -46,49 +51,46 @@ public class PanelDerivacion {
     private static final Color TEXTO_HOJA = Color.web("#a6e3a1");
     private static final Color LINEA_INTERNA = Color.web("#585b70");
     private static final Color LINEA_HOJA = Color.web("#45475a");
-    private static final Color CIRCULO_PROGRAMA = Color.web("#2a2a3e");
+    private static final Color CIRCULO_PROGRAMA = Color.web("#313244");
     private static final Color BORDE_PROGRAMA = Color.web("#f9e2af");
+    private static final Color TEXTO_PROGRAMA = Color.web("#f9e2af");
 
-    public PanelDerivacion(NodoDerivacion raiz) {
-        this.raiz = raiz;
+    public PanelDerivacion(NodoDerivacion raizOriginal) {
+        this.raiz = copiarSinSinteticos(raizOriginal);
         this.posiciones = new HashMap<>();
-        // Colapsar nodos sintéticos al construir
-        colapsarSinteticos(raiz);
-    }
-
-    // =============================================================
-    //  COLAPSAR NODOS SINTÉTICOS (EXPRESION_SIG, TERMINO_SIG, etc.)
-    //  Promueve los hijos del nodo sintético al abuelo.
-    // =============================================================
-    private void colapsarSinteticos(NodoDerivacion nodo) {
-        // Primero colapsar recursivamente los hijos (bottom-up)
-        for (NodoDerivacion hijo : new ArrayList<>(nodo.hijos)) {
-            colapsarSinteticos(hijo);
-        }
-
-        // Si este nodo es sintético, sus hijos ya fueron procesados
-        // (el padre se encargará de promoverlos)
-        if (nodo.sintetico) {
-            return;
-        }
-
-        // Reemplazar hijos sintéticos por sus propios hijos
-        List<NodoDerivacion> nuevosHijos = new ArrayList<>();
-        for (NodoDerivacion hijo : nodo.hijos) {
-            if (hijo.sintetico) {
-                // Promover todos los hijos del nodo sintético
-                nuevosHijos.addAll(hijo.hijos);
-            } else {
-                nuevosHijos.add(hijo);
-            }
-        }
-        nodo.hijos = nuevosHijos;
     }
 
     /**
-     * Abre una ventana modal mostrando el arbol de derivacion.
+     * Crea una copia del árbol colapsando los nodos sintéticos
+     * (CONDICION_SIG, EXPRESION_SIG, TERMINO_SIG, LISTA_PARAMS, PARAM)
+     * sin mutar el árbol original del parser.
      */
+    public static NodoDerivacion copiarSinSinteticos(NodoDerivacion nodo) {
+        if (nodo == null) return null;
+        NodoDerivacion copia = new NodoDerivacion(nodo.valor);
+        copia.sintetico = nodo.sintetico;
+        for (NodoDerivacion hijo : nodo.hijos) {
+            NodoDerivacion hijoCopia = copiarSinSinteticos(hijo);
+            if (hijoCopia == null) continue;
+            if (hijoCopia.sintetico) {
+                copia.hijos.addAll(hijoCopia.hijos);
+            } else {
+                copia.hijos.add(hijoCopia);
+            }
+        }
+        return copia;
+    }
+
+    /** Abre una ventana modal mostrando el árbol de derivación. */
     public void mostrarEnVentana() {
+        mostrarEnVentana(null);
+    }
+
+    /**
+     * Abre una ventana modal asociada a la ventana principal mostrando
+     * el árbol de derivación, con soporte de paneo y zoom (Ctrl + rueda o +/-/0).
+     */
+    public void mostrarEnVentana(Window owner) {
         double ancho = calcularAncho(raiz);
         double totalW = Math.max(ancho + PADDING_LATERAL * 2, MIN_CANVAS_W);
         double totalH = Math.max(calcularAltura(raiz) + PADDING_SUPERIOR * 2, MIN_CANVAS_H);
@@ -101,29 +103,25 @@ public class PanelDerivacion {
         pane.setPrefSize(totalW, totalH);
         pane.setStyle("-fx-background-color: #1e1e2e;");
 
-        // 1. Líneas entre nodos (detrás de los círculos)
+        // 1. Líneas entre nodos (detrás de las cápsulas)
         for (Map.Entry<NodoDerivacion, Point2D> entry : posiciones.entrySet()) {
             NodoDerivacion nodo = entry.getKey();
             Point2D p = entry.getValue();
             for (NodoDerivacion hijo : nodo.hijos) {
                 Point2D hp = posiciones.get(hijo);
                 if (hp != null) {
-                    // Calcular el radio real del hijo para que la linea llegue hasta el borde
-                    String textoHijo = hijo.hijos.isEmpty() ? extraerLexema(hijo.valor) : hijo.valor;
-                    double anchoHijo = estimarAnchoTexto(textoHijo);
-                    double radioHijo = Math.max(RADIO, (anchoHijo + 14) / 2);
                     Line line = new Line(
-                        p.getX(), p.getY() + RADIO,
-                        hp.getX(), hp.getY() - radioHijo
+                        p.getX(), p.getY() + RADIO_V,
+                        hp.getX(), hp.getY() - RADIO_V
                     );
                     line.setStroke(hijo.hijos.isEmpty() ? LINEA_HOJA : LINEA_INTERNA);
-                    line.setStrokeWidth(2);
+                    line.setStrokeWidth(1.8);
                     pane.getChildren().add(line);
                 }
             }
         }
 
-        // 2. Círculos + texto por cada nodo
+        // 2. Cápsulas + texto por cada nodo (altura constante para no solapar niveles)
         for (Map.Entry<NodoDerivacion, Point2D> entry : posiciones.entrySet()) {
             NodoDerivacion nodo = entry.getKey();
             Point2D p = entry.getValue();
@@ -137,80 +135,118 @@ public class PanelDerivacion {
             if (esRaiz) {
                 colorFondo = CIRCULO_PROGRAMA;
                 colorBorde = BORDE_PROGRAMA;
-                colorTexto = Color.web("#f9e2af");
+                colorTexto = TEXTO_PROGRAMA;
                 fontSize = 13;
             } else if (esTerminal) {
                 colorFondo = CIRCULO_HOJA;
                 colorBorde = BORDE_HOJA;
-                colorTexto = Color.web("#a6e3a1");
+                colorTexto = TEXTO_HOJA;
                 fontSize = 11;
             } else {
                 colorFondo = CIRCULO_INTERNO;
                 colorBorde = BORDE_INTERNO;
-                colorTexto = Color.web("#cdd6f4");
-                fontSize = 12;
+                colorTexto = TEXTO_INTERNO;
+                fontSize = 11.5;
             }
 
             // Para terminales: mostrar solo el lexema (extraer de "TIPO(lexema)")
             String textoMostrar = esTerminal ? extraerLexema(nodo.valor) : nodo.valor;
 
-            // Calcular radio según el texto que realmente se mostrará
-            double textoAncho = estimarAnchoTexto(textoMostrar);
-            double radioNodo = Math.max(RADIO, (textoAncho + 14) / 2);
-
-            // Sombra
-            Circle sombra = new Circle(p.getX() + 2, p.getY() + 3, radioNodo);
-            sombra.setFill(Color.web("#00000033"));
-            pane.getChildren().add(sombra);
-
-            // Círculo
-            Circle circle = new Circle(p.getX(), p.getY(), radioNodo);
-            circle.setFill(colorFondo);
-            circle.setStroke(colorBorde);
-            circle.setStrokeWidth(esRaiz ? 3 : (esTerminal ? 2 : 2.5));
-            pane.getChildren().add(circle);
-
-            // Texto (centrado vertical y horizontalmente)
+            // Texto medido antes de crear la cápsula para ajustar el ancho exacto
             Text text = new Text(textoMostrar);
             text.setFill(colorTexto);
             text.setFont(Font.font("Consolas", fontSize));
             text.setTextAlignment(TextAlignment.CENTER);
             text.setTextOrigin(VPos.CENTER);
-            double textW = text.getBoundsInLocal().getWidth();
-            text.setX(p.getX() - textW / 2);
+            double textW = text.getLayoutBounds().getWidth();
+
+            double anchoNodo = Math.max(ANCHO_MIN_NODO,
+                Math.max(estimarAnchoTexto(textoMostrar), textW) + 18);
+            double xIzq = p.getX() - anchoNodo / 2.0;
+            double ySup = p.getY() - RADIO_V;
+
+            // Sombra sutil del nodo en el lienzo
+            Rectangle sombra = new Rectangle(xIzq + 2, ySup + 3, anchoNodo, ALTO_NODO);
+            sombra.setArcWidth(ALTO_NODO);
+            sombra.setArcHeight(ALTO_NODO);
+            sombra.setFill(Color.web("#11111b88"));
+            pane.getChildren().add(sombra);
+
+            // Cápsula del nodo
+            Rectangle capsula = new Rectangle(xIzq, ySup, anchoNodo, ALTO_NODO);
+            capsula.setArcWidth(ALTO_NODO);
+            capsula.setArcHeight(ALTO_NODO);
+            capsula.setFill(colorFondo);
+            capsula.setStroke(colorBorde);
+            capsula.setStrokeWidth(esRaiz ? 2.5 : (esTerminal ? 1.8 : 2.0));
+            pane.getChildren().add(capsula);
+
+            text.setX(p.getX() - textW / 2.0);
             text.setY(p.getY());
             pane.getChildren().add(text);
         }
 
-        // ─── ScrollPane con el Pane como contenido ───
-        ScrollPane scroll = new ScrollPane(pane);
+        Group zoomGroup = new Group(pane);
+
+        // ─── ScrollPane con el árbol como contenido ───
+        ScrollPane scroll = new ScrollPane(zoomGroup);
         scroll.setStyle("-fx-background: #1e1e2e; -fx-background-color: #1e1e2e;");
         scroll.setPannable(true);
         scroll.setFitToWidth(false);
         scroll.setFitToHeight(false);
 
-        Scene scene = new Scene(scroll, 900, 650);
+        final double[] escala = { 1.0 };
+        Runnable aplicarZoom = () -> {
+            pane.setScaleX(escala[0]);
+            pane.setScaleY(escala[0]);
+        };
+
+        scroll.setOnScroll(e -> {
+            if (e.isControlDown()) {
+                e.consume();
+                double factor = e.getDeltaY() > 0 ? 1.12 : (1.0 / 1.12);
+                escala[0] = Math.max(0.25, Math.min(2.5, escala[0] * factor));
+                aplicarZoom.run();
+            }
+        });
+
+        Scene scene = new Scene(scroll, 960, 680);
         scene.setFill(COLOR_FONDO);
 
         var css = getClass().getResource("estilos.css");
         if (css != null) scene.getStylesheets().add(css.toExternalForm());
 
         Stage stage = new Stage();
-        stage.setTitle("Árbol de derivación sintáctica");
-        stage.initModality(Modality.WINDOW_MODAL);
+        stage.setTitle("Árbol de derivación sintáctica  ·  Ctrl + rueda o + / - / 0 para zoom");
+        if (owner != null) {
+            stage.initOwner(owner);
+            stage.initModality(Modality.WINDOW_MODAL);
+        }
         Iconos.aplicar(stage);
         stage.setScene(scene);
         stage.centerOnScreen();
 
         scene.setOnKeyPressed(e -> {
-            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) stage.close();
+            if (e.getCode() == KeyCode.ESCAPE) {
+                stage.close();
+            } else if (e.getCode() == KeyCode.PLUS || e.getCode() == KeyCode.EQUALS
+                    || e.getCode() == KeyCode.ADD) {
+                escala[0] = Math.min(2.5, escala[0] * 1.15);
+                aplicarZoom.run();
+            } else if (e.getCode() == KeyCode.MINUS || e.getCode() == KeyCode.SUBTRACT) {
+                escala[0] = Math.max(0.25, escala[0] / 1.15);
+                aplicarZoom.run();
+            } else if (e.getCode() == KeyCode.DIGIT0 || e.getCode() == KeyCode.NUMPAD0) {
+                escala[0] = 1.0;
+                aplicarZoom.run();
+            }
         });
 
         stage.showingProperty().addListener((obs, antes, ahora) -> {
             if (ahora) {
                 javafx.application.Platform.runLater(() -> {
                     scroll.setHvalue(0.5);
-                    scroll.setVvalue(0.5);
+                    scroll.setVvalue(0.0);
                 });
             }
         });
@@ -223,9 +259,8 @@ public class PanelDerivacion {
     // =============================================================
 
     private double calcularAncho(NodoDerivacion nodo) {
-        // Para terminales usar solo el lexema extraido, no el formato "TIPO(lexema)"
         String texto = nodo.hijos.isEmpty() ? extraerLexema(nodo.valor) : nodo.valor;
-        double anchoPropio = Math.max(RADIO * 2 + 20, estimarAnchoTexto(texto) + 10);
+        double anchoPropio = Math.max(ANCHO_MIN_NODO, estimarAnchoTexto(texto) + 18);
         if (nodo.hijos.isEmpty()) {
             return anchoPropio;
         }
@@ -239,10 +274,7 @@ public class PanelDerivacion {
 
     private double calcularAltura(NodoDerivacion nodo) {
         if (nodo.hijos.isEmpty()) {
-            String texto = extraerLexema(nodo.valor);
-            double ancho = estimarAnchoTexto(texto);
-            double r = Math.max(RADIO, (ancho + 14) / 2);
-            return r * 2 + 10;
+            return ALTO_NODO + 12;
         }
         double maxAltura = 0;
         boolean tieneHijosTerminales = false;
@@ -293,7 +325,7 @@ public class PanelDerivacion {
 
     private double estimarAnchoTexto(String texto) {
         if (texto == null) return 20;
-        return texto.length() * 8;
+        return texto.length() * 7.6;
     }
 
     private static String extraerLexema(String valor) {

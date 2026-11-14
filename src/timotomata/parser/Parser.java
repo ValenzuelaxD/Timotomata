@@ -94,7 +94,9 @@ public class Parser {
             }
             NodoDerivacion nProg = new NodoDerivacion("PROGRAMA");
             programa(nProg);
-            nodo.agregarHijo(nProg);
+            if (!nProg.hijos.isEmpty()) {
+                nodo.agregarHijo(nProg);
+            }
             return;
         }
     }
@@ -110,7 +112,7 @@ public class Parser {
             }
             if (t == TipoToken.SENSOR || t == TipoToken.UMBRAL
                 || t == TipoToken.SI || t == TipoToken.CALCULAR
-                || t == TipoToken.ESTADO
+                || t == TipoToken.ESTADO || t == TipoToken.MUESTREO
                 || t == TipoToken.EOF) {
                 return; // no consumir — es el inicio de la siguiente sentencia
             }
@@ -129,7 +131,7 @@ public class Parser {
     private void sentencia(NodoDerivacion nodo) {
         int prod = Gramatica.obtenerProduccion(Gramatica.SENTENCIA, ver().tipo);
         if (prod == -1) {
-            throw error("Se esperaba SENSOR, UMBRAL, SI o CALCULAR" + contexto());
+            throw error("Se esperaba SENSOR, UMBRAL, SI, CALCULAR, ESTADO, SINO o MUESTREO" + contexto());
         }
 
         switch (prod) {
@@ -345,7 +347,7 @@ public class Parser {
         }
 
         Condicion c = negacion(nodo);
-        nodo.agregarHijo(condicionSig(nodo, c));
+        condicionSig(nodo, c);
         return nodo;
     }
 
@@ -414,6 +416,7 @@ public class Parser {
 
     private NodoDerivacion condicionSig(NodoDerivacion padre, Condicion acumulado) {
         NodoDerivacion nodo = new NodoDerivacion("CONDICION_SIG");
+        nodo.sintetico = true;
         padre.agregarHijo(nodo);
 
         // La tabla distingue "seguir por un conector" de "terminar" comparando con
@@ -432,7 +435,6 @@ public class Parser {
         completo.linea = acumulado.linea;
 
         condicionSig(nodo, completo);
-        ultimoValorSemantico = completo;
         return nodo;
     }
 
@@ -537,6 +539,7 @@ public class Parser {
     
     private NodoDerivacion expresionSig(Expresion izquierda) {
         NodoDerivacion nodo = new NodoDerivacion("EXPRESION_SIG");
+        nodo.sintetico = true;
         int prod = Gramatica.obtenerProduccion(Gramatica.EXPRESION_SIG, ver().tipo);
 
         switch (prod) {
@@ -550,7 +553,6 @@ public class Parser {
                 nuevaIzq.linea = t.linea;
                 NodoDerivacion nRec = expresionSig(nuevaIzq);
                 nodo.agregarHijo(nRec);
-                ultimoValorSemantico = nuevaIzq;
                 break;
             }
             case Gramatica.P_EXPR_SIG_MENOS: {
@@ -563,7 +565,6 @@ public class Parser {
                 nuevaIzq.linea = t.linea;
                 NodoDerivacion nRec = expresionSig(nuevaIzq);
                 nodo.agregarHijo(nRec);
-                ultimoValorSemantico = nuevaIzq;
                 break;
             }
             default:
@@ -594,6 +595,7 @@ public class Parser {
     
     private NodoDerivacion terminoSig(Expresion izquierda) {
         NodoDerivacion nodo = new NodoDerivacion("TERMINO_SIG");
+        nodo.sintetico = true;
         int prod = Gramatica.obtenerProduccion(Gramatica.TERMINO_SIG, ver().tipo);
 
         switch (prod) {
@@ -607,7 +609,6 @@ public class Parser {
                 nuevaIzq.linea = t.linea;
                 NodoDerivacion nRec = terminoSig(nuevaIzq);
                 nodo.agregarHijo(nRec);
-                ultimoValorSemantico = nuevaIzq;
                 break;
             }
             case Gramatica.P_TERM_SIG_DIV: {
@@ -620,7 +621,6 @@ public class Parser {
                 nuevaIzq.linea = t.linea;
                 NodoDerivacion nRec = terminoSig(nuevaIzq);
                 nodo.agregarHijo(nRec);
-                ultimoValorSemantico = nuevaIzq;
                 break;
             }
             default:

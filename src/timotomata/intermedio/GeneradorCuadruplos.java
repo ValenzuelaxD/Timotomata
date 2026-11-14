@@ -1,7 +1,10 @@
 package timotomata.intermedio;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import timotomata.parser.ast.Abs;
 import timotomata.parser.ast.Binaria;
@@ -19,6 +22,7 @@ import timotomata.parser.ast.Parametro;
 import timotomata.parser.ast.Programa;
 import timotomata.parser.ast.Regla;
 import timotomata.parser.ast.Variable;
+import timotomata.simbolos.Simbolo;
 
 /**
  * Genera la tabla de cuadruplos de un programa Timotomata a partir del AST.
@@ -74,9 +78,28 @@ public final class GeneradorCuadruplos {
         tabla = new TablaCuadruplos();
         if (programa == null) return tabla;
 
+        record Inicializacion(String valor, String destino, int linea) {}
+        List<Inicializacion> inits = new ArrayList<>();
+
+        if (programa.muestreo != null) {
+            inits.add(new Inicializacion(
+                literal(programa.muestreo), "muestreo", programa.lineaMuestreo));
+        }
+
+        for (Map.Entry<String, Double> e : programa.umbrales.entrySet()) {
+            Simbolo s = programa.simbolos.buscar(e.getKey());
+            int ln = s != null ? s.linea() : 0;
+            inits.add(new Inicializacion(literal(e.getValue()), e.getKey(), ln));
+        }
+
         if (programa.estadoInicial != null) {
-            tabla.emitir("=", estado(programa.estadoInicial), null, ESTADO,
-                programa.lineaEstadoInicial);
+            inits.add(new Inicializacion(
+                estado(programa.estadoInicial), ESTADO, programa.lineaEstadoInicial));
+        }
+
+        inits.sort(Comparator.comparingInt(Inicializacion::linea));
+        for (Inicializacion init : inits) {
+            tabla.emitir("=", init.valor(), null, init.destino(), init.linea());
         }
 
         for (Calculo calculo : programa.calculos) {

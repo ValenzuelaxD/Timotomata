@@ -271,6 +271,7 @@ public class Lexer {
             } else if (ultimoAcept != -1) {
                 String lexema = fuente.substring(inicio, posUltimaAcept);
                 emitirToken(ultimoAcept, lexema, inicioLinea, inicioColumna);
+                columna = inicioColumna + (posUltimaAcept - inicio);
                 actual = posUltimaAcept;
             } else if (estado == Q_EQ || estado == Q_GT || estado == Q_LT
                     || estado == Q_NOT || estado == Q_DIV) {

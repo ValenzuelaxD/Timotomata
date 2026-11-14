@@ -180,15 +180,22 @@ public class AnalizadorSemantico {
      * que la regla 20 la señale por separado.
      */
     private void resolverTiposDeSenales(Programa programa) {
-        for (Calculo c : programa.calculos) {
-            Simbolo destino = programa.simbolos.buscar(c.destino);
-            if (destino == null || destino.tipo() != null) continue;
+        boolean cambio;
+        do {
+            cambio = false;
+            for (Calculo c : programa.calculos) {
+                Simbolo destino = programa.simbolos.buscar(c.destino);
+                if (destino == null || destino.tipo() != null) continue;
 
-            // El tipo sale de lo que la transformación lee: para una operación,
-            // de su CON=; para una expresión, de las variables que aparecen.
-            TipoSensor t = tipoDeLectura(c, programa);
-            if (t != null) destino.asignarTipo(t);
-        }
+                // El tipo sale de lo que la transformación lee: para una operación,
+                // de su CON=; para una expresión, de las variables que aparecen.
+                TipoSensor t = tipoDeLectura(c, programa);
+                if (t != null) {
+                    destino.asignarTipo(t);
+                    cambio = true;
+                }
+            }
+        } while (cambio);
     }
 
     /**
@@ -216,29 +223,18 @@ public class AnalizadorSemantico {
     }
 
     /**
- * ¿La señal la produce un generador de onda?
- *
- * <p>Un {@code SENO}, {@code COSENO} o {@code CUADRADA} construye su valor a
- * partir del reloj, no de un canal. Antes el destino heredaba el tipo del
- * argumento posicional, y ese argumento —el canal que la cabecera nominal
- * nombraba— no lo leía nadie: la señal salía con la unidad de un canal que no
- * había participar en el cálculo. Ahora que el canal es un {@code CON=} y los
- * generadores no lo admiten, la señal se queda sin tipo, que es la respuesta
- * honesta: una onda sintética no tiene magnitud física.
- *
- * <p>Por eso la re/**
- * ¿La señal la produce un generador de onda?
- *
- * <p>Un {@code SENO}, {@code COSENO} o {@code CUADRADA} construye su valor a
- * partir del reloj, no leyendo un canal. Su {@code CON=} no es una dependencia
- * de datos: declara <i>qué magnitud</i> representa la onda, y es lo que permite
- * verificar la frecuencia contra la banda y contra la Nyquist.
- *
- * <p>Las señales de este tipo quedan fuera de la regla 20 porque su tipo
- * depende de que el generador traiga su {@code CON=}, y si no lo trae es la
- * regla 15 la que lo dice, con un mensaje que explica qué escribir. Anunciarlo
- * dos veces por el mismo error solo hace más ruidoso el diagnóstico.
- */
+     * ¿La señal la produce un generador de onda?
+     *
+     * <p>Un {@code SENO}, {@code COSENO} o {@code CUADRADA} construye su valor a
+     * partir del reloj, no leyendo un canal. Su {@code CON=} no es una dependencia
+     * de datos: declara <i>qué magnitud</i> representa la onda, y es lo que permite
+     * verificar la frecuencia contra la banda y contra la Nyquist.
+     *
+     * <p>Las señales de este tipo quedan fuera de la regla 20 porque su tipo
+     * depende de que el generador traiga su {@code CON=}, y si no lo trae es la
+     * regla 15 la que lo dice, con un mensaje que explica qué escribir. Anunciarlo
+     * dos veces por el mismo error solo hace más ruidoso el diagnóstico.
+     */
     private boolean esSintetica(Programa programa, String nombre) {
         for (Calculo c : programa.calculos) {
             if (!nombre.equals(c.destino)) continue;
@@ -678,6 +674,15 @@ public class AnalizadorSemantico {
                 err(errores, c.linea, "identificador '" + c.destino
                     + "' no declarado: es la señal de destino de calcular().");
             }
+            if (c.esExpresion()) {
+                Set<String> yaVistos = new LinkedHashSet<>();
+                for (String var : Expressiones.variables(c.expresion)) {
+                    if (simbolos.declarado(var) || !yaVistos.add(var)) continue;
+                    err(errores, c.linea, "identificador '" + var
+                        + "' no declarado: se usa en la expresion de calcular() sin"
+                        + " haber sido definido con 'sensor', 'umbral' o 'calcular'.");
+                }
+            }
             for (Parametro p : c.parametros) {
                 if (p.nombre == null || !p.nombre.equalsIgnoreCase("con")) continue;
                 if (simbolos.declarado(p.valor)) continue;
@@ -817,6 +822,11 @@ public class AnalizadorSemantico {
     // =============================================================
 
     private void regla16DivisionPorCero(Programa programa, List<String> errores) {
+        for (Calculo c : programa.calculos) {
+            if (c.esExpresion()) {
+                buscarDivisionPorCero(c.expresion, c.linea, programa.umbrales, errores);
+            }
+        }
         for (Regla r : programa.reglas) {
             for (Comparacion c : comparaciones(r.condicion)) {
                 buscarDivisionPorCero(c.izquierda, r.linea, programa.umbrales, errores);
@@ -1060,7 +1070,7 @@ public class AnalizadorSemantico {
                         reportado = true;
                     }
                 }
-                if (reportado) return;
+                if (reportado) break;
             }
         }
     }
